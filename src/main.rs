@@ -3,6 +3,7 @@ extern crate yaml_rust;
 use std::fs;
 
 use engine::Engine;
+use errors::ConfigError;
 use initial_conditions::sod_shock;
 use space::Boundary;
 use yaml_rust::YamlLoader;
@@ -16,18 +17,18 @@ mod space;
 mod utils;
 mod engine;
 mod initial_conditions;
+mod errors;
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     // read configuration 
     let docs = YamlLoader::load_from_str(
-        &fs::read_to_string("config.yml")
-            .expect("Unable to read config file.")
-    ).expect("Error while parsing YAML file.");
+        &fs::read_to_string("config.yml")?
+    )?;
     let config = &docs[0];
 
     let num_part = config["num_part"].as_i64().unwrap_or(100) as usize;
     let box_size = config["box_size"].as_f64().unwrap_or(1.);
-    let t_max = config["t_max"].as_f64().expect("You must supply a t_max in your config");
+    let t_max = config["t_max"].as_f64().ok_or(ConfigError::MissingParameter("t_max"))?;
     let periodic = config["periodic"].as_bool().unwrap_or(true);
 
     // Setup simulation
@@ -37,4 +38,6 @@ fn main() {
 
     // run
     engine.run();
+
+    Ok(())
 }
