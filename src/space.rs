@@ -1,12 +1,10 @@
-use std::process::id;
-
 use crate::{part::{Part, Primitives, Conserved}, equation_of_state::EquationOfState, riemann_solver::RiemannSolver};
 
 pub enum Boundary {
-    periodic,
-    reflective,
-    open,
-    vacuum,
+    Periodic,
+    Reflective,
+    Open,
+    Vacuum,
 }
 
 pub struct Space {
@@ -56,7 +54,7 @@ impl Space {
 
     fn apply_boundary_primitives(&mut self) {
         match self.boundary {
-            Boundary::periodic => {
+            Boundary::Periodic => {
                 self.parts[0] = self.parts[self.num_parts - 1].clone();
                 self.parts[0].x -= self.box_size;
                 self.parts[self.num_parts] = self.parts[1].clone();
@@ -68,7 +66,7 @@ impl Space {
 
     fn apply_boundary_conserved(&mut self) {
         match self.boundary {
-            Boundary::periodic => {
+            Boundary::Periodic => {
                 self.parts[0].conserved = self.parts[self.num_parts - 1].conserved.clone();
                 self.parts[0].volume = self.parts[self.num_parts - 1].volume;
                 self.parts[self.num_parts].conserved = self.parts[1].conserved.clone();

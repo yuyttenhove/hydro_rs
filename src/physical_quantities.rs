@@ -179,7 +179,7 @@ mod test {
     fn test_conversions() {
         let primitives = Primitives::new(0.75, 0.4, 0.8);
         let volume = 0.1;
-        let eos = &EquationOfState::ideal(5. / 3.);
+        let eos = &EquationOfState::Ideal { gamma: 5. / 3. };
         let conserved = Conserved::from_primitives(&primitives, volume, &eos);
         let primitives_new = Primitives::from_conserved(&conserved, volume, &eos);
 

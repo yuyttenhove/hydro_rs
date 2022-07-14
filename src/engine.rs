@@ -11,7 +11,7 @@ impl Engine {
     /// Setup a simulation by initializing a new engine struct for initial conditions
     pub fn new(ic: &[(f64, f64, f64, f64)], boundary: Boundary, box_size: f64, t_max: f64) -> Self {
         let gamma = 5. / 3.;
-        let eos = EquationOfState::ideal(gamma);
+        let eos = EquationOfState::Ideal { gamma };
         let solver = RiemannSolver::new(gamma);
         let space = Space::from_ic(ic, boundary, box_size, &eos);
         Self { space, eos, solver, t_max }

@@ -18,7 +18,7 @@ fn main() {
     let t_max = 1.;
 
     let ic = sod_shock(num_part, box_size);
-    let boundary = Boundary::periodic;
+    let boundary = Boundary::Periodic;
     let mut engine = Engine::new(&ic, boundary, box_size, t_max);
 
     engine.run();
