@@ -21,4 +21,9 @@ impl Engine {
     pub fn run(&mut self) {
         todo!()
     }
+
+    /// Dump snapshot of simulation at the current time
+    pub fn dump(&self) {
+        todo!()
+    }
 }

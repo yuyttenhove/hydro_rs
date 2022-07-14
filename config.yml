@@ -1,0 +1,4 @@
+num_part: 250
+box_size: 2.
+t_max: 2.
+periodic: true
