@@ -1,5 +1,5 @@
 [package]
-name = "hydro_code_1d_rs"
+name = "hydro_1d_rs"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 yaml-rust = "0.4"
+clap = {version = "3.2", features = ["derive"]}

@@ -2,6 +2,8 @@ extern crate yaml_rust;
 
 use std::fs;
 
+use clap::Parser;
+use cli::Cli;
 use engine::Engine;
 use errors::ConfigError;
 use initial_conditions::sod_shock;
@@ -18,11 +20,16 @@ mod utils;
 mod engine;
 mod initial_conditions;
 mod errors;
+mod cli;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+
+    // parse command line parameters
+    let args = Cli::parse();
+
     // read configuration 
     let docs = YamlLoader::load_from_str(
-        &fs::read_to_string("config.yml")?
+        &fs::read_to_string(args.config)?
     )?;
     let config = &docs[0];
 
