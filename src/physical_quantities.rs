@@ -70,7 +70,7 @@ impl Primitives {
         Primitives { values: Vec3f64(density, velocity, pressure) }
     }
 
-    pub fn from_conserved(conserved: &Conserved, volume: f64, eos: &EquationOfState) -> Self {
+    pub fn from_conserved(conserved: &Conserved, volume: f64, eos: EquationOfState) -> Self {
         if conserved.mass() > 0. {
             let density = conserved.mass() / volume;
             let velocity = conserved.momentum() / conserved.mass();
@@ -80,6 +80,10 @@ impl Primitives {
         } else {
             Self::vacuum()
         }
+    }
+
+    pub fn boost(&self, velocity: f64) -> Self {
+        Self::new(self.density(), self.velocity() + velocity, self.pressure())
     }
 }
 
@@ -130,7 +134,7 @@ impl Conserved {
         Conserved { values: Vec3f64(mass, momentum, energy) }
     }
 
-    pub fn from_primitives(primitives: &Primitives, volume: f64, eos: &EquationOfState) -> Self {
+    pub fn from_primitives(primitives: &Primitives, volume: f64, eos: EquationOfState) -> Self {
         let mass = primitives.density() * volume;
         let momentum = mass * primitives.velocity();
         let energy = 0.5 * momentum * primitives.velocity() 
@@ -179,9 +183,9 @@ mod test {
     fn test_conversions() {
         let primitives = Primitives::new(0.75, 0.4, 0.8);
         let volume = 0.1;
-        let eos = &EquationOfState::Ideal { gamma: 5. / 3. };
-        let conserved = Conserved::from_primitives(&primitives, volume, &eos);
-        let primitives_new = Primitives::from_conserved(&conserved, volume, &eos);
+        let eos = EquationOfState::Ideal { gamma: 5. / 3. };
+        let conserved = Conserved::from_primitives(&primitives, volume, eos);
+        let primitives_new = Primitives::from_conserved(&conserved, volume, eos);
 
         assert_eq!(primitives.density().round_to(15), primitives_new.density().round_to(15));
         assert_eq!(primitives.velocity().round_to(15), primitives_new.velocity().round_to(15));

@@ -7,7 +7,8 @@ use cli::Cli;
 use engine::Engine;
 use errors::ConfigError;
 use initial_conditions::sod_shock;
-use space::Boundary;
+use time_integration::DefaultRunner;
+use space::{Boundary, Space};
 use yaml_rust::YamlLoader;
 
 mod equation_of_state;
@@ -21,6 +22,7 @@ mod engine;
 mod initial_conditions;
 mod errors;
 mod cli;
+mod time_integration;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
 
@@ -33,18 +35,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     let config = &docs[0];
 
-    let num_part = config["num_part"].as_i64().unwrap_or(100) as usize;
-    let box_size = config["box_size"].as_f64().unwrap_or(1.);
-    let t_max = config["t_max"].as_f64().ok_or(ConfigError::MissingParameter("t_max"))?;
-    let periodic = config["periodic"].as_bool().unwrap_or(true);
+    let num_part = config["initial_conditions"]["num_part"].as_i64().unwrap_or(100) as usize;
+    let box_size = config["initial_conditions"]["box_size"].as_f64().unwrap_or(1.);
+    let t_end = config["time_integration"]["t_end"].as_f64().ok_or(ConfigError::MissingParameter("time_integration:t_end"))?;
+    let cfl_criterion = config["time_integration"]["cfl_criterion"].as_f64().ok_or(ConfigError::MissingParameter("time_integration:cfl_criterion"))?;
+    let t_between_snaps = config["snapshots"]["t_between_snaps"].as_f64().ok_or(ConfigError::MissingParameter("snapshots:t_between_snaps"))?;
+    let prefix = config["snapshots"]["prefix"].as_str().ok_or(ConfigError::MissingParameter("snapshots:t_between_snaps"))?;
+    let periodic = config["initial_conditions"]["periodic"].as_bool().unwrap_or(true);
+    let gamma = config["equation_of_state"]["gamma"].as_f64().unwrap_or(5. / 3.);
 
     // Setup simulation
     let ic = sod_shock(num_part, box_size);
     let boundary = if periodic { Boundary::Periodic } else { Boundary::Reflective };
-    let mut engine = Engine::new(&ic, boundary, box_size, t_max);
-
+    let mut space = Space::from_ic(&ic, boundary, box_size, gamma);
+    let runner = DefaultRunner::new(cfl_criterion);
+    let mut engine = Engine::init(&runner, gamma, t_end, t_between_snaps, prefix);
+    
     // run
-    engine.run();
+    engine.run(&mut space)?;
 
     Ok(())
 }

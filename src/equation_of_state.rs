@@ -1,3 +1,4 @@
+#[derive(Clone, Copy)]
 pub enum EquationOfState {
     Ideal { gamma: f64 },
     Isothermal,

@@ -1,5 +1,8 @@
+use std::{fs::File, io::{BufWriter, Write, Error as IoError}};
+
 use crate::{part::{Part, Primitives, Conserved}, equation_of_state::EquationOfState, riemann_solver::RiemannSolver};
 
+#[derive(Clone, Copy)]
 pub enum Boundary {
     Periodic,
     Reflective,
@@ -12,12 +15,24 @@ pub struct Space {
     boundary: Boundary,
     box_size: f64,
     num_parts: usize,
+    eos: EquationOfState,
 }
 
 impl Space {
+
+    pub fn parts(&self) -> &[Part] {
+        &self.parts[1..self.num_parts+1]
+    }
+
+    pub fn parts_mut(&mut self) -> &mut [Part] {
+        &mut self.parts[1..self.num_parts+1]
+    }
+
     /// Constructs a space from given ic's (tuples of position, density, velocity and pressure) and 
     /// boundary conditions.
-    pub fn from_ic(ic: &[(f64, f64, f64, f64)], boundary: Boundary, box_size: f64, eos: &EquationOfState) -> Self {
+    pub fn from_ic(ic: &[(f64, f64, f64, f64)], boundary: Boundary, box_size: f64, gamma: f64) -> Self {
+        // Initialize equation of state
+        let eos = EquationOfState::Ideal { gamma };
         // Get our own mutable copy of the ICs
         let mut ic = ic.to_vec();
         // Wrap particles to be inside box:
@@ -39,12 +54,12 @@ impl Space {
         } 
 
         // create space
-        let mut space = Space { parts, boundary, box_size, num_parts: ic.len() };
+        let mut space = Space { parts, boundary, box_size, num_parts: ic.len(), eos };
         
         // Set up the primitive variables of the boundary particles
         space.apply_boundary_primitives();
         // Set up the conserved quantities
-        space.first_init_parts(eos);
+        space.first_init_parts();
         // Set up the conserved quantities for the boundary particles 
         space.apply_boundary_conserved();
 
@@ -55,10 +70,10 @@ impl Space {
     fn apply_boundary_primitives(&mut self) {
         match self.boundary {
             Boundary::Periodic => {
-                self.parts[0] = self.parts[self.num_parts - 1].clone();
+                self.parts[0] = self.parts[self.num_parts].clone();
                 self.parts[0].x -= self.box_size;
-                self.parts[self.num_parts] = self.parts[1].clone();
-                self.parts[self.num_parts].x += self.box_size;
+                self.parts[self.num_parts+1] = self.parts[1].clone();
+                self.parts[self.num_parts+1].x += self.box_size;
             },
             _ => todo!()
         }
@@ -67,30 +82,40 @@ impl Space {
     fn apply_boundary_conserved(&mut self) {
         match self.boundary {
             Boundary::Periodic => {
-                self.parts[0].conserved = self.parts[self.num_parts - 1].conserved.clone();
-                self.parts[0].volume = self.parts[self.num_parts - 1].volume;
-                self.parts[self.num_parts].conserved = self.parts[1].conserved.clone();
-                self.parts[self.num_parts].volume = self.parts[1].volume;
+                self.parts[0].conserved = self.parts[self.num_parts].conserved.clone();
+                self.parts[0].volume = self.parts[self.num_parts].volume;
+                self.parts[self.num_parts+1].conserved = self.parts[1].conserved.clone();
+                self.parts[self.num_parts+1].volume = self.parts[1].volume;
             },
             _ => todo!()
         }
     }
 
     /// Do the volume calculation for all the parts in the space
-    pub fn update_volumes(&mut self) {
+    pub fn volume_calculation(&mut self) {
         for i in 1..self.num_parts+1 {
             let x_left = self.parts[i-1].x;
             let x_right = self.parts[i+1].x;
             self.parts[i].volume = 0.5 * (x_right - x_left);
+            debug_assert!(self.parts[i].volume >= 0.);
         }
     }
 
+    pub fn convert_conserved_to_primitive(&mut self) {
+        let eos = self.eos;
+        for part in self.parts_mut() {
+            part.convert_conserved_to_primitive(eos);
+        }
+
+        self.apply_boundary_primitives();
+    }
+
     /// Convert the primitive quantities to conserved quantities. This is only done when creating the space from ic's.
-    fn first_init_parts(&mut self, eos: &EquationOfState) {
-        self.update_volumes();
+    fn first_init_parts(&mut self) {
+        self.volume_calculation();
 
         for part in self.parts.iter_mut() {
-            part.conserved = Conserved::from_primitives(&part.primitives, part.volume, eos);
+            part.conserved = Conserved::from_primitives(&part.primitives, part.volume, self.eos);
         }
     }
 
@@ -106,7 +131,12 @@ impl Space {
             let right = &self.parts[i+1];
             let dt = left.dt.min(right.dt);
             let dx = right.x - left.x;
-            let fluxes = solver.solve_for_flux(&left.primitives, &right.primitives);
+
+            // Boost the primitives to the frame of reference of the interface:
+            let v_face = 0.5 * (left.primitives.velocity() + right.primitives.velocity());
+            let primitives_left = left.primitives.boost(-v_face);
+            let primitives_right = right.primitives.boost(-v_face);
+            let fluxes = 0.5 * solver.solve_for_flux(&primitives_left, &primitives_right);
 
             // TODO: gradient extrapolation
 
@@ -115,33 +145,66 @@ impl Space {
             self.parts[i+1].fluxes += dt * fluxes;
             self.parts[i+1].gravity_mflux += dx * fluxes.mass();
         }
+
+        // Apply fluxes to non-ghost particles
+        for part in self.parts_mut() {
+            part.apply_flux()
+        }
     }
 
     /// drift all particles foward in time
     pub fn drift(&mut self) {
-        for part in self.parts[1..self.num_parts+1].iter_mut() {
-            part.x += part.primitives.velocity() * part.dt
-            // TODO: primitive extrapolation using gradients
+        for part in self.parts_mut() {
+            part.drift();
+        }
+
+        // Handle particles that left the box.
+        let box_size = self.box_size;
+        let boundary = self.boundary;
+        for part in self.parts_mut() {
+            if part.x < 0. || part.x >= box_size {
+                match boundary {
+                    Boundary::Periodic => {
+                        while part.x < 0. { part.x += box_size }
+                        while part.x >= box_size { part.x -= box_size }
+                    },
+                    _ => todo!()
+                }
+            }
         }
     }
 
     /// Estimate the gradients for all particles
     pub fn gradient_estimate(&mut self) {
-        todo!()
+        // TODO
     }
 
     /// Calculate the next timestep for all particles
-    pub fn timestep(&mut self, cfl_criterion: f64) {
-        todo!()
+    pub fn timestep(&mut self, cfl_criterion: f64) -> f64 {
+        let mut min_dt = f64::MAX;
+        for part in self.parts.iter_mut() {
+            min_dt = min_dt.min(part.timestep(cfl_criterion));
+        }
+        min_dt
     }
 
     /// Apply the first half kick to the particles
     pub fn kick1(&mut self) {
-        todo!()
+        // TODO
     }
 
     /// Apply the second half kick to the particles
     pub fn kick2(&mut self) {
-        todo!()
+        // TODO
+    }
+
+    /// Dump snapshot of space at the current time
+    pub fn dump(&mut self, f: &mut BufWriter<File>) -> Result<(), IoError> {
+        writeln!(f, "# x (m)\trho (kg m^-3)\tv (m s^-1)\tP (kg m^-1 s^-2)\ta (m s^-2)")?;
+        for part in self.parts() {
+            writeln!(f, "{}\t{}\t{}\t{}\t{}", part.x, part.primitives.density(), part.primitives.velocity(), part.primitives.pressure(), part.a_grav)?;
+        }
+
+        Ok(())
     }
 }

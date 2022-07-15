@@ -87,7 +87,7 @@ impl RiemannSolver {
                                   right.density() * v_r2 + right.pressure(), 
                                   (rho_r_e_r + right.pressure()) * right.velocity());
             if s_r > 0. {
-                // flux FL*
+                // flux FR*
                 let rho_star_r = right.density() * s_r_m_v_r / (s_r - s_star);
                 let u_star_r = rho_star_r * s_star;
                 let p_star_r = rho_star_r * (e_r + (s_star - right.velocity()) * (s_star + right.pressure() / (right.density() * s_r_m_v_r)));
@@ -96,6 +96,7 @@ impl RiemannSolver {
                                              p_star_r - rho_r_e_r);
             }
         }
+        debug_assert!(!(flux.mass().is_nan() || flux.mass().is_infinite()));
         flux
     }
 }
