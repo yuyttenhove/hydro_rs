@@ -18,12 +18,12 @@ pub struct Part {
 
 impl Part {
     pub fn timestep(&mut self, cfl_criterion: f64) -> f64 {
-        self.dt = 1e-5;
+        self.dt = 1e-4;
         self.dt
     }
 
     pub fn drift(&mut self) {
-        self.x += self.primitives.velocity() * self.dt
+        self.x += self.primitives.velocity() * self.dt;
         // TODO: primitive extrapolation using gradients
     }
 

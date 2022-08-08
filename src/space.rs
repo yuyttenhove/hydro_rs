@@ -136,7 +136,7 @@ impl Space {
             let v_face = 0.5 * (left.primitives.velocity() + right.primitives.velocity());
             let primitives_left = left.primitives.boost(-v_face);
             let primitives_right = right.primitives.boost(-v_face);
-            let fluxes = 0.5 * solver.solve_for_flux(&primitives_left, &primitives_right);
+            let fluxes = solver.solve_for_flux(&primitives_left, &primitives_right);
 
             // TODO: gradient extrapolation
 

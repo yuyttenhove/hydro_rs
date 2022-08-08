@@ -44,7 +44,7 @@ impl Vec3f64 {
     }
 }
 
-#[derive(Default, Debug, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy, Add, AddAssign, SubAssign)]
 pub struct Primitives {
     values: Vec3f64,
 }
@@ -87,19 +87,6 @@ impl Primitives {
     }
 }
 
-impl AddAssign for Primitives {
-    fn add_assign(&mut self, rhs: Self) {
-        self.values += rhs.values;
-    }
-}
-
-impl Add for Primitives {
-    type Output = Primitives;
-    fn add(self, rhs: Self) -> Self::Output {
-        Primitives { values: self.values + rhs.values }
-    }
-}
-
 impl Mul<Primitives> for f64 {
     type Output = Primitives;
 
@@ -108,7 +95,7 @@ impl Mul<Primitives> for f64 {
     }
 }
 
-#[derive(Default, Debug, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy, Add, AddAssign, SubAssign)]
 pub struct Conserved {
     values: Vec3f64,
 }
@@ -140,25 +127,6 @@ impl Conserved {
         let energy = 0.5 * momentum * primitives.velocity() 
                           + eos.gas_energy_from_pressure(primitives.pressure(), volume);
         Self { values: Vec3f64(mass, momentum, energy) }
-    }
-}
-
-impl AddAssign for Conserved {
-    fn add_assign(&mut self, rhs: Self) {
-        self.values += rhs.values;
-    }
-}
-
-impl SubAssign for Conserved {
-    fn sub_assign(&mut self, rhs: Self) {
-        self.values -= rhs.values;
-    }
-}
-
-impl Add for Conserved {
-    type Output = Conserved;
-    fn add(self, rhs: Self) -> Self::Output {
-        Conserved { values: self.values + rhs.values }
     }
 }
 

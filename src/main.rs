@@ -1,4 +1,6 @@
 extern crate yaml_rust;
+#[macro_use]
+extern crate derive_more;
 
 use std::fs;
 
