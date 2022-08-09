@@ -17,12 +17,13 @@ def plot_quantity(ax, xdata, ydata, title):
 
 def main(fname: str):
     data = pd.read_csv(fname, sep="\t")
-    data.columns = ["x", "rho", "v", "P", "a"]
+    data.columns = ["x", "rho", "v", "P", "a", "u"]
 
-    fig, axes = plt.subplots(2, 2, figsize=(6, 6))
-    plot_quantity(axes[0][0], data["x"], data["rho"], "Density")
-    plot_quantity(axes[0][1], data["x"], data["v"], "Velocity")
-    plot_quantity(axes[1][0], data["x"], data["P"], "Pressure")
+    fig, axes = plt.subplots(2, 3, figsize=(9, 6))
+    plot_quantity(axes[0][0], data["x"], data["v"], "Velocity")
+    plot_quantity(axes[0][1], data["x"], data["rho"], "Density")
+    plot_quantity(axes[0][2], data["x"], data["P"], "Pressure")
+    plot_quantity(axes[1][0], data["x"], data["u"], "Internal energy")
     plot_quantity(axes[1][1], data["x"], data["a"], "Acceleration")
 
     plt.savefig("test.png", dpi=300)

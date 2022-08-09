@@ -35,4 +35,8 @@ impl Part {
     pub fn convert_conserved_to_primitive(&mut self, eos: EquationOfState) {
         self.primitives = Primitives::from_conserved(&self.conserved, self.volume, eos)
     }
+
+    pub fn internal_energy(&self) -> f64 {
+        (self.conserved.energy() - 0.5 * self.conserved.momentum() * self.primitives.velocity()) / self.conserved.mass()
+    }
 }

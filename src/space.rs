@@ -40,12 +40,9 @@ impl Space {
             while properties.0 < 0. { properties.0 += box_size }
             while properties.0 >= box_size { properties.0 -= box_size }
         }
-        // Sort by x coordinate 
-        ic.sort_by(|a, b| {a.0.partial_cmp(&b.0).unwrap()});
 
         // create vector of parts for space
         let mut parts = vec![Part::default(); ic.len() + 2];
-
         // Copy positions and primitives to particles
         for (idx, properties) in ic.iter().enumerate() {
             let part = &mut parts[idx + 1];
@@ -55,19 +52,18 @@ impl Space {
 
         // create space
         let mut space = Space { parts, boundary, box_size, num_parts: ic.len(), eos };
-        
+        // sort particles 
+        space.sort();
         // Set up the primitive variables of the boundary particles
-        space.apply_boundary_primitives();
+        space.apply_boundary_condition();
         // Set up the conserved quantities
         space.first_init_parts();
-        // Set up the conserved quantities for the boundary particles 
-        space.apply_boundary_conserved();
 
         // return
         space
     }
 
-    fn apply_boundary_primitives(&mut self) {
+    fn apply_boundary_condition(&mut self) {
         match self.boundary {
             Boundary::Periodic => {
                 self.parts[0] = self.parts[self.num_parts].clone();
@@ -75,7 +71,7 @@ impl Space {
                 self.parts[self.num_parts+1] = self.parts[1].clone();
                 self.parts[self.num_parts+1].x += self.box_size;
             },
-            _ => todo!()
+            _ => unimplemented!()
         }
     }
 
@@ -87,7 +83,7 @@ impl Space {
                 self.parts[self.num_parts+1].conserved = self.parts[1].conserved.clone();
                 self.parts[self.num_parts+1].volume = self.parts[1].volume;
             },
-            _ => todo!()
+            _ => unimplemented!()
         }
     }
 
@@ -107,21 +103,24 @@ impl Space {
             part.convert_conserved_to_primitive(eos);
         }
 
-        self.apply_boundary_primitives();
+        self.apply_boundary_condition();
     }
 
     /// Convert the primitive quantities to conserved quantities. This is only done when creating the space from ic's.
     fn first_init_parts(&mut self) {
         self.volume_calculation();
 
-        for part in self.parts.iter_mut() {
-            part.conserved = Conserved::from_primitives(&part.primitives, part.volume, self.eos);
+        let eos = self.eos;
+        for part in self.parts_mut() {
+            part.conserved = Conserved::from_primitives(&part.primitives, part.volume, eos);
         }
+
+        self.apply_boundary_conserved();
     }
 
     /// Sort the parts in space according to their x coordinate
     pub fn sort(&mut self) {
-        self.parts[1..self.num_parts+1].sort_by(|a, b| {a.x.partial_cmp(&b.x).unwrap()})
+        self.parts_mut().sort_by(|a, b| {a.x.partial_cmp(&b.x).unwrap()})
     }
 
     /// Do flux exchange between neighbouring particles
@@ -130,13 +129,13 @@ impl Space {
             let left = &self.parts[i];
             let right = &self.parts[i+1];
             let dt = left.dt.min(right.dt);
-            let dx = right.x - left.x;
+            let dx = 0.5 * (right.x - left.x);
 
             // Boost the primitives to the frame of reference of the interface:
             let v_face = 0.5 * (left.primitives.velocity() + right.primitives.velocity());
             let primitives_left = left.primitives.boost(-v_face);
             let primitives_right = right.primitives.boost(-v_face);
-            let fluxes = solver.solve_for_flux(&primitives_left, &primitives_right);
+            let fluxes = solver.solve_for_flux(&primitives_left, &primitives_right, v_face, &self.eos);
 
             // TODO: gradient extrapolation
 
@@ -152,7 +151,7 @@ impl Space {
         }
     }
 
-    /// drift all particles foward in time
+    /// drift all particles foward in time for a full time step
     pub fn drift(&mut self) {
         for part in self.parts_mut() {
             part.drift();
@@ -174,12 +173,17 @@ impl Space {
         }
     }
 
+    /// Drift all particles forward in time for a half time step
+    pub fn half_drift(&mut self) {
+        unimplemented!();
+    }
+
     /// Estimate the gradients for all particles
     pub fn gradient_estimate(&mut self) {
         // TODO
     }
 
-    /// Calculate the next timestep for all particles
+    /// Calculate the next timestep for *all* particles
     pub fn timestep(&mut self, cfl_criterion: f64) -> f64 {
         let mut min_dt = f64::MAX;
         for part in self.parts.iter_mut() {
@@ -200,11 +204,42 @@ impl Space {
 
     /// Dump snapshot of space at the current time
     pub fn dump(&mut self, f: &mut BufWriter<File>) -> Result<(), IoError> {
-        writeln!(f, "# x (m)\trho (kg m^-3)\tv (m s^-1)\tP (kg m^-1 s^-2)\ta (m s^-2)")?;
+        writeln!(f, "# x (m)\trho (kg m^-3)\tv (m s^-1)\tP (kg m^-1 s^-2)\ta (m s^-2)\tu (J / kg)")?;
         for part in self.parts() {
-            writeln!(f, "{}\t{}\t{}\t{}\t{}", part.x, part.primitives.density(), part.primitives.velocity(), part.primitives.pressure(), part.a_grav)?;
+            writeln!(f, "{}\t{}\t{}\t{}\t{}\t{}", part.x, part.primitives.density(), part.primitives.velocity(), part.primitives.pressure(), part.a_grav, part.internal_energy())?;
         }
 
         Ok(())
     }
+}
+
+#[cfg(test)]
+mod test {
+    use super::{Space, Boundary};
+
+    const IC: [(f64, f64, f64, f64); 4] = [(0.25, 1., 0.5, 1.), (0.65, 0.125, 0.5, 0.1), 
+                                           (0.75, 0.125, 0.5, 0.1), (0.85, 0.125, 0.5, 0.1)];
+    const BOX_SIZE: f64 = 1.;
+    const GAMMA: f64 = 5. / 3.;
+
+    #[test]
+    fn test_init() {
+        let space = Space::from_ic(&IC, Boundary::Periodic, BOX_SIZE, GAMMA);
+        assert_eq!(space.parts.len(), 6);
+        assert_eq!(space.num_parts, 4);
+        // Check volumes
+        assert_eq!(space.parts[0].volume, 0.25);
+        assert_eq!(space.parts[1].volume, 0.4);
+        assert_eq!(space.parts[2].volume, 0.25);
+        assert_eq!(space.parts[3].volume, 0.1);
+        assert_eq!(space.parts[4].volume, 0.25);
+        assert_eq!(space.parts[6].volume, 0.4);
+    }
+
+    #[test]
+    fn test_drift() {
+        todo!();
+    }
+
+
 }

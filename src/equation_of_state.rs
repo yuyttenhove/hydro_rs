@@ -18,4 +18,11 @@ impl EquationOfState {
             _ => todo!()
         }
     }
+
+    pub fn sound_speed(&self, pressure: f64, density_inv: f64) -> f64 {
+        match self {
+            EquationOfState::Ideal { gamma } => (gamma * pressure * density_inv).sqrt(),
+            _ => unimplemented!()
+        }
+    }
 }
