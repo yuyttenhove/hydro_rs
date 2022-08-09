@@ -1,4 +1,4 @@
-use std::ops::{Add, AddAssign, Mul, SubAssign};
+use std::ops::{Add, Sub, AddAssign, Mul, SubAssign};
 
 use crate::equation_of_state::EquationOfState;
 
@@ -22,6 +22,14 @@ impl AddAssign for Vec3f64 {
     }
 }
 
+impl Sub for Vec3f64 {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Vec3f64(self.0 - rhs.0, self.1 - rhs.1, self.2 - rhs.2)
+    }
+}
+
 impl SubAssign for Vec3f64 {
     fn sub_assign(&mut self, rhs: Self) {
         self.0 -= rhs.0;
@@ -42,9 +50,17 @@ impl Vec3f64 {
     pub fn zeros() -> Self {
         Vec3f64(0., 0., 0.)
     }
+
+    pub fn pairwise_max(&self, other: Self) -> Self {
+        Vec3f64(self.0.max(other.0), self.1.max(other.1), self.2.max(other.2))
+    }
+
+    pub fn pairwise_min(&self, other: Self) -> Self {
+        Vec3f64(self.0.min(other.0), self.1.min(other.1), self.2.min(other.2))
+    }
 }
 
-#[derive(Default, Debug, Clone, Copy, Add, AddAssign, SubAssign)]
+#[derive(Default, Debug, Clone, Copy, Add, Sub, AddAssign, SubAssign)]
 pub struct Primitives {
     values: Vec3f64,
 }
@@ -85,6 +101,14 @@ impl Primitives {
     pub fn boost(&self, velocity: f64) -> Self {
         Self::new(self.density(), self.velocity() + velocity, self.pressure())
     }
+
+    pub fn pairwise_max(&self, other: Self) -> Self {
+        Self { values: self.values.pairwise_max(other.values) }
+    }
+
+    pub fn pairwise_min(&self, other: Self) -> Self {
+        Self { values: self.values.pairwise_min(other.values) }
+    }
 }
 
 impl Mul<Primitives> for f64 {
@@ -95,7 +119,7 @@ impl Mul<Primitives> for f64 {
     }
 }
 
-#[derive(Default, Debug, Clone, Copy, Add, AddAssign, SubAssign)]
+#[derive(Default, Debug, Clone, Copy, Add, Sub, AddAssign, SubAssign)]
 pub struct Conserved {
     values: Vec3f64,
 }
@@ -127,6 +151,14 @@ impl Conserved {
         let energy = 0.5 * momentum * primitives.velocity() 
                           + eos.gas_energy_from_pressure(primitives.pressure(), volume);
         Self { values: Vec3f64(mass, momentum, energy) }
+    }
+
+    pub fn pairwise_max(&self, other: Self) -> Self {
+        Self { values: self.values.pairwise_max(other.values) }
+    }
+
+    pub fn pairwise_min(&self, other: Self) -> Self {
+        Self { values: self.values.pairwise_min(other.values) }
     }
 }
 

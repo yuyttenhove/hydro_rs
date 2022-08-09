@@ -1,6 +1,6 @@
 use std::{fs::File, io::{BufWriter, Write, Error as IoError}};
 
-use crate::{part::{Part, Primitives, Conserved}, equation_of_state::EquationOfState, riemann_solver::RiemannSolver};
+use crate::{part::{Part, Primitives, Conserved}, equation_of_state::EquationOfState, riemann_solver::RiemannSolver, slope_limiters::{pairwise_limiter, cell_wide_limiter}};
 
 #[derive(Clone, Copy)]
 pub enum Boundary {
@@ -131,13 +131,23 @@ impl Space {
             let dt = left.dt.min(right.dt);
             let dx = 0.5 * (right.x - left.x);
 
+            // Gradient extrapolation
+            let mut primitives_left = pairwise_limiter(
+                left.primitives, 
+                right.primitives, 
+                left.primitives + dx * left.gradients
+            );
+            let mut primitives_right = pairwise_limiter(
+                right.primitives, 
+                left.primitives, 
+                right.primitives - dx * right.gradients
+            );
+
             // Boost the primitives to the frame of reference of the interface:
             let v_face = 0.5 * (left.primitives.velocity() + right.primitives.velocity());
-            let primitives_left = left.primitives.boost(-v_face);
-            let primitives_right = right.primitives.boost(-v_face);
+            primitives_left = primitives_left.boost(-v_face);
+            primitives_right = primitives_right.boost(-v_face);
             let fluxes = solver.solve_for_flux(&primitives_left, &primitives_right, v_face, &self.eos);
-
-            // TODO: gradient extrapolation
 
             self.parts[i].fluxes -= dt * fluxes;
             self.parts[i].gravity_mflux -= dx * fluxes.mass();
@@ -153,8 +163,9 @@ impl Space {
 
     /// drift all particles foward in time for a full time step
     pub fn drift(&mut self) {
+        let eos = self.eos;
         for part in self.parts_mut() {
-            part.drift();
+            part.drift(&eos);
         }
 
         // Handle particles that left the box.
@@ -180,7 +191,24 @@ impl Space {
 
     /// Estimate the gradients for all particles
     pub fn gradient_estimate(&mut self) {
-        // TODO
+        for i in 1..self.num_parts+1 {
+            self.parts[i].gradients = {
+                let left = &self.parts[i-1];
+                let right = &self.parts[i+1];
+                let part = &self.parts[i];
+                let dx = right.x - left.x;
+                let dx_inv = 1. / dx;
+                let dx_left = 0.5 * (left.x - part.x);
+                let dx_right = 0.5 * (right.x - part.x);
+
+                let gradients = dx_inv * (right.primitives - left.primitives);
+                
+                cell_wide_limiter(gradients, part.primitives, left.primitives, right.primitives, dx_left, dx_right)
+            };
+        }
+
+        // Make sure the gradients are applied to the boundary particles
+        self.apply_boundary_condition();
     }
 
     /// Calculate the next timestep for *all* particles
@@ -237,11 +265,6 @@ mod test {
         assert_eq!(space.parts[3].volume, 0.1);
         assert_eq!(space.parts[4].volume, 0.25);
         assert_eq!(space.parts[6].volume, 0.4);
-    }
-
-    #[test]
-    fn test_drift() {
-        todo!();
     }
 
 

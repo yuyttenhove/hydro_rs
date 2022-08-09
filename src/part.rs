@@ -22,9 +22,24 @@ impl Part {
         self.dt
     }
 
-    pub fn drift(&mut self) {
+    pub fn drift(&mut self, eos: &EquationOfState) {
         self.x += self.primitives.velocity() * self.dt;
-        // TODO: primitive extrapolation using gradients
+
+        // Extrapolate primitives in time
+        if let EquationOfState::Ideal { gamma } = eos {
+            let half_dt = 0.5 * self.dt;
+            let rho = self.primitives.density();
+            let rho_inv = 1. / rho;
+            let v = self.primitives.velocity();
+            let p = self.primitives.pressure();
+            self.primitives -= half_dt * Primitives::new(
+                rho * self.gradients.velocity() + v * self.gradients.density(), 
+                v * self.gradients.velocity() + rho_inv * self.gradients.pressure(), 
+                gamma * p * self.gradients.velocity() + v * self.gradients.pressure()
+            )
+        } else {
+            unimplemented!()
+        }
     }
 
     pub fn apply_flux(&mut self) {
