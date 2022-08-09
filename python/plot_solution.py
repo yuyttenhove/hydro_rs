@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 def plot_quantity(ax, xdata, ydata, title):
-    ax.scatter(xdata, ydata, alpha=0.75)
+    ax.scatter(xdata, ydata, s=3, alpha=0.75)
     ax.set_title(title)
     ax.set_xlim([0.5, 1.5])
     mask = (xdata <= 1.5) & (xdata >= 0.5)
@@ -17,14 +17,15 @@ def plot_quantity(ax, xdata, ydata, title):
 
 def main(fname: str):
     data = pd.read_csv(fname, sep="\t")
-    data.columns = ["x", "rho", "v", "P", "a", "u"]
+    data.columns = ["x", "rho", "v", "P", "a", "u", "S"]
 
     fig, axes = plt.subplots(2, 3, figsize=(9, 6))
     plot_quantity(axes[0][0], data["x"], data["v"], "Velocity")
     plot_quantity(axes[0][1], data["x"], data["rho"], "Density")
     plot_quantity(axes[0][2], data["x"], data["P"], "Pressure")
     plot_quantity(axes[1][0], data["x"], data["u"], "Internal energy")
-    plot_quantity(axes[1][1], data["x"], data["a"], "Acceleration")
+    plot_quantity(axes[1][1], data["x"], data["S"], "Entropy")
+    plot_quantity(axes[1][2], data["x"], data["a"], "Acceleration")
 
     plt.savefig("test.png", dpi=300)
     plt.show()

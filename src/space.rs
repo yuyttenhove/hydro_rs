@@ -204,9 +204,12 @@ impl Space {
 
     /// Dump snapshot of space at the current time
     pub fn dump(&mut self, f: &mut BufWriter<File>) -> Result<(), IoError> {
-        writeln!(f, "# x (m)\trho (kg m^-3)\tv (m s^-1)\tP (kg m^-1 s^-2)\ta (m s^-2)\tu (J / kg)")?;
+        writeln!(f, "# x (m)\trho (kg m^-3)\tv (m s^-1)\tP (kg m^-1 s^-2)\ta (m s^-2)\tu (J / kg)\tS")?;
         for part in self.parts() {
-            writeln!(f, "{}\t{}\t{}\t{}\t{}\t{}", part.x, part.primitives.density(), part.primitives.velocity(), part.primitives.pressure(), part.a_grav, part.internal_energy())?;
+            let internal_energy = part.internal_energy();
+            let density = part.primitives.density();
+            let entropy = self.eos.gas_entropy_from_internal_energy(internal_energy, density);
+            writeln!(f, "{}\t{}\t{}\t{}\t{}\t{}\t{}", part.x, density, part.primitives.velocity(), part.primitives.pressure(), part.a_grav, internal_energy, entropy)?;
         }
 
         Ok(())

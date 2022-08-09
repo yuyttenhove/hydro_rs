@@ -25,4 +25,11 @@ impl EquationOfState {
             _ => unimplemented!()
         }
     }
+
+    pub fn gas_entropy_from_internal_energy(&self, internal_energy: f64, density: f64) -> f64 {
+        match self {
+            EquationOfState::Ideal { gamma } => (gamma - 1.) * internal_energy * density.powf(1. - gamma),
+            _ => unimplemented!()
+        }
+    }
 }
