@@ -4,7 +4,7 @@ fn cell_wide_limiter_single_quantity(max: f64, min: f64, emax: f64, emin: f64) -
     if emax == 0. || emin == 0. {
         1.
     } else {
-        (1.0f64).min(0.5 * (max / emax).min(min / emin))
+        (1.0f64).min((max / emax).min(min / emin))
     }
 }
 
