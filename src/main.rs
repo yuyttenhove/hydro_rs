@@ -51,7 +51,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ic = sod_shock(num_part, box_size);
     let boundary = if periodic { Boundary::Periodic } else { Boundary::Reflective };
     let mut space = Space::from_ic(&ic, boundary, box_size, gamma);
-    let runner = OptimalRunner::new(cfl_criterion);
+    let runner = DefaultRunner::new(cfl_criterion);
     let mut engine = Engine::init(&runner, gamma, t_end, t_between_snaps, prefix);
     
     // run

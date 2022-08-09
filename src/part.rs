@@ -17,9 +17,14 @@ pub struct Part {
 }
 
 impl Part {
-    pub fn timestep(&mut self, cfl_criterion: f64) -> f64 {
-        self.dt = 1e-4;
-        self.dt
+    pub fn timestep(&mut self, cfl_criterion: f64, eos: &EquationOfState) -> f64 {
+        let v_max = eos.sound_speed(self.primitives.pressure(), 1. / self.primitives.density());
+
+        if v_max > 0. {
+            cfl_criterion * self.volume / v_max
+        } else {
+            f64::INFINITY
+        }
     }
 
     pub fn drift(&mut self, eos: &EquationOfState) {

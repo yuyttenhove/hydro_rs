@@ -214,9 +214,16 @@ impl Space {
     /// Calculate the next timestep for *all* particles
     pub fn timestep(&mut self, cfl_criterion: f64) -> f64 {
         let mut min_dt = f64::MAX;
+        let eos = self.eos;
         for part in self.parts.iter_mut() {
-            min_dt = min_dt.min(part.timestep(cfl_criterion));
+            min_dt = min_dt.min(part.timestep(cfl_criterion, &eos));
         }
+
+        // TODO: change this so that particles can have different timesteps
+        for part in self.parts.iter_mut() {
+            part.dt = min_dt;
+        }
+
         min_dt
     }
 
