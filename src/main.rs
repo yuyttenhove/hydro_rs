@@ -25,6 +25,7 @@ mod riemann_solver;
 mod slope_limiters;
 mod space;
 mod time_integration;
+mod timeline;
 mod utils;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -74,5 +75,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // run
     engine.run(&mut space)?;
 
+    println!("Done!");
     Ok(())
 }

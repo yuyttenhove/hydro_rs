@@ -1,6 +1,6 @@
 use std::{fs::File, io::{BufWriter, Error as IoError}};
 
-use crate::{space::{Space}, riemann_solver::RiemannSolver, time_integration::Runner};
+use crate::{space::{Space}, riemann_solver::RiemannSolver, time_integration::Runner, timeline::MAX_NR_TIMESTEPS};
 
 pub struct Engine<'a> {
     runner: &'a dyn Runner,
@@ -8,6 +8,7 @@ pub struct Engine<'a> {
     t_end: f64,
     t_current: f64,
     ti_current: u64,
+    time_base: f64,
     t_dump: f64,
     t_between_snaps: f64,
     snap: u16,
@@ -19,7 +20,13 @@ impl<'a> Engine<'a> {
     pub fn init(runner: &'a dyn Runner, gamma: f64, t_end: f64, t_between_snaps: f64, snapshot_prefix: &str) -> Self {
         let solver = RiemannSolver::new(gamma);
         Self { 
-            runner, solver, t_end , t_current: 0.0, ti_current: 0, t_between_snaps, t_dump: 0.0, snap: 0, 
+            runner, solver, t_end,
+            t_current: 0.0,
+            ti_current: 0,
+            time_base: t_end / MAX_NR_TIMESTEPS as f64,
+            t_between_snaps,
+            t_dump: 0.0,
+            snap: 0,
             snapshot_prefix: snapshot_prefix.to_string(),
         }
     }
