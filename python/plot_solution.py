@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 
-def plot_quantity(ax, xdata, ydata, title):
+def plot_quantity(ax: plt.Axes, xdata: np.ndarray, ydata: np.ndarray, title: str):
     ax.scatter(xdata, ydata, s=3, alpha=0.75)
     ax.set_title(title)
     ax.set_xlim([0.5, 1.5])
