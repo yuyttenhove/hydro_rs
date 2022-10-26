@@ -31,7 +31,7 @@ pub const fn get_integer_timestep(bin: Timebin) -> IntegerTime {
 ///
 /// log_2(x) = (number of bits in the type) - (number of leading 0-bits in x) - 1
 pub const fn get_time_bin(time_step: IntegerTime) -> Timebin {
-    ((8 * size_of::<IntegerTime>()) as u32 - time_step.leading_ones() - 1) as i8
+    ((8 * size_of::<IntegerTime>()) as u32 - time_step.leading_zeros() - 2) as i8
 }
 
 /// Returns the integer time corresponding to the start of the time-step
@@ -126,4 +126,17 @@ pub fn make_integer_timestep(dt: f64, old_bin: Timebin, min_ngb_bin: Timebin, ti
 
 pub fn make_timestep(dti: IntegerTime, time_base: f64) -> f64 {
     dti as f64 * time_base
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_conversions() {
+        let bin = 8;
+        let ti = get_integer_timestep(bin);
+        let bin2 = get_time_bin(ti);
+        assert_eq!(bin, bin2);
+    }
 }

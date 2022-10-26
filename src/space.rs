@@ -293,7 +293,14 @@ impl Space {
         for part in self.parts.iter_mut() {
             if part.is_active(engine) {
                 // Compute new timestep
-                let dt = part.timestep(engine.cfl_criterion(), &self.eos);
+                let mut dt = part.timestep(engine.cfl_criterion(), &self.eos);
+                dt = dt.min(engine.dt_max());
+                assert!(
+                    dt > engine.dt_min(),
+                    "Error: particle requested dt ({}) below dt_min ({})",
+                    dt,
+                    engine.dt_min()
+                );
                 let dti = make_integer_timestep(
                     dt,
                     part.timebin,

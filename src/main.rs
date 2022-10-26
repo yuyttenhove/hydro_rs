@@ -44,6 +44,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let box_size = config["initial_conditions"]["box_size"]
         .as_f64()
         .unwrap_or(1.);
+    let dt_min = config["time_integration"]["dt_min"]
+        .as_f64()
+        .ok_or(ConfigError::MissingParameter("time_integration:t_end"))?;
+    let dt_max = config["time_integration"]["dt_max"]
+        .as_f64()
+        .ok_or(ConfigError::MissingParameter("time_integration:t_end"))?;
     let t_end = config["time_integration"]["t_end"]
         .as_f64()
         .ok_or(ConfigError::MissingParameter("time_integration:t_end"))?;
@@ -70,9 +76,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         Boundary::Reflective
     };
-    let mut space = Space::from_ic(&ic, boundary, box_size, gamma);
+
     let runner = OptimalRunner;
-    let mut engine = Engine::init(&runner, gamma, cfl_criterion, t_end, t_between_snaps, prefix);
+    let mut engine = Engine::init(
+        &runner,
+        gamma,
+        cfl_criterion,
+        dt_min,
+        dt_max,
+        t_end,
+        t_between_snaps,
+        prefix,
+    );
+    let mut space = Space::from_ic(&ic, boundary, box_size, gamma);
 
     // run
     engine.run(&mut space)?;
