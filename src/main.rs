@@ -13,6 +13,8 @@ use space::{Boundary, Space};
 use time_integration::DefaultRunner;
 use yaml_rust::YamlLoader;
 
+use crate::time_integration::OptimalRunner;
+
 mod cli;
 mod engine;
 mod equation_of_state;
@@ -69,8 +71,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Boundary::Reflective
     };
     let mut space = Space::from_ic(&ic, boundary, box_size, gamma);
-    let runner = DefaultRunner::new(cfl_criterion);
-    let mut engine = Engine::init(&runner, gamma, t_end, t_between_snaps, prefix);
+    let runner = OptimalRunner;
+    let mut engine = Engine::init(&runner, gamma, cfl_criterion, t_end, t_between_snaps, prefix);
 
     // run
     engine.run(&mut space)?;

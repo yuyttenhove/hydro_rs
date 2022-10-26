@@ -1,4 +1,4 @@
-use crate::equation_of_state::EquationOfState;
+use crate::{equation_of_state::EquationOfState, timeline::*, engine::Engine};
 pub use crate::physical_quantities::{Primitives, Conserved};
 
 #[derive(Default, Debug, Clone)]
@@ -11,6 +11,7 @@ pub struct Part {
 
     pub volume: f64,
     pub x: f64,
+    pub timebin: Timebin,
     pub dt: f64,
 
     pub a_grav: f64,
@@ -27,12 +28,12 @@ impl Part {
         }
     }
 
-    pub fn drift(&mut self, eos: &EquationOfState) {
-        self.x += self.primitives.velocity() * self.dt;
+    pub fn drift(&mut self, dt: f64, eos: &EquationOfState) {
+        self.x += self.primitives.velocity() * dt;
 
         // Extrapolate primitives in time
         if let EquationOfState::Ideal { gamma } = eos {
-            let half_dt = 0.5 * self.dt;
+            let half_dt = 0.5 * dt;
             let rho = self.primitives.density();
             let rho_inv = 1. / rho;
             let v = self.primitives.velocity();
@@ -58,5 +59,13 @@ impl Part {
 
     pub fn internal_energy(&self) -> f64 {
         (self.conserved.energy() - 0.5 * self.conserved.momentum() * self.primitives.velocity()) / self.conserved.mass()
+    }
+
+    pub fn is_active(&self, engine: &Engine) -> bool {
+        return self.timebin <= get_max_active_bin(engine.ti_current())
+    }
+
+    pub fn set_timebin(&mut self, new_dti: IntegerTime) {
+        self.timebin = get_time_bin(new_dti);
     }
 }

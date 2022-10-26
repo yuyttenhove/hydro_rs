@@ -8,7 +8,7 @@ snapshots:
   prefix: "sod_shock_"
 
 initial_conditions:
-  num_part: 500
+  num_part: 250
   box_size: 2.
   periodic: true
 

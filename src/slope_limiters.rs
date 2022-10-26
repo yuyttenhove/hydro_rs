@@ -54,7 +54,7 @@ fn pairwise_limiter_single_quantity(q_l: f64, q_r: f64, q_dash: f64) -> f64 {
     } else {
 
         let q_max = q_l.max(q_r);
-        let qplu = if ((q_max + delta1) * q_max > 0.) {
+        let qplu = if (q_max + delta1) * q_max > 0. {
                 q_max + delta1
             } else {
                 q_max * q_max.abs() / (q_max.abs() + delta1)

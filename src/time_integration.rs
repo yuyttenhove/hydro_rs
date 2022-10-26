@@ -1,78 +1,60 @@
-use crate::{engine::Engine, space::Space};
+use crate::{engine::Engine, space::Space, timeline::IntegerTime};
 
 pub trait Runner {
-    fn step(&self, engine: &mut Engine, space: &mut Space) -> f64;
+    fn step(&self, engine: &Engine, space: &mut Space) -> IntegerTime;
 }
 
-pub struct DefaultRunner {
-    cfl_criterion: f64,
-}
-
-impl DefaultRunner {
-    pub fn new(cfl_criterion: f64) -> Self {
-        Self { cfl_criterion }
-    }
-}
+pub struct DefaultRunner;
 
 impl Runner for DefaultRunner {
-    fn step(&self, engine: &mut Engine, space: &mut Space) -> f64 {
+    fn step(&self, engine: &Engine, space: &mut Space) -> IntegerTime {
         
-        // Calculate end of timestep for all active particles
-        let timestep = space.timestep(self.cfl_criterion);
+        space.kick1(engine);
 
-        space.kick1();
-
-        space.drift();
+        space.drift(engine);
 
         space.sort();
 
-        space.volume_calculation();
+        space.volume_calculation(engine);
 
-        space.convert_conserved_to_primitive();
+        space.convert_conserved_to_primitive(engine);
 
-        space.gradient_estimate();
+        space.gradient_estimate(engine);
 
-        space.flux_exchange(&engine.solver);
+        space.flux_exchange(engine);
 
-        space.kick2();
+        space.flux_apply(engine);
 
-        timestep
+        space.kick2(engine);
+
+        space.timestep(engine)
     }
 }
 
 
-pub struct OptimalRunner {
-    cfl_criterion: f64,
-}
-
-impl OptimalRunner {
-    pub fn new(cfl_criterion: f64) -> Self {
-        Self { cfl_criterion }
-    }
-}
+pub struct OptimalRunner;
 
 impl Runner for OptimalRunner {
-    fn step(&self, engine: &mut Engine, space: &mut Space) -> f64 {
-        
-        let timestep = space.timestep(self.cfl_criterion);
+    fn step(&self, engine: &Engine, space: &mut Space) -> IntegerTime {
 
-        space.kick1();
+        space.kick1(engine);
 
-        space.drift();
+        space.drift(engine);
 
         space.sort();
 
-        space.volume_calculation();
+        space.volume_calculation(engine);
 
-        space.flux_exchange(&engine.solver);
+        space.flux_exchange(engine);
 
-        space.convert_conserved_to_primitive();
+        space.flux_apply(engine);
 
-        space.gradient_estimate();
+        space.convert_conserved_to_primitive(engine);
 
-        space.kick2();
+        space.gradient_estimate(engine);
 
-        timestep
-        
+        space.kick2(engine);
+
+        space.timestep(engine)
     }
 }

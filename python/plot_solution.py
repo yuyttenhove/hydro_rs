@@ -1,5 +1,5 @@
 import matplotlib.pyplot as plt
-from numpy import block
+import numpy as np
 import pandas as pd
 import sys
 from pathlib import Path
@@ -27,7 +27,7 @@ def main(fname: str):
     plot_quantity(axes[1][1], data["x"], data["S"], "Entropy")
     plot_quantity(axes[1][2], data["x"], data["a"], "Acceleration")
 
-    plt.savefig("test.png", dpi=300)
+    plt.savefig(Path(fname).parent.parent / "test.png", dpi=300)
     plt.show()
 
 
@@ -35,6 +35,5 @@ if __name__ == "__main__":
     try:
         fname = sys.argv[1]
     except IndexError:
-        pass
-    else:
-        main(fname)
+        fname = "../run/output/sod_shock_0005.txt"
+    main(fname)
