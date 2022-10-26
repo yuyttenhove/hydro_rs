@@ -324,12 +324,12 @@ impl Space {
         ti_end_min
     }
 
-    /// Apply the first half kick to the particles
+    /// Apply the first half kick (gravity) to the particles
     pub fn kick1(&mut self, engine: &Engine) {
         // TODO
     }
 
-    /// Apply the second half kick to the particles
+    /// Apply the second half kick (gravity) to the particles
     pub fn kick2(&mut self, engine: &Engine) {
         // TODO
     }
@@ -360,6 +360,23 @@ impl Space {
         }
 
         Ok(())
+    }
+
+    pub fn self_check(&self) {
+        for part in self.parts() {
+            debug_assert!(part.x.is_finite());
+            debug_assert!(part.primitives.density().is_finite());
+            debug_assert!(part.primitives.velocity().is_finite());
+            debug_assert!(part.primitives.pressure().is_finite());
+            debug_assert!(part.conserved.mass().is_finite());
+            debug_assert!(part.conserved.momentum().is_finite());
+            debug_assert!(part.conserved.energy().is_finite());
+            debug_assert!(part.fluxes.mass().is_finite());
+            debug_assert!(part.fluxes.momentum().is_finite());
+            debug_assert!(part.fluxes.energy().is_finite());
+            debug_assert!(part.conserved.mass() >= 0.);
+            debug_assert!(part.conserved.energy() >= 0.);
+        }
     }
 }
 

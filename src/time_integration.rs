@@ -47,7 +47,9 @@ impl Runner {
                 space.convert_conserved_to_primitive(engine);
                 space.gradient_estimate(engine);
                 space.kick2(engine);
-                space.timestep(engine)
+                let ti_next = space.timestep(engine);
+                space.self_check();
+                ti_next
             },
         }
     }

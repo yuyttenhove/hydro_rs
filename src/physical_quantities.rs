@@ -1,10 +1,10 @@
-use std::ops::{Add, Sub, AddAssign, Mul, SubAssign};
+use std::ops::{Add, Sub, AddAssign, Mul, SubAssign, Index};
 
 use crate::equation_of_state::EquationOfState;
 
 
 #[derive(Default, Debug, Clone, Copy)]
-struct Vec3f64(f64, f64, f64);
+pub struct Vec3f64(f64, f64, f64);
 
 impl Add for Vec3f64 {
     type Output = Self;
@@ -60,6 +60,19 @@ impl Vec3f64 {
     }
 }
 
+impl Index<usize> for Vec3f64 {
+    type Output = f64;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        match index {
+            0 => &self.0,
+            1 => &self.1,
+            2 => &self.2,
+            _ => panic!("Index out of bounds for Vec3f64!"),
+        }
+    }
+}
+
 #[derive(Default, Debug, Clone, Copy, Add, Sub, AddAssign, SubAssign)]
 pub struct Primitives {
     values: Vec3f64,
@@ -92,7 +105,7 @@ impl Primitives {
             let velocity = conserved.momentum() / conserved.mass();
             let pressure = eos.gas_pressure_from_energy(
                 conserved.energy() - 0.5 * conserved.momentum() * velocity, volume);
-            Self { values: Vec3f64(density, velocity, pressure)}
+            Self { values: Vec3f64(density, velocity, pressure) }
         } else {
             Self::vacuum()
         }
@@ -108,6 +121,25 @@ impl Primitives {
 
     pub fn pairwise_min(&self, other: Self) -> Self {
         Self { values: self.values.pairwise_min(other.values) }
+    }
+
+    pub fn values(&self) -> Vec3f64 {
+        self.values
+    }
+
+    pub fn check_physical(&mut self) {
+        if self.density() < 0. {
+            eprintln!("Negative density encountered, resetting to 0!");
+            self.values.0 = 0.;
+        }
+        if self.pressure() < 0. {
+            eprintln!("Negative density encountered, resetting to 0!");
+            self.values.2 = 0.;
+        }
+
+        debug_assert!(self.density().is_finite(), "Infinite density after extrapolation!");
+        debug_assert!(self.velocity().is_finite(), "Infinite velocity after extrapolation!");
+        debug_assert!(self.pressure().is_finite(), "Infinite pressure after extrapolation!");
     }
 }
 
@@ -148,8 +180,8 @@ impl Conserved {
     pub fn from_primitives(primitives: &Primitives, volume: f64, eos: EquationOfState) -> Self {
         let mass = primitives.density() * volume;
         let momentum = mass * primitives.velocity();
-        let energy = 0.5 * momentum * primitives.velocity() 
-                          + eos.gas_energy_from_pressure(primitives.pressure(), volume);
+        let energy = 0.5 * momentum * primitives.velocity()
+            + eos.gas_energy_from_pressure(primitives.pressure(), volume);
         Self { values: Vec3f64(mass, momentum, energy) }
     }
 

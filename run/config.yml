@@ -4,6 +4,8 @@ time_integration:
   t_min: 1e-8
   t_end: 0.5
   cfl_criterion: 0.3
+#   runner: "OptimalOrderHalfDrift"
+#   runner: "OptimalOrder"
   runner: "Default"
 
 snapshots:
