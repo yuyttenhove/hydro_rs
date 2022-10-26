@@ -5,8 +5,8 @@ use std::{
 
 use crate::{riemann_solver::RiemannSolver, space::Space, time_integration::Runner, timeline::*};
 
-pub struct Engine<'a> {
-    runner: &'a dyn Runner,
+pub struct Engine {
+    runner: Runner,
     pub solver: RiemannSolver,
     t_end: f64,
     t_current: f64,
@@ -23,10 +23,10 @@ pub struct Engine<'a> {
     snapshot_prefix: String,
 }
 
-impl<'a> Engine<'a> {
+impl Engine {
     /// Setup a simulation by initializing a new engine struct for initial conditions
     pub fn init(
-        runner: &'a dyn Runner,
+        runner: Runner,
         gamma: f64,
         cfl_criterion: f64,
         dt_min: f64,

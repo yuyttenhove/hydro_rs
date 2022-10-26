@@ -1,5 +1,5 @@
-use crate::{equation_of_state::EquationOfState, timeline::*, engine::Engine};
-pub use crate::physical_quantities::{Primitives, Conserved};
+pub use crate::physical_quantities::{Conserved, Primitives};
+use crate::{engine::Engine, equation_of_state::EquationOfState, timeline::*};
 
 #[derive(Default, Debug, Clone)]
 pub struct Part {
@@ -28,21 +28,24 @@ impl Part {
         }
     }
 
-    pub fn drift(&mut self, dt: f64, eos: &EquationOfState) {
-        self.x += self.primitives.velocity() * dt;
+    /// Drifts the particle forward in time over a time `dt_drift`.
+    ///
+    /// Also predicts the primitive quantities forward in time over a time dt_extrapolate using the Euler equations.
+    pub fn drift(&mut self, dt_drift: f64, dt_extrapolate: f64, eos: &EquationOfState) {
+        self.x += self.primitives.velocity() * dt_drift;
 
         // Extrapolate primitives in time
         if let EquationOfState::Ideal { gamma } = eos {
-            let half_dt = 0.5 * dt;
             let rho = self.primitives.density();
             let rho_inv = 1. / rho;
             let v = self.primitives.velocity();
             let p = self.primitives.pressure();
-            self.primitives -= half_dt * Primitives::new(
-                rho * self.gradients.velocity() + v * self.gradients.density(), 
-                v * self.gradients.velocity() + rho_inv * self.gradients.pressure(), 
-                gamma * p * self.gradients.velocity() + v * self.gradients.pressure()
-            )
+            self.primitives -= dt_extrapolate
+                * Primitives::new(
+                    rho * self.gradients.velocity() + v * self.gradients.density(),
+                    v * self.gradients.velocity() + rho_inv * self.gradients.pressure(),
+                    gamma * p * self.gradients.velocity() + v * self.gradients.pressure(),
+                )
         } else {
             unimplemented!()
         }
@@ -58,11 +61,12 @@ impl Part {
     }
 
     pub fn internal_energy(&self) -> f64 {
-        (self.conserved.energy() - 0.5 * self.conserved.momentum() * self.primitives.velocity()) / self.conserved.mass()
+        (self.conserved.energy() - 0.5 * self.conserved.momentum() * self.primitives.velocity())
+            / self.conserved.mass()
     }
 
     pub fn is_active(&self, engine: &Engine) -> bool {
-        return self.timebin <= get_max_active_bin(engine.ti_current())
+        return self.timebin <= get_max_active_bin(engine.ti_current());
     }
 
     pub fn set_timebin(&mut self, new_dti: IntegerTime) {

@@ -10,10 +10,9 @@ use engine::Engine;
 use errors::ConfigError;
 use initial_conditions::sod_shock;
 use space::{Boundary, Space};
-use time_integration::DefaultRunner;
 use yaml_rust::YamlLoader;
 
-use crate::time_integration::OptimalRunner;
+use crate::time_integration::Runner;
 
 mod cli;
 mod engine;
@@ -77,9 +76,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Boundary::Reflective
     };
 
-    let runner = OptimalRunner;
+    let runner_cfg = config["time_integration"]["runner"].as_str().ok_or(ConfigError::MissingParameter("time_integration: runner"))?;
+    let runner = match runner_cfg {
+        "Default" => Ok(Runner::Default),
+        "OptimalOrder" => Ok(Runner::OptimalOrder),
+        "OptimalOrderHalfDrift" => Ok(Runner::OptimalOrderHalfDrift),
+        _ => Err(ConfigError::UnknownRunner(runner_cfg.to_string())),
+    }?;
     let mut engine = Engine::init(
-        &runner,
+        runner,
         gamma,
         cfl_criterion,
         dt_min,

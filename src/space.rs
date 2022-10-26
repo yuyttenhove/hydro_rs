@@ -225,10 +225,10 @@ impl Space {
     }
 
     /// drift all particles foward over the given timestep
-    pub fn drift(&mut self, engine: &Engine) {
+    pub fn drift(&mut self, dt_drift: f64, dt_extrapolate: f64) {
         let eos = self.eos;
         for part in self.parts_mut() {
-            part.drift(engine.dt(), &eos);
+            part.drift(dt_drift, dt_extrapolate, &eos);
         }
 
         // Handle particles that left the box.

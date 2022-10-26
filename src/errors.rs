@@ -1,17 +1,25 @@
-use std::{error::Error, fmt::{Display, Debug}};
+use std::{
+    error::Error,
+    fmt::{Debug, Display},
+};
 
 #[derive(Debug)]
 pub enum ConfigError<'a> {
-    MissingParameter(&'a str)
+    MissingParameter(&'a str),
+    UnknownRunner(String),
 }
 
 impl<'a> Display for ConfigError<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ConfigError::MissingParameter(name) 
-                => write!(f, "Missing required parameter in configuration: {}", name),
+            ConfigError::MissingParameter(name) => {
+                write!(f, "Missing required parameter in configuration: {}", name)
+            }
+            ConfigError::UnknownRunner(name) => {
+                write!(f, "Unknown type of runner configured: {}", name)
+            }
         }
     }
 }
 
-impl<'a> Error for ConfigError<'a>{}
+impl<'a> Error for ConfigError<'a> {}
