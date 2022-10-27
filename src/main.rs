@@ -8,11 +8,10 @@ use clap::Parser;
 use cli::Cli;
 use engine::Engine;
 use errors::ConfigError;
-use initial_conditions::sod_shock;
 use space::{Boundary, Space};
 use yaml_rust::YamlLoader;
 
-use crate::time_integration::Runner;
+use crate::{initial_conditions::create_ics, time_integration::get_runner};
 
 mod cli;
 mod engine;
@@ -37,6 +36,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let docs = YamlLoader::load_from_str(&fs::read_to_string(args.config)?)?;
     let config = &docs[0];
 
+    let ic_kind = config["initial_conditions"]["type"]
+        .as_str()
+        .ok_or(ConfigError::MissingParameter("initial_conditions:type"))?
+        .to_string();
     let num_part = config["initial_conditions"]["num_part"]
         .as_i64()
         .unwrap_or(100) as usize;
@@ -55,12 +58,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cfl_criterion = config["time_integration"]["cfl_criterion"].as_f64().ok_or(
         ConfigError::MissingParameter("time_integration:cfl_criterion"),
     )?;
+    let runner_kind = config["time_integration"]["runner"]
+        .as_str()
+        .ok_or(ConfigError::MissingParameter("time_integration: runner"))?
+        .to_string();
     let t_between_snaps = config["snapshots"]["t_between_snaps"]
         .as_f64()
         .ok_or(ConfigError::MissingParameter("snapshots:t_between_snaps"))?;
     let prefix = config["snapshots"]["prefix"]
         .as_str()
         .ok_or(ConfigError::MissingParameter("snapshots:t_between_snaps"))?;
+    let t_status = config["engine"]["t_status"]
+        .as_f64()
+        .ok_or(ConfigError::MissingParameter("engine:t_status"))?;
     let periodic = config["initial_conditions"]["periodic"]
         .as_bool()
         .unwrap_or(true);
@@ -69,20 +79,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or(5. / 3.);
 
     // Setup simulation
-    let ic = sod_shock(num_part, box_size);
+    let ic = create_ics(ic_kind, num_part, box_size)?;
     let boundary = if periodic {
         Boundary::Periodic
     } else {
         Boundary::Reflective
     };
+    let mut space = Space::from_ic(&ic, boundary, box_size, gamma);
 
-    let runner_cfg = config["time_integration"]["runner"].as_str().ok_or(ConfigError::MissingParameter("time_integration: runner"))?;
-    let runner = match runner_cfg {
-        "Default" => Ok(Runner::Default),
-        "OptimalOrder" => Ok(Runner::OptimalOrder),
-        "OptimalOrderHalfDrift" => Ok(Runner::OptimalOrderHalfDrift),
-        _ => Err(ConfigError::UnknownRunner(runner_cfg.to_string())),
-    }?;
+    let runner = get_runner(runner_kind)?;
     let mut engine = Engine::init(
         runner,
         gamma,
@@ -91,9 +96,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         dt_max,
         t_end,
         t_between_snaps,
+        t_status,
         prefix,
     );
-    let mut space = Space::from_ic(&ic, boundary, box_size, gamma);
 
     // run
     engine.run(&mut space)?;

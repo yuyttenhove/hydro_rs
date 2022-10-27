@@ -19,6 +19,8 @@ pub struct Engine {
     dt_max: f64,
     ti_snap: IntegerTime,
     ti_between_snaps: IntegerTime,
+    ti_status: IntegerTime,
+    ti_between_status: IntegerTime,
     snap: u16,
     snapshot_prefix: String,
 }
@@ -33,6 +35,7 @@ impl Engine {
         dt_max: f64,
         t_end: f64,
         t_between_snaps: f64,
+        t_status: f64,
         snapshot_prefix: &str,
     ) -> Self {
         let solver = RiemannSolver::new(gamma);
@@ -50,8 +53,10 @@ impl Engine {
             cfl_criterion,
             dt_min,
             dt_max,
-            ti_between_snaps: (t_between_snaps * time_base_inv) as IntegerTime,
             ti_snap: 0,
+            ti_between_snaps: (t_between_snaps * time_base_inv) as IntegerTime,
+            ti_status: 0,
+            ti_between_status: (t_status * time_base_inv) as IntegerTime,
             snap: 0,
             snapshot_prefix: snapshot_prefix.to_string(),
         }
@@ -63,7 +68,21 @@ impl Engine {
         self.dump(space)?;
 
         while self.t_current < self.t_end {
+            // Print info?
+            if self.ti_current >= self.ti_status {
+                println!(
+                    "Running at t={:.4e}. Stepping forward in time by: {:.4e}",
+                    self.t_current,
+                    make_timestep(self.ti_current - self.ti_old, self.time_base)
+                );
+                while self.ti_current >= self.ti_status {
+                    self.ti_status += self.ti_between_status;
+                }
+            }
+
+            // take a step
             self.step(space);
+
             // Do we need to save a snapshot?
             if self.ti_current == self.ti_snap {
                 self.dump(space)?;
@@ -77,11 +96,6 @@ impl Engine {
     }
 
     fn step(&mut self, space: &mut Space) {
-        println!(
-            "Running at t={:.4e}. Stepping forward in time by: {:.4e}",
-            self.t_current,
-            make_timestep(self.ti_current - self.ti_old, self.time_base)
-        );
         let ti_next = self.ti_snap.min(self.runner.step(self, space));
         let dti = ti_next - self.ti_current;
         self.ti_old = self.ti_current;

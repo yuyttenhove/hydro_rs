@@ -1,9 +1,18 @@
-use crate::{engine::Engine, space::Space, timeline::IntegerTime};
+use crate::{engine::Engine, space::Space, timeline::IntegerTime, errors::ConfigError};
 
 pub enum Runner {
     Default,
     OptimalOrder,
     OptimalOrderHalfDrift,
+}
+
+pub fn get_runner<'a>(kind: String) -> Result<Runner, ConfigError<'a>> {
+    match kind.as_str() {
+        "Default" => Ok(Runner::Default),
+        "OptimalOrder" => Ok(Runner::OptimalOrder),
+        "OptimalOrderHalfDrift" => Ok(Runner::OptimalOrderHalfDrift),
+        _ => Err(ConfigError::UnknownRunner(kind.to_string())),
+    }
 }
 
 impl Runner {
