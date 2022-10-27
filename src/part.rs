@@ -94,6 +94,13 @@ impl Part {
         debug_assert!(self.primitives.pressure().is_finite(), "Infinite pressure detected!");
     }
 
+    pub fn timestep_limit(&mut self, new_bin: Timebin, engine: &Engine) {
+        self.timebin = new_bin;
+
+        // TODO: Rewind kick1 if necessary
+        // TODO: Reapply kick1 if necessary
+    }
+
     pub fn internal_energy(&self) -> f64 {
         (self.conserved.energy() - 0.5 * self.conserved.momentum() * self.primitives.velocity())
             / self.conserved.mass()

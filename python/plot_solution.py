@@ -35,5 +35,5 @@ if __name__ == "__main__":
     try:
         fname = sys.argv[1]
     except IndexError:
-        fname = "../run/output/sod_shock_0007.txt"
+        fname = "../run/output/sod_shock_0005.txt"
     main(fname)

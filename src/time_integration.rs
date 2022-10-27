@@ -20,7 +20,10 @@ impl Runner {
                 space.flux_exchange(engine);
                 space.flux_apply(engine);
                 space.kick2(engine);
-                space.timestep(engine)
+                let ti_next = space.timestep(engine);
+                space.timestep_limiter(engine);  // Note: this can never decrease ti_next
+                space.self_check();
+                ti_next
             },
             Runner::OptimalOrder => {
                 let dt = engine.dt();
@@ -33,7 +36,10 @@ impl Runner {
                 space.convert_conserved_to_primitive(engine);
                 space.gradient_estimate(engine);
                 space.kick2(engine);
-                space.timestep(engine)
+                let ti_next = space.timestep(engine);
+                space.timestep_limiter(engine);  // Note: this can never decrease ti_next
+                space.self_check();
+                ti_next
             },
             Runner::OptimalOrderHalfDrift => {
                 let dt = 0.5 * engine.dt();
@@ -48,6 +54,7 @@ impl Runner {
                 space.gradient_estimate(engine);
                 space.kick2(engine);
                 let ti_next = space.timestep(engine);
+                space.timestep_limiter(engine);  // Note: this can never decrease ti_next
                 space.self_check();
                 ti_next
             },

@@ -10,7 +10,7 @@ use crate::{
     slope_limiters::{cell_wide_limiter, pairwise_limiter},
     timeline::{
         get_integer_time_end, make_integer_timestep, make_timestep, IntegerTime, MAX_NR_TIMESTEPS,
-        NUM_TIME_BINS,
+        NUM_TIME_BINS, TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN,
     },
 };
 
@@ -322,6 +322,29 @@ impl Space {
             "Next sync point before current time!"
         );
         ti_end_min
+    }
+
+    /// Apply the timestep limiter to the particles
+    pub fn timestep_limiter(&mut self, engine: &Engine) {
+
+        for i in 1..self.num_parts + 1 {
+            // Get a slice of neighbouring parts
+            let parts = &mut self.parts[i-1..=i+1];
+
+            // This particles timebin
+            let mut new_bin = parts[1].timebin;
+
+            if parts[0].is_active(engine) {
+                new_bin = new_bin.min(parts[0].timebin + TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN);
+            }
+            if parts[2].is_active(engine) {
+                new_bin = new_bin.min(parts[0].timebin + TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN);
+            }
+
+            if new_bin != parts[1].timebin {
+                parts[1].timestep_limit(new_bin, engine);
+            }
+        }
     }
 
     /// Apply the first half kick (gravity) to the particles
