@@ -5,6 +5,7 @@ use crate::{engine::Engine, equation_of_state::EquationOfState, timeline::*};
 pub struct Part {
     pub primitives: Primitives,
     pub gradients: Primitives,
+    pub extrapolations: Primitives,
     pub conserved: Conserved,
     pub fluxes: Conserved,
     pub gravity_mflux: f64,
@@ -43,12 +44,12 @@ impl Part {
                 let rho_inv = 1. / rho;
                 let v = self.primitives.velocity();
                 let p = self.primitives.pressure();
-                self.primitives -= dt_extrapolate
+                self.extrapolations -= dt_extrapolate
                     * Primitives::new(
-                    rho * self.gradients.velocity() + v * self.gradients.density(),
-                    v * self.gradients.velocity() + rho_inv * self.gradients.pressure(),
-                    gamma * p * self.gradients.velocity() + v * self.gradients.pressure(),
-                )
+                        rho * self.gradients.velocity() + v * self.gradients.density(),
+                        v * self.gradients.velocity() + rho_inv * self.gradients.pressure(),
+                        gamma * p * self.gradients.velocity() + v * self.gradients.pressure(),
+                    )
             }
         } else {
             unimplemented!()
@@ -89,9 +90,18 @@ impl Part {
             Primitives::from_conserved(&self.conserved, self.volume, eos)
         };
 
-        debug_assert!(self.primitives.density().is_finite(), "Infinite density detected!");
-        debug_assert!(self.primitives.velocity().is_finite(), "Infinite velocity detected!");
-        debug_assert!(self.primitives.pressure().is_finite(), "Infinite pressure detected!");
+        debug_assert!(
+            self.primitives.density().is_finite(),
+            "Infinite density detected!"
+        );
+        debug_assert!(
+            self.primitives.velocity().is_finite(),
+            "Infinite velocity detected!"
+        );
+        debug_assert!(
+            self.primitives.pressure().is_finite(),
+            "Infinite pressure detected!"
+        );
     }
 
     pub fn timestep_limit(&mut self, new_bin: Timebin, engine: &Engine) {

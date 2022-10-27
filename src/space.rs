@@ -187,12 +187,12 @@ impl Space {
             let mut primitives_left = pairwise_limiter(
                 left.primitives,
                 right.primitives,
-                left.primitives + dx * left.gradients,
+                left.primitives + dx * left.gradients + left.extrapolations,
             );
             let mut primitives_right = pairwise_limiter(
                 right.primitives,
                 left.primitives,
-                right.primitives - dx * right.gradients,
+                right.primitives - dx * right.gradients + right.extrapolations,
             );
 
             // Boost the primitives to the frame of reference of the interface:
@@ -220,6 +220,7 @@ impl Space {
         for part in self.parts_mut() {
             if part.is_active(engine) {
                 part.apply_flux();
+                part.extrapolations = Primitives::vacuum();
             }
         }
     }
