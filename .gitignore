@@ -4,3 +4,4 @@
 /target
 run/output
 *.png
+*.pyc
