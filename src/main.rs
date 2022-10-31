@@ -11,7 +11,9 @@ use errors::ConfigError;
 use space::{Boundary, Space};
 use yaml_rust::YamlLoader;
 
-use crate::{initial_conditions::create_ics, time_integration::get_runner};
+use crate::{
+    initial_conditions::create_ics, riemann_solver::get_solver, time_integration::get_runner,
+};
 
 mod cli;
 mod engine;
@@ -71,6 +73,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let t_status = config["engine"]["t_status"]
         .as_f64()
         .ok_or(ConfigError::MissingParameter("engine:t_status"))?;
+    let solver_kind = config["engine"]["solver"]
+        .as_str()
+        .ok_or(ConfigError::MissingParameter("engine:solver"))?
+        .to_string();
     let periodic = config["initial_conditions"]["periodic"]
         .as_bool()
         .unwrap_or(true);
@@ -88,9 +94,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut space = Space::from_ic(&ic, boundary, box_size, gamma);
 
     let runner = get_runner(runner_kind)?;
+    let solver = get_solver(solver_kind, gamma)?;
     let mut engine = Engine::init(
         runner,
-        gamma,
+        solver,
         cfl_criterion,
         dt_min,
         dt_max,

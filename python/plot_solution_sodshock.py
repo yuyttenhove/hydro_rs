@@ -86,5 +86,5 @@ if __name__ == "__main__":
         savename = sys.argv[2]
     except IndexError:
         fname = "../run/output/sod_shock_0005.txt"
-        savename = "optimal_cfl1.png"
+        savename = "test.png"
     main(fname, savename)

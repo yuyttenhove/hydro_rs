@@ -1,24 +1,25 @@
 time_integration:
-  dt_min: 1e-9
+  dt_min: 1e-13
   dt_max: 1e-2
   t_min: 1e-8
-  t_end: 1.0
-  cfl_criterion: 0.01
-#   runner: "OptimalOrderHalfDrift"
+  t_end: 0.5
+  cfl_criterion: 0.05
+  runner: "OptimalOrderHalfDrift"
 #   runner: "OptimalOrder"
-  runner: "Default"
+#   runner: "Default"
 
 snapshots:
   t_between_snaps: 0.05
-  prefix: "noh_"
+  prefix: "sod_shock_"
 
 engine:
   t_status: 0.01
+  solver: "HLLC"
 
 initial_conditions:
-  type: "noh"
+  type: "sodshock"
   num_part: 250
-  box_size: 4.
+  box_size: 2.
   periodic: true
 
 equation_of_state:

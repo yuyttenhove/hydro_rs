@@ -46,12 +46,28 @@ fn toro(num_part: usize, box_size: f64) -> Vec<(f64, f64, f64, f64)> {
     ic
 }
 
+fn vacuum(num_part: usize, box_size: f64) -> Vec<(f64, f64, f64, f64)> {
+    let mut ic = Vec::<(f64, f64, f64, f64)>::new();
+    let num_part_inv = 1. / (num_part as f64);
+
+    for idx in 0..num_part {
+        let x = (idx as f64 + 0.5) * box_size * num_part_inv;
+        let density =  if x < 0.5 * box_size { 1. } else { 0. };
+        let velocity = 0.;
+        let pressure = if x < 0.5 * box_size { 1. } else { 0. };
+        ic.push((x, density, velocity, pressure));
+    }
+
+    ic
+}
+
 
 pub fn create_ics<'a>(kind: String, num_part: usize, box_size: f64) -> Result<Vec<(f64, f64, f64, f64)>, ConfigError<'a>> {
     match kind.as_str() {
         "sodshock" => Ok(sod_shock(num_part, box_size)),
         "noh" => Ok(noh(num_part, box_size)),
         "toro" => Ok(toro(num_part, box_size)),
+        "vacuum" => Ok(vacuum(num_part, box_size)),
         _ => Err(ConfigError::UnknownICs(kind.to_string()))
     }
 }

@@ -7,7 +7,7 @@ use crate::{riemann_solver::RiemannSolver, space::Space, time_integration::Runne
 
 pub struct Engine {
     runner: Runner,
-    pub solver: RiemannSolver,
+    pub solver: Box<dyn RiemannSolver>,
     t_end: f64,
     t_current: f64,
     ti_old: IntegerTime,
@@ -29,7 +29,7 @@ impl Engine {
     /// Setup a simulation by initializing a new engine struct for initial conditions
     pub fn init(
         runner: Runner,
-        gamma: f64,
+        solver: Box<dyn RiemannSolver>,
         cfl_criterion: f64,
         dt_min: f64,
         dt_max: f64,
@@ -38,7 +38,6 @@ impl Engine {
         t_status: f64,
         snapshot_prefix: &str,
     ) -> Self {
-        let solver = RiemannSolver::new(gamma);
         let time_base = t_end / MAX_NR_TIMESTEPS as f64;
         let time_base_inv = 1. / time_base;
         Self {

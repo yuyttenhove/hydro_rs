@@ -8,6 +8,7 @@ pub enum ConfigError<'a> {
     MissingParameter(&'a str),
     UnknownRunner(String),
     UnknownICs(String),
+    UnknownRiemannSolver(String),
 }
 
 impl<'a> Display for ConfigError<'a> {
@@ -18,6 +19,9 @@ impl<'a> Display for ConfigError<'a> {
             }
             ConfigError::UnknownRunner(name) => {
                 write!(f, "Unknown type of runner configured: {}", name)
+            }
+            ConfigError::UnknownRiemannSolver(name) => {
+                write!(f, "Unknown type of runner configured: {name}")
             }
             ConfigError::UnknownICs(name) => {
                 write!(f, "Unknown type of initial conditions configured: {}", name)

@@ -641,7 +641,7 @@ class RiemannSolver:
                 base = self._tdgp1 - self._gm1dgp1 * (uR - dxdt[rarefaction_wave]) / aR
                 rhosol[rarefaction_wave] = rhoR * base ** self._tdgm1
                 usol[rarefaction_wave] = self._tdgp1 * (
-                    -aR + self._tdgm1 * uR + dxdt[rarefaction_wave]
+                    -aR + self._gm1d2 * uR + dxdt[rarefaction_wave]
                 )
                 Psol[rarefaction_wave] = PR * base ** self._tgdgm1
                 flagsol[rarefaction_wave] = 1

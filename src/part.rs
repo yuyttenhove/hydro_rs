@@ -46,10 +46,10 @@ impl Part {
                 let p = self.primitives.pressure();
                 self.extrapolations -= dt_extrapolate
                     * Primitives::new(
-                        rho * self.gradients.velocity() + v * self.gradients.density(),
-                        v * self.gradients.velocity() + rho_inv * self.gradients.pressure(),
-                        gamma * p * self.gradients.velocity() + v * self.gradients.pressure(),
-                    )
+                    rho * self.gradients.velocity() + v * self.gradients.density(),
+                    v * self.gradients.velocity() + rho_inv * self.gradients.pressure(),
+                    gamma * p * self.gradients.velocity() + v * self.gradients.pressure(),
+                )
             }
         } else {
             unimplemented!()
@@ -90,6 +90,11 @@ impl Part {
             Primitives::from_conserved(&self.conserved, self.volume, eos)
         };
 
+        if self.primitives.density() < 1e-10 {
+            self.primitives = Primitives::new(self.primitives.density(), self.primitives.velocity() * self.primitives.density() * 1e6, self.primitives.pressure());
+            self.conserved = Conserved::from_primitives(&self.primitives, self.volume, eos);
+        }
+        
         debug_assert!(
             self.primitives.density().is_finite(),
             "Infinite density detected!"
