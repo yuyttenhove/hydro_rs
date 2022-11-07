@@ -177,6 +177,69 @@ impl Space {
             .sort_by(|a, b| a.x.partial_cmp(&b.x).unwrap())
     }
 
+    /// Do the flux exchange in a non symmetrical manner
+    /// (each particle calculates the fluxes it recieves independently of
+    /// its neighbours using its own timestep).
+    pub fn flux_exchange_non_symmetrical(&mut self, engine: &Engine) {
+        for i in 1..self.num_parts + 1 {
+            let part = &self.parts[i];
+            let left = &self.parts[i - 1];
+            let right = &self.parts[i + 1];
+
+            if !part.is_active(engine) {
+                continue;
+            }
+
+            // Flux from the left neighbour
+            let dt = part.dt;
+            let dx = 0.5 * (part.x - left.x);
+            let primitives = pairwise_limiter(
+                part.primitives,
+                left.primitives,
+                part.primitives - dx * part.gradients + part.extrapolations,
+            );
+            let primitives_left = pairwise_limiter(
+                left.primitives,
+                part.primitives,
+                left.primitives + dx * left.gradients + left.extrapolations,
+            );
+            let v_face = 0.5 * (left.v + part.v);
+            let flux = engine.solver.solve_for_flux(
+                &primitives_left.boost(-v_face),
+                &primitives.boost(-v_face),
+                v_face,
+                &self.eos,
+            );
+            let mut fluxes = dt * flux;
+            let mut m_flux = dx * flux.mass();
+
+            // Flux from the right neighbour
+            let dx = 0.5 * (right.x - part.x);
+            let primitives = pairwise_limiter(
+                part.primitives,
+                right.primitives,
+                part.primitives + dx * part.gradients + part.extrapolations,
+            );
+            let primitives_right = pairwise_limiter(
+                right.primitives,
+                part.primitives,
+                right.primitives - dx * right.gradients + right.extrapolations,
+            );
+            let v_face = 0.5 * (right.v + part.v);
+            let flux = engine.solver.solve_for_flux(
+                &primitives.boost(-v_face),
+                &primitives_right.boost(-v_face),
+                v_face,
+                &self.eos,
+            );
+            fluxes -= dt * flux;
+            m_flux -= dx * flux.mass();
+
+            self.parts[i].fluxes += fluxes;
+            self.parts[i].gravity_mflux += m_flux;
+        }
+    }
+
     /// Do flux exchange between neighbouring particles
     pub fn flux_exchange(&mut self, engine: &Engine) {
         for i in 0..self.num_parts + 1 {
@@ -195,12 +258,12 @@ impl Space {
             let dx = 0.5 * (right.x - left.x);
 
             // Gradient extrapolation
-            let mut primitives_left = pairwise_limiter(
+            let primitives_left = pairwise_limiter(
                 left.primitives,
                 right.primitives,
                 left.primitives + dx * left.gradients + left.extrapolations,
             );
-            let mut primitives_right = pairwise_limiter(
+            let primitives_right = pairwise_limiter(
                 right.primitives,
                 left.primitives,
                 right.primitives - dx * right.gradients + right.extrapolations,
@@ -208,11 +271,9 @@ impl Space {
 
             // Boost the primitives to the frame of reference of the interface:
             let v_face = 0.5 * (left.v + right.v);
-            primitives_left = primitives_left.boost(-v_face);
-            primitives_right = primitives_right.boost(-v_face);
             let fluxes = engine.solver.solve_for_flux(
-                &primitives_left,
-                &primitives_right,
+                &primitives_left.boost(-v_face),
+                &primitives_right.boost(-v_face),
                 v_face,
                 &self.eos,
             );
