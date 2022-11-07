@@ -141,10 +141,9 @@ impl Space {
     pub fn convert_conserved_to_primitive(&mut self, engine: &Engine) {
         let eos = self.eos;
         for part in self.parts_mut() {
-            if !part.is_active(engine) {
-                continue;
+            if part.is_active(engine) {
+                part.convert_conserved_to_primitive(eos);
             }
-            part.convert_conserved_to_primitive(eos);
         }
 
         self.apply_boundary_condition();
