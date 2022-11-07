@@ -3,7 +3,7 @@ time_integration:
   dt_max: 1e-2
   t_min: 1e-8
   t_end: 0.5
-  cfl_criterion: 0.05
+  cfl_criterion: 0.3
 
 snapshots:
   t_between_snaps: 0.05
@@ -13,8 +13,8 @@ engine:
   t_status: 0.01
   solver: "HLLC"
   particle_motion: "fluid"
-#   runner: "OptimalOrderHalfDrift"
-  runner: "OptimalOrder"
+  runner: "OptimalOrderHalfDrift"
+#   runner: "OptimalOrder"
 #   runner: "Default"
 
 space:
@@ -23,7 +23,7 @@ space:
 
 initial_conditions:
   type: "noh"
-  num_part: 1000
+  num_part: 250
 
 equation_of_state:
   gamma: 1.66666666667
