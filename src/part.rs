@@ -41,10 +41,11 @@ impl Part {
         }
 
         // Normal case
-        debug_assert!(self.conserved.mass() > 0.);
+        assert!(self.conserved.mass() > 0.);
         assert!((self.conserved.mass() / self.volume - self.primitives.density()).abs() <= self.primitives.density().abs() * 1e-8);
         assert!((self.conserved.momentum() / self.conserved.mass() - self.primitives.velocity()).abs() <= self.primitives.velocity().abs() * 1e-8);
         let internal_energy = self.conserved.energy() - 0.5 * self.conserved.momentum() * self.primitives.velocity();
+        assert!(internal_energy > 0.);
         assert!((eos.gas_pressure_from_internal_energy(internal_energy, self.volume) - self.primitives.pressure()).abs() <= self.primitives.pressure().abs() * 1e-8);
 
         let mass_inv = 1. / self.conserved.mass();

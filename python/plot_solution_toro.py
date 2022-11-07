@@ -11,19 +11,19 @@ from riemann_solver import RiemannSolver
 
 def plot_analytic_solution(axes: List[List[plt.Axes]], gas_gamma: float, rho_L: float, v_L: float, P_L: float,
                            rho_R: float, v_R: float, P_R: float, time: float = 0.25,
-                           x_min: float = 0., x_max: float = 4., N: int = 1000):
+                           x_min: float = 0., x_max: float = 2., N: int = 1000):
     solver = RiemannSolver(gas_gamma)
 
     delta_x = (x_max - x_min) / N
-    x_s = 0.5 * (np.arange(x_min, x_max, delta_x) - 2)
-    x_s2 = np.array(x_s + 2)
+    x_s = 0.5 * (np.arange(x_min, x_max, delta_x) - 1)
+    x_s2 = np.array(x_s + 1)
     rho_s, v_s, P_s, _ = solver.solve(rho_L, v_L, P_L, rho_R, v_R, P_R, x_s / time)
     rho_s2, v_s2, P_s2, _ = solver.solve(rho_R, v_R, P_R, rho_L, v_L, P_L, x_s / time)
-    x_s += 2
-    x_s2 += 2.0
-    s2neg = x_s2 > 4.0
+    x_s += 1
+    x_s2 += 1.0
+    s2neg = x_s2 > 2.0
     s2pos = ~s2neg
-    x_s2[s2neg] -= 4.0
+    x_s2[s2neg] -= 2.0
 
     # Additional arrays
     u_s = P_s / (rho_s * (gas_gamma - 1.0))  # internal energy
@@ -62,7 +62,7 @@ def plot_quantity(ax: plt.Axes, xdata: np.ndarray, ydata: np.ndarray, title: str
     ax.plot(x_median, y_median)
     ax.scatter(xdata, ydata, s=4, color="red", zorder=1000, alpha=0.33)
     ax.set_title(title)
-    xlim = [0., 4.]
+    xlim = [0., 2.]
     ax.set_xlim(*xlim)
     mask = (xdata <= xlim[1]) & (xdata >= xlim[0])
     ylim = [ydata[mask].min(), ydata[mask].max()]
@@ -104,6 +104,6 @@ if __name__ == "__main__":
         fname = sys.argv[1]
         savename = sys.argv[2]
     except IndexError:
-        fname = "../run/output/noh_0010.txt"
+        fname = "../run/output/toro_0005.txt"
         savename = "test.png"
     main(fname, savename)

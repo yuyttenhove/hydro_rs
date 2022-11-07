@@ -3,18 +3,18 @@ time_integration:
   dt_max: 1e-2
   t_min: 1e-8
   t_end: 0.5
-  cfl_criterion: 0.01
+  cfl_criterion: 0.1
 
 snapshots:
   t_between_snaps: 0.05
-  prefix: "toro_"
+  prefix: "sodshock_"
 
 engine:
   t_status: 0.01
   solver: "HLLC"
   particle_motion: "steer"
-#  runner: "OptimalOrderHalfDrift"
-  runner: "OptimalOrder"
+  runner: "OptimalOrderHalfDrift"
+#   runner: "OptimalOrder"
 #   runner: "Default"
 
 space:
@@ -22,8 +22,8 @@ space:
   periodic: true
 
 initial_conditions:
-  type: "toro"
-  num_part: 250
+  type: "sodshock"
+  num_part: 500
 
 equation_of_state:
   gamma: 1.66666666667
