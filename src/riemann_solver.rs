@@ -155,7 +155,7 @@ impl VacuumRiemannSolver {
         a_r: f64,
         interface_velocity: f64,
     ) -> Conserved {
-        debug_assert!(self.is_vacuum(left, right, a_l, a_r, left.velocity() - right.velocity()));
+        debug_assert!(self.is_vacuum(left, right, a_l, a_r, right.velocity() - left.velocity()));
 
         // Solve for total vacuum
         if left.density() == 0. && right.density() == 0. {
