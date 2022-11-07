@@ -410,7 +410,7 @@ impl Space {
                 new_bin = new_bin.min(parts[0].timebin + TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN);
             }
             if parts[2].is_active(engine) {
-                new_bin = new_bin.min(parts[0].timebin + TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN);
+                new_bin = new_bin.min(parts[2].timebin + TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN);
             }
 
             if new_bin != parts[1].timebin {
