@@ -31,6 +31,7 @@ impl Part {
         eos: &EquationOfState,
         particle_motion: &ParticleMotion,
     ) -> f64 {
+
         if self.conserved.mass() == 0. {
             // We have vacuum
             debug_assert_eq!(self.conserved.momentum(), 0.);
@@ -41,11 +42,15 @@ impl Part {
 
         // Normal case
         debug_assert!(self.conserved.mass() > 0.);
+        assert!((self.conserved.mass() / self.volume - self.primitives.density()).abs() <= self.primitives.density().abs() * 1e-8);
+        assert!((self.conserved.momentum() / self.conserved.mass() - self.primitives.velocity()).abs() <= self.primitives.velocity().abs() * 1e-8);
+        let internal_energy = self.conserved.energy() - 0.5 * self.conserved.momentum() * self.primitives.velocity();
+        assert!((eos.gas_pressure_from_internal_energy(internal_energy, self.volume) - self.primitives.pressure()).abs() <= self.primitives.pressure().abs() * 1e-8);
 
         let mass_inv = 1. / self.conserved.mass();
         let fluid_v = self.conserved.momentum() * mass_inv;
         let sound_speed = eos.sound_speed(
-            eos.gas_pressure_from_energy(self.conserved.energy(), self.volume),
+            eos.gas_pressure_from_internal_energy(internal_energy, self.volume),
             self.volume * mass_inv,
         );
         // Set the velocity with which this particle will be drifted over the course of it's next timestep
@@ -70,6 +75,7 @@ impl Part {
                 }
             }
         };
+        assert!(self.v.is_finite(), "Invalid value for v!");
 
         // determine the size of this particle's next timestep
         let v_rel = (self.v - fluid_v).abs();
@@ -143,14 +149,17 @@ impl Part {
             Primitives::from_conserved(&self.conserved, self.volume, eos)
         };
 
-        if self.primitives.density() < 1e-6 {
-            self.primitives = Primitives::new(
-                self.primitives.density(),
-                self.primitives.velocity() * self.primitives.density() * 1e6,
-                self.primitives.pressure(),
-            );
-            self.conserved = Conserved::from_primitives(&self.primitives, self.volume, eos);
-        }
+        // if self.primitives.density() < 1e-6 {
+        //     self.primitives = Primitives::new(
+        //         self.primitives.density(),
+        //         self.primitives.velocity() * self.primitives.density() * 1e6,
+        //         self.primitives.pressure(),
+        //     );
+        //     self.conserved = Conserved::from_primitives(&self.primitives, self.volume, eos);
+        // }
+
+        assert!(self.primitives.density() >= 0.);
+        assert!(self.primitives.pressure() >= 0.);
 
         debug_assert!(
             self.primitives.density().is_finite(),

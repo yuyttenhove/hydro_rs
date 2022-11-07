@@ -1,7 +1,6 @@
-use std::ops::{Add, Sub, AddAssign, Mul, SubAssign, Index};
+use std::ops::{Add, AddAssign, Index, Mul, Sub, SubAssign};
 
 use crate::equation_of_state::EquationOfState;
-
 
 #[derive(Default, Debug, Clone, Copy)]
 pub struct Vec3f64(f64, f64, f64);
@@ -52,11 +51,19 @@ impl Vec3f64 {
     }
 
     pub fn pairwise_max(&self, other: Self) -> Self {
-        Vec3f64(self.0.max(other.0), self.1.max(other.1), self.2.max(other.2))
+        Vec3f64(
+            self.0.max(other.0),
+            self.1.max(other.1),
+            self.2.max(other.2),
+        )
     }
 
     pub fn pairwise_min(&self, other: Self) -> Self {
-        Vec3f64(self.0.min(other.0), self.1.min(other.1), self.2.min(other.2))
+        Vec3f64(
+            self.0.min(other.0),
+            self.1.min(other.1),
+            self.2.min(other.2),
+        )
     }
 }
 
@@ -92,20 +99,26 @@ impl Primitives {
     }
 
     pub fn vacuum() -> Self {
-        Primitives { values: Vec3f64::zeros() }
+        Primitives {
+            values: Vec3f64::zeros(),
+        }
     }
 
     pub fn new(density: f64, velocity: f64, pressure: f64) -> Self {
-        Primitives { values: Vec3f64(density, velocity, pressure) }
+        Primitives {
+            values: Vec3f64(density, velocity, pressure),
+        }
     }
 
     pub fn from_conserved(conserved: &Conserved, volume: f64, eos: EquationOfState) -> Self {
         if conserved.mass() > 0. {
             let density = conserved.mass() / volume;
             let velocity = conserved.momentum() / conserved.mass();
-            let pressure = eos.gas_pressure_from_energy(
-                    conserved.energy() - 0.5 * conserved.momentum() * velocity, volume);
-            Self { values: Vec3f64(density, velocity, pressure) }
+            let internal_energy = conserved.energy() - 0.5 * conserved.momentum() * velocity;
+            let pressure = eos.gas_pressure_from_internal_energy(internal_energy, volume);
+            Self {
+                values: Vec3f64(density, velocity, pressure),
+            }
         } else {
             Self::vacuum()
         }
@@ -122,11 +135,15 @@ impl Primitives {
     }
 
     pub fn pairwise_max(&self, other: Self) -> Self {
-        Self { values: self.values.pairwise_max(other.values) }
+        Self {
+            values: self.values.pairwise_max(other.values),
+        }
     }
 
     pub fn pairwise_min(&self, other: Self) -> Self {
-        Self { values: self.values.pairwise_min(other.values) }
+        Self {
+            values: self.values.pairwise_min(other.values),
+        }
     }
 
     pub fn values(&self) -> Vec3f64 {
@@ -143,9 +160,18 @@ impl Primitives {
             self.values = Vec3f64::zeros();
         }
 
-        debug_assert!(self.density().is_finite(), "Infinite density after extrapolation!");
-        debug_assert!(self.velocity().is_finite(), "Infinite velocity after extrapolation!");
-        debug_assert!(self.pressure().is_finite(), "Infinite pressure after extrapolation!");
+        debug_assert!(
+            self.density().is_finite(),
+            "Infinite density after extrapolation!"
+        );
+        debug_assert!(
+            self.velocity().is_finite(),
+            "Infinite velocity after extrapolation!"
+        );
+        debug_assert!(
+            self.pressure().is_finite(),
+            "Infinite pressure after extrapolation!"
+        );
     }
 }
 
@@ -153,7 +179,9 @@ impl Mul<Primitives> for f64 {
     type Output = Primitives;
 
     fn mul(self, rhs: Primitives) -> Self::Output {
-        Primitives { values: self * rhs.values }
+        Primitives {
+            values: self * rhs.values,
+        }
     }
 }
 
@@ -176,27 +204,37 @@ impl Conserved {
     }
 
     pub fn vacuum() -> Self {
-        Conserved { values: Vec3f64::zeros() }
+        Conserved {
+            values: Vec3f64::zeros(),
+        }
     }
 
     pub fn new(mass: f64, momentum: f64, energy: f64) -> Self {
-        Conserved { values: Vec3f64(mass, momentum, energy) }
+        Conserved {
+            values: Vec3f64(mass, momentum, energy),
+        }
     }
 
     pub fn from_primitives(primitives: &Primitives, volume: f64, eos: EquationOfState) -> Self {
         let mass = primitives.density() * volume;
         let momentum = mass * primitives.velocity();
         let energy = 0.5 * momentum * primitives.velocity()
-            + eos.gas_energy_from_pressure(primitives.pressure(), volume);
-        Self { values: Vec3f64(mass, momentum, energy) }
+            + eos.gas_internal_energy_from_pressure(primitives.pressure(), volume);
+        Self {
+            values: Vec3f64(mass, momentum, energy),
+        }
     }
 
     pub fn pairwise_max(&self, other: Self) -> Self {
-        Self { values: self.values.pairwise_max(other.values) }
+        Self {
+            values: self.values.pairwise_max(other.values),
+        }
     }
 
     pub fn pairwise_min(&self, other: Self) -> Self {
-        Self { values: self.values.pairwise_min(other.values) }
+        Self {
+            values: self.values.pairwise_min(other.values),
+        }
     }
 }
 
@@ -204,18 +242,18 @@ impl Mul<Conserved> for f64 {
     type Output = Conserved;
 
     fn mul(self, rhs: Conserved) -> Self::Output {
-        Conserved { values: self * rhs.values }
+        Conserved {
+            values: self * rhs.values,
+        }
     }
 }
-
 
 #[cfg(test)]
 mod test {
     use crate::equation_of_state::EquationOfState;
     use crate::utils::Round;
 
-    use super::{Primitives, Conserved};
-
+    use super::{Conserved, Primitives};
 
     #[test]
     fn test_conversions() {
@@ -225,8 +263,17 @@ mod test {
         let conserved = Conserved::from_primitives(&primitives, volume, eos);
         let primitives_new = Primitives::from_conserved(&conserved, volume, eos);
 
-        assert_eq!(primitives.density().round_to(15), primitives_new.density().round_to(15));
-        assert_eq!(primitives.velocity().round_to(15), primitives_new.velocity().round_to(15));
-        assert_eq!(primitives.pressure().round_to(15), primitives_new.pressure().round_to(15));
+        assert_eq!(
+            primitives.density().round_to(15),
+            primitives_new.density().round_to(15)
+        );
+        assert_eq!(
+            primitives.velocity().round_to(15),
+            primitives_new.velocity().round_to(15)
+        );
+        assert_eq!(
+            primitives.pressure().round_to(15),
+            primitives_new.pressure().round_to(15)
+        );
     }
 }

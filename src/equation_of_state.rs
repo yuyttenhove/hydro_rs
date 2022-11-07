@@ -15,16 +15,16 @@ impl EquationOfState {
             .unwrap_or(5. / 3.);
         Ok(EquationOfState::Ideal { gamma })
     }
-    pub fn gas_energy_from_pressure(&self, pressure: f64, volume: f64) -> f64 {
+    pub fn gas_internal_energy_from_pressure(&self, pressure: f64, volume: f64) -> f64 {
         match self {
             EquationOfState::Ideal { gamma } => pressure * volume / (gamma - 1.),
             _ => todo!(),
         }
     }
 
-    pub fn gas_pressure_from_energy(&self, energy: f64, volume: f64) -> f64 {
+    pub fn gas_pressure_from_internal_energy(&self, internal_energy: f64, volume: f64) -> f64 {
         match self {
-            EquationOfState::Ideal { gamma } => (gamma - 1.) * energy / volume,
+            EquationOfState::Ideal { gamma } => (gamma - 1.) * internal_energy / volume,
             _ => todo!(),
         }
     }
