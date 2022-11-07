@@ -10,42 +10,24 @@ from riemann_solver import RiemannSolver
 
 
 def plot_analytic_solution(axes: List[List[plt.Axes]], gas_gamma: float, rho_L: float, v_L: float, P_L: float,
-                           rho_R: float, v_R: float, P_R: float, time: float = 0.75,
-                           x_min: float = 1., x_max: float = 3., N: int = 1000):
+                           rho_R: float, v_R: float, P_R: float, time: float = 0.05,
+                           x_min: float = 0.5, x_max: float = 1.5, N: int = 1000):
     solver = RiemannSolver(gas_gamma)
 
     delta_x = (x_max - x_min) / N
-    x_s = 0.5 * (np.arange(x_min, x_max, delta_x) - 2)
-    x_s2 = np.array(x_s + 2)
+    x_s = np.arange(x_min, x_max, delta_x) - 1
     rho_s, v_s, P_s, _ = solver.solve(rho_L, v_L, P_L, rho_R, v_R, P_R, x_s / time)
-    rho_s2, v_s2, P_s2, _ = solver.solve(rho_R, v_R, P_R, rho_L, v_L, P_L, x_s / time)
-    x_s += 2
-    x_s2 += 2.0
-    s2neg = x_s2 > 4.0
-    s2pos = ~s2neg
-    x_s2[s2neg] -= 4.0
+    x_s += 1
 
     # Additional arrays
     u_s = P_s / (rho_s * (gas_gamma - 1.0))  # internal energy
     s_s = P_s / rho_s ** gas_gamma  # entropic function
-    u_s2 = P_s2 / (rho_s2 * (gas_gamma - 1.0))  # internal energy
-    s_s2 = P_s2 / rho_s2 ** gas_gamma  # entropic function
 
     axes[0][0].plot(x_s, v_s, ls="--", c="black", lw=1, zorder=-1)
-    axes[0][0].plot(x_s2[s2pos], v_s2[s2pos], ls="--", c="black", lw=1, zorder=-1)
-    axes[0][0].plot(x_s2[s2neg], v_s2[s2neg], ls="--", c="black", lw=1, zorder=-1)
     axes[0][1].plot(x_s, rho_s, ls="--", c="black", lw=1, zorder=-1)
-    axes[0][1].plot(x_s2[s2pos], rho_s2[s2pos], ls="--", c="black", lw=1, zorder=-1)
-    axes[0][1].plot(x_s2[s2neg], rho_s2[s2neg], ls="--", c="black", lw=1, zorder=-1)
     axes[0][2].plot(x_s, P_s, ls="--", c="black", lw=1, zorder=-1)
-    axes[0][2].plot(x_s2[s2pos], P_s2[s2pos], ls="--", c="black", lw=1, zorder=-1)
-    axes[0][2].plot(x_s2[s2neg], P_s2[s2neg], ls="--", c="black", lw=1, zorder=-1)
     axes[1][0].plot(x_s, u_s, ls="--", c="black", lw=1, zorder=-1)
-    axes[1][0].plot(x_s2[s2pos], u_s2[s2pos], ls="--", c="black", lw=1, zorder=-1)
-    axes[1][0].plot(x_s2[s2neg], u_s2[s2neg], ls="--", c="black", lw=1, zorder=-1)
     axes[1][1].plot(x_s, s_s, ls="--", c="black", lw=1, zorder=-1)
-    axes[1][1].plot(x_s2[s2pos], s_s2[s2pos], ls="--", c="black", lw=1, zorder=-1)
-    axes[1][1].plot(x_s2[s2neg], s_s2[s2neg], ls="--", c="black", lw=1, zorder=-1)
 
 
 def plot_quantity(ax: plt.Axes, xdata: np.ndarray, ydata: np.ndarray, title: str):
@@ -62,9 +44,8 @@ def plot_quantity(ax: plt.Axes, xdata: np.ndarray, ydata: np.ndarray, title: str
     ax.plot(x_median, y_median)
     ax.scatter(xdata, ydata, s=4, color="red", zorder=1000, alpha=0.33)
     ax.set_title(title)
-    xlim = [1., 3.]
-    ax.set_xlim(*xlim)
-    mask = (xdata <= xlim[1]) & (xdata >= xlim[0])
+    ax.set_xlim(0.0, 2)
+    mask = (xdata <= 1.5) & (xdata >= 0.5)
     ylim = [ydata[mask].min(), ydata[mask].max()]
     y_delta = ylim[1] - ylim[0]
     ax.set_ylim(ylim[0] - 0.1 * y_delta, ylim[1] + 0.1 * y_delta)
@@ -74,11 +55,11 @@ def main(fname: str, savename: str):
     # Parameters
     gas_gamma = 5.0 / 3.0  # Polytropic index
     rho_L = 1.0  # Density left state
-    rho_R = 1.0  # Density right state
-    v_L = 1.0  # Velocity left state
-    v_R = -1.0  # Velocity right state
-    P_L = 1e-6  # Pressure left state
-    P_R = 1e-6  # Pressure right state
+    rho_R = 0.0  # Density right state
+    v_L = 0.0  # Velocity left state
+    v_R = 0.0  # Velocity right state
+    P_L = 1.0  # Pressure left state
+    P_R = 0.0  # Pressure right state
 
     # read data
     data = pd.read_csv(fname, sep="\t")
@@ -104,6 +85,6 @@ if __name__ == "__main__":
         fname = sys.argv[1]
         savename = sys.argv[2]
     except IndexError:
-        fname = "../run/output/noh_0015.txt"
+        fname = "../run/output/vacuum_0001.txt"
         savename = "test.png"
     main(fname, savename)

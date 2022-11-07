@@ -3,6 +3,8 @@ use std::{
     io::{BufWriter, Error as IoError, Write},
 };
 
+use yaml_rust::Yaml;
+
 use crate::{
     engine::Engine,
     equation_of_state::EquationOfState,
@@ -41,18 +43,16 @@ impl Space {
 
     /// Constructs a space from given ic's (tuples of position, density, velocity and pressure) and
     /// boundary conditions.
-    pub fn from_ic(
-        ic: &[(f64, f64, f64, f64)],
-        boundary: Boundary,
-        box_size: f64,
-        gamma: f64,
-    ) -> Self {
-        // Initialize equation of state
-        let eos = EquationOfState::Ideal { gamma };
+    pub fn from_ic(ic: &[(f64, f64, f64, f64)], space_cfg: &Yaml, eos: EquationOfState) -> Self {
+        // read config
+        let box_size = space_cfg["box_size"].as_f64().unwrap_or(1.);
+        let periodic = space_cfg["periodic"].as_bool().unwrap_or(true);
+
         // Get our own mutable copy of the ICs
         let mut ic = ic.to_vec();
         // Wrap particles to be inside box:
         for properties in ic.iter_mut() {
+            properties.0 *= box_size;
             while properties.0 < 0. {
                 properties.0 += box_size
             }
@@ -71,6 +71,11 @@ impl Space {
         }
 
         // create space
+        let boundary = if periodic {
+            Boundary::Periodic
+        } else {
+            Boundary::Reflective
+        };
         let mut space = Space {
             parts,
             boundary,
@@ -196,7 +201,7 @@ impl Space {
             );
 
             // Boost the primitives to the frame of reference of the interface:
-            let v_face = 0.5 * (left.primitives.velocity() + right.primitives.velocity());
+            let v_face = 0.5 * (left.v + right.v);
             primitives_left = primitives_left.boost(-v_face);
             primitives_right = primitives_right.boost(-v_face);
             let fluxes = engine.solver.solve_for_flux(
@@ -294,7 +299,8 @@ impl Space {
         for part in self.parts.iter_mut() {
             if part.is_active(engine) {
                 // Compute new timestep
-                let mut dt = part.timestep(engine.cfl_criterion(), &self.eos);
+                let mut dt =
+                    part.timestep(engine.cfl_criterion(), &self.eos, &engine.particle_motion);
                 dt = dt.min(engine.dt_max());
                 assert!(
                     dt > engine.dt_min(),
@@ -327,10 +333,9 @@ impl Space {
 
     /// Apply the timestep limiter to the particles
     pub fn timestep_limiter(&mut self, engine: &Engine) {
-
         for i in 1..self.num_parts + 1 {
             // Get a slice of neighbouring parts
-            let parts = &mut self.parts[i-1..=i+1];
+            let parts = &mut self.parts[i - 1..=i + 1];
 
             // This particles timebin
             let mut new_bin = parts[1].timebin;
@@ -407,8 +412,11 @@ impl Space {
 #[cfg(test)]
 mod test {
     use assert_approx_eq::assert_approx_eq;
+    use yaml_rust::YamlLoader;
 
-    use super::{Boundary, Space};
+    use crate::equation_of_state::EquationOfState;
+
+    use super::Space;
 
     const IC: [(f64, f64, f64, f64); 4] = [
         (0.25, 1., 0.5, 1.),
@@ -416,20 +424,22 @@ mod test {
         (0.75, 0.125, 0.5, 0.1),
         (0.85, 0.125, 0.5, 0.1),
     ];
-    const BOX_SIZE: f64 = 1.;
     const GAMMA: f64 = 5. / 3.;
+    const CFG_STR: &'_ str = "box_size: 2. \nperiodic: true";
 
     #[test]
     fn test_init() {
-        let space = Space::from_ic(&IC, Boundary::Periodic, BOX_SIZE, GAMMA);
+        let eos = EquationOfState::Ideal { gamma: GAMMA };
+        let config = &YamlLoader::load_from_str(CFG_STR).unwrap()[0];
+        let space = Space::from_ic(&IC, config, eos);
         assert_eq!(space.parts.len(), 6);
         assert_eq!(space.num_parts, 4);
         // Check volumes
-        assert_approx_eq!(space.parts[0].volume, 0.25, space.parts[0].volume * 1e-8);
-        assert_approx_eq!(space.parts[1].volume, 0.4, space.parts[1].volume * 1e-8);
-        assert_approx_eq!(space.parts[2].volume, 0.25, space.parts[2].volume * 1e-8);
-        assert_approx_eq!(space.parts[3].volume, 0.1, space.parts[3].volume * 1e-8);
-        assert_approx_eq!(space.parts[4].volume, 0.25, space.parts[4].volume * 1e-8);
-        assert_approx_eq!(space.parts[5].volume, 0.4, space.parts[5].volume * 1e-8);
+        assert_approx_eq!(space.parts[0].volume, 0.5, space.parts[0].volume * 1e-8);
+        assert_approx_eq!(space.parts[1].volume, 0.8, space.parts[1].volume * 1e-8);
+        assert_approx_eq!(space.parts[2].volume, 0.5, space.parts[2].volume * 1e-8);
+        assert_approx_eq!(space.parts[3].volume, 0.2, space.parts[3].volume * 1e-8);
+        assert_approx_eq!(space.parts[4].volume, 0.5, space.parts[4].volume * 1e-8);
+        assert_approx_eq!(space.parts[5].volume, 0.8, space.parts[5].volume * 1e-8);
     }
 }

@@ -1,5 +1,5 @@
 pub use crate::physical_quantities::{Conserved, Primitives};
-use crate::{engine::Engine, equation_of_state::EquationOfState, timeline::*};
+use crate::{engine::{Engine, ParticleMotion}, equation_of_state::EquationOfState, timeline::*};
 
 #[derive(Default, Debug, Clone)]
 pub struct Part {
@@ -12,6 +12,7 @@ pub struct Part {
 
     pub volume: f64,
     pub x: f64,
+    pub v: f64,
     pub timebin: Timebin,
     pub dt: f64,
 
@@ -19,11 +20,27 @@ pub struct Part {
 }
 
 impl Part {
-    pub fn timestep(&mut self, cfl_criterion: f64, eos: &EquationOfState) -> f64 {
-        let v_max = eos.sound_speed(self.primitives.pressure(), 1. / self.primitives.density());
+    pub fn timestep(&mut self, cfl_criterion: f64, eos: &EquationOfState, particle_motion: &ParticleMotion) -> f64 {
+        // Set the velocity with which this particle will be drifted over the course of it's next timestep
+        let fluid_v = self.conserved.momentum() / self.conserved.mass();
+        if self.conserved.mass() > 0. {
+            self.v = match particle_motion {
+                ParticleMotion::FIXED => 0.,
+                ParticleMotion::FLUID => fluid_v,
+                ParticleMotion::STEER => {
+                    todo!();
+                }
+            };
+        } else {
+            self.v = 0.;
+        }
+
+        // determine the size of this particle's next timestep
+        let v_rel = (self.v - fluid_v).abs();
+        let v_max = v_rel + eos.sound_speed(self.primitives.pressure(), 1. / self.primitives.density());
 
         if v_max > 0. {
-            cfl_criterion * self.volume / v_max
+            0.5 * cfl_criterion * self.volume / v_max
         } else {
             f64::INFINITY
         }
@@ -33,7 +50,7 @@ impl Part {
     ///
     /// Also predicts the primitive quantities forward in time over a time dt_extrapolate using the Euler equations.
     pub fn drift(&mut self, dt_drift: f64, dt_extrapolate: f64, eos: &EquationOfState) {
-        self.x += self.primitives.velocity() * dt_drift;
+        self.x += self.v * dt_drift;
 
         debug_assert!(self.x.is_finite(), "Infinite x after drift!");
 
@@ -90,7 +107,7 @@ impl Part {
             Primitives::from_conserved(&self.conserved, self.volume, eos)
         };
 
-        if self.primitives.density() < 1e-10 {
+        if self.primitives.density() < 1e-6 {
             self.primitives = Primitives::new(self.primitives.density(), self.primitives.velocity() * self.primitives.density() * 1e6, self.primitives.pressure());
             self.conserved = Conserved::from_primitives(&self.primitives, self.volume, eos);
         }

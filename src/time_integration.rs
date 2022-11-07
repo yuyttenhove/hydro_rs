@@ -6,21 +6,21 @@ pub enum Runner {
     OptimalOrderHalfDrift,
 }
 
-pub fn get_runner<'a>(kind: String) -> Result<Runner, ConfigError<'a>> {
-    match kind.as_str() {
-        "Default" => Ok(Runner::Default),
-        "OptimalOrder" => Ok(Runner::OptimalOrder),
-        "OptimalOrderHalfDrift" => Ok(Runner::OptimalOrderHalfDrift),
-        _ => Err(ConfigError::UnknownRunner(kind.to_string())),
-    }
-}
-
 impl Runner {
+
+    pub fn new(kind: &str) -> Result<Runner, ConfigError> {
+        match kind {
+            "Default" => Ok(Runner::Default),
+            "OptimalOrder" => Ok(Runner::OptimalOrder),
+            "OptimalOrderHalfDrift" => Ok(Runner::OptimalOrderHalfDrift),
+            _ => Err(ConfigError::UnknownRunner(kind.to_string())),
+        }
+    }
+
     pub fn step(&self, engine: &Engine, space: &mut Space) -> IntegerTime {
         match self {
             Runner::Default => {
                 let dt = engine.dt();
-                space.kick1(engine);
                 space.drift(dt, 0.5 * dt);
                 space.sort();
                 space.volume_calculation(engine);
@@ -31,12 +31,12 @@ impl Runner {
                 space.kick2(engine);
                 let ti_next = space.timestep(engine);
                 space.timestep_limiter(engine);  // Note: this can never decrease ti_next
+                space.kick1(engine);
                 space.self_check();
                 ti_next
             },
             Runner::OptimalOrder => {
                 let dt = engine.dt();
-                space.kick1(engine);
                 space.drift(dt, 0.5 * dt);
                 space.sort();
                 space.volume_calculation(engine);
@@ -47,12 +47,12 @@ impl Runner {
                 space.kick2(engine);
                 let ti_next = space.timestep(engine);
                 space.timestep_limiter(engine);  // Note: this can never decrease ti_next
+                space.kick1(engine);
                 space.self_check();
                 ti_next
             },
             Runner::OptimalOrderHalfDrift => {
                 let dt = 0.5 * engine.dt();
-                space.kick1(engine);
                 space.drift(dt, dt);
                 space.sort();
                 space.volume_calculation(engine);
@@ -64,6 +64,7 @@ impl Runner {
                 space.kick2(engine);
                 let ti_next = space.timestep(engine);
                 space.timestep_limiter(engine);  // Note: this can never decrease ti_next
+                space.kick1(engine);
                 space.self_check();
                 ti_next
             },

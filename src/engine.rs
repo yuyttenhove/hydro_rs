@@ -3,7 +3,32 @@ use std::{
     io::{BufWriter, Error as IoError},
 };
 
-use crate::{riemann_solver::RiemannSolver, space::Space, time_integration::Runner, timeline::*};
+use yaml_rust::Yaml;
+
+use crate::{
+    errors::ConfigError,
+    riemann_solver::{get_solver, RiemannSolver},
+    space::Space,
+    time_integration::Runner,
+    timeline::*, equation_of_state::EquationOfState,
+};
+
+pub enum ParticleMotion {
+    FIXED,
+    STEER,
+    FLUID,
+}
+
+impl ParticleMotion {
+    fn new(kind: &str) -> Result<Self, ConfigError> {
+        match kind {
+            "fixed" => Ok(ParticleMotion::FIXED),
+            "steer" => Ok(ParticleMotion::STEER),
+            "fluid" => Ok(ParticleMotion::FLUID),
+            _ => Err(ConfigError::UnknownParticleMotion(kind.to_string())),
+        }
+    }
+}
 
 pub struct Engine {
     runner: Runner,
@@ -23,24 +48,72 @@ pub struct Engine {
     ti_between_status: IntegerTime,
     snap: u16,
     snapshot_prefix: String,
+    pub particle_motion: ParticleMotion,
 }
 
 impl Engine {
     /// Setup a simulation by initializing a new engine struct for initial conditions
     pub fn init(
-        runner: Runner,
-        solver: Box<dyn RiemannSolver>,
-        cfl_criterion: f64,
-        dt_min: f64,
-        dt_max: f64,
-        t_end: f64,
-        t_between_snaps: f64,
-        t_status: f64,
-        snapshot_prefix: &str,
-    ) -> Self {
+        engine_cfg: &Yaml,
+        time_integration_cfg: &Yaml,
+        snapshots_cfg: &Yaml,
+        eos: &EquationOfState,
+    ) -> Result<Self, ConfigError> {
+        // Read config
+        let t_status = engine_cfg["t_status"]
+            .as_f64()
+            .ok_or(ConfigError::MissingParameter("engine:t_status".to_string()))?;
+        let runner_kind = engine_cfg["runner"]
+            .as_str()
+            .ok_or(ConfigError::MissingParameter(
+                "time_integration: runner".to_string(),
+            ))?;
+        let solver_kind = engine_cfg["solver"]
+            .as_str()
+            .ok_or(ConfigError::MissingParameter("engine:solver".to_string()))?;
+        let particle_motion = engine_cfg["particle_motion"].as_str().unwrap_or("fluid");
+        let dt_min =
+            time_integration_cfg["dt_min"]
+                .as_f64()
+                .ok_or(ConfigError::MissingParameter(
+                    "time_integration:t_end".to_string(),
+                ))?;
+        let dt_max =
+            time_integration_cfg["dt_max"]
+                .as_f64()
+                .ok_or(ConfigError::MissingParameter(
+                    "time_integration:dt_max".to_string(),
+                ))?;
+        let t_end = time_integration_cfg["t_end"]
+            .as_f64()
+            .ok_or(ConfigError::MissingParameter(
+                "time_integration:t_end".to_string(),
+            ))?;
+        let cfl_criterion =
+            time_integration_cfg["cfl_criterion"]
+                .as_f64()
+                .ok_or(ConfigError::MissingParameter(
+                    "time_integration:cfl_criterion".to_string(),
+                ))?;
+        let t_between_snaps =
+            snapshots_cfg["t_between_snaps"]
+                .as_f64()
+                .ok_or(ConfigError::MissingParameter(
+                    "snapshots:t_between_snaps".to_string(),
+                ))?;
+        let prefix = snapshots_cfg["prefix"]
+            .as_str()
+            .ok_or(ConfigError::MissingParameter(
+                "snapshots:t_between_snaps".to_string(),
+            ))?;
+
+        // Setup members
+        let runner = Runner::new(runner_kind)?;
+        let solver = get_solver(solver_kind, eos)?;
+        let particle_motion = ParticleMotion::new(particle_motion)?;
         let time_base = t_end / MAX_NR_TIMESTEPS as f64;
         let time_base_inv = 1. / time_base;
-        Self {
+        Ok(Self {
             runner,
             solver,
             t_end,
@@ -57,8 +130,9 @@ impl Engine {
             ti_status: 0,
             ti_between_status: (t_status * time_base_inv) as IntegerTime,
             snap: 0,
-            snapshot_prefix: snapshot_prefix.to_string(),
-        }
+            snapshot_prefix: prefix.to_string(),
+            particle_motion,
+        })
     }
 
     /// Run this simulation

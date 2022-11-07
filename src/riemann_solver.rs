@@ -14,11 +14,14 @@ pub trait RiemannSolver {
     ) -> Conserved;
 }
 
-pub fn get_solver<'a>(kind: String, gamma: f64) -> Result<Box<dyn RiemannSolver>, ConfigError<'a>> {
-    match kind.as_str() {
+pub fn get_solver(kind: &str, eos: &EquationOfState) -> Result<Box<dyn RiemannSolver>, ConfigError> {
+    let &EquationOfState::Ideal { gamma } = eos else {
+        panic!("Only Ideal gasses are supported right now!");
+    };
+    match kind {
         "HLLC" => Ok(Box::new(HLLCRiemannSolver::new(gamma))),
         "exact" => todo!(),
-        _ => Err(ConfigError::UnknownRiemannSolver(kind)),
+        _ => Err(ConfigError::UnknownRiemannSolver(kind.to_string())),
     }
 }
 
@@ -346,7 +349,7 @@ mod tests {
     #[test]
     fn test_vacuum_solver() {
         let gamma = 5. / 3.;
-        let interface_velocity = 0.8;
+        let interface_velocity = 0.0;
         let solver = VacuumRiemannSolver::new(gamma);
         let eos = EquationOfState::Ideal { gamma };
         let left = Primitives::new(1., 0.3, 0.5);

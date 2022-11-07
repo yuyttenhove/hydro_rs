@@ -4,14 +4,15 @@ use std::{
 };
 
 #[derive(Debug)]
-pub enum ConfigError<'a> {
-    MissingParameter(&'a str),
+pub enum ConfigError {
+    MissingParameter(String),
     UnknownRunner(String),
     UnknownICs(String),
     UnknownRiemannSolver(String),
+    UnknownParticleMotion(String),
 }
 
-impl<'a> Display for ConfigError<'a> {
+impl Display for ConfigError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ConfigError::MissingParameter(name) => {
@@ -26,8 +27,11 @@ impl<'a> Display for ConfigError<'a> {
             ConfigError::UnknownICs(name) => {
                 write!(f, "Unknown type of initial conditions configured: {}", name)
             }
+            ConfigError::UnknownParticleMotion(name) => {
+                write!(f, "Unknown type of particle motion configured: {}", name)
+            }
         }
     }
 }
 
-impl<'a> Error for ConfigError<'a> {}
+impl Error for ConfigError {}

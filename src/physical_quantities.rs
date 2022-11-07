@@ -104,7 +104,7 @@ impl Primitives {
             let density = conserved.mass() / volume;
             let velocity = conserved.momentum() / conserved.mass();
             let pressure = eos.gas_pressure_from_energy(
-                conserved.energy() - 0.5 * conserved.momentum() * velocity, volume);
+                    conserved.energy() - 0.5 * conserved.momentum() * velocity, volume);
             Self { values: Vec3f64(density, velocity, pressure) }
         } else {
             Self::vacuum()
@@ -112,7 +112,13 @@ impl Primitives {
     }
 
     pub fn boost(&self, velocity: f64) -> Self {
-        Self::new(self.density(), self.velocity() + velocity, self.pressure())
+        if self.density() > 0. {
+            Self::new(self.density(), self.velocity() + velocity, self.pressure())
+        } else {
+            debug_assert_eq!(self.velocity(), 0.);
+            debug_assert_eq!(self.velocity(), 0.);
+            *self
+        }
     }
 
     pub fn pairwise_max(&self, other: Self) -> Self {
@@ -129,12 +135,12 @@ impl Primitives {
 
     pub fn check_physical(&mut self) {
         if self.density() < 0. {
-            eprintln!("Negative density encountered, resetting to 0!");
-            self.values.0 = 0.;
+            eprintln!("Negative density encountered, resetting to vacuum!");
+            self.values = Vec3f64::zeros();
         }
         if self.pressure() < 0. {
-            eprintln!("Negative density encountered, resetting to 0!");
-            self.values.2 = 0.;
+            eprintln!("Negative density encountered, resetting to vacuum!");
+            self.values = Vec3f64::zeros();
         }
 
         debug_assert!(self.density().is_finite(), "Infinite density after extrapolation!");

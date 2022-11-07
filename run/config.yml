@@ -1,12 +1,9 @@
 time_integration:
-  dt_min: 1e-13
+  dt_min: 1e-20
   dt_max: 1e-2
   t_min: 1e-8
   t_end: 0.5
-  cfl_criterion: 0.05
-  runner: "OptimalOrderHalfDrift"
-#   runner: "OptimalOrder"
-#   runner: "Default"
+  cfl_criterion: 0.3
 
 snapshots:
   t_between_snaps: 0.05
@@ -15,12 +12,18 @@ snapshots:
 engine:
   t_status: 0.01
   solver: "HLLC"
+  particle_motion: "steer"
+#   runner: "OptimalOrderHalfDrift"
+  runner: "OptimalOrder"
+#   runner: "Default"
+
+space:
+  box_size: 2.
+  periodic: true
 
 initial_conditions:
   type: "sodshock"
   num_part: 250
-  box_size: 2.
-  periodic: true
 
 equation_of_state:
   gamma: 1.66666666667
