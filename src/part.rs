@@ -12,6 +12,7 @@ pub struct Part {
 
     pub volume: f64,
     pub x: f64,
+    pub centroid: f64,
     pub v: f64,
     pub timebin: Timebin,
     pub dt: f64,
@@ -28,7 +29,22 @@ impl Part {
                 ParticleMotion::FIXED => 0.,
                 ParticleMotion::FLUID => fluid_v,
                 ParticleMotion::STEER => {
-                    todo!();
+                    let d = self.centroid - self.x;
+                    let abs_d = d.abs();
+                    let r = 0.5 * self.volume;
+                    let eta = 0.25;
+                    let eta_r = eta * r;
+                    let xi = 1.0;
+                    let sound_speed = eos.sound_speed(self.primitives.pressure(), 1. / self.primitives.density());
+                    if abs_d > 0.9 * eta_r {
+                        let mut fac = xi * sound_speed / abs_d;
+                        if abs_d < 1.1 * eta_r {
+                            fac *= 5. * (abs_d - 0.9 * eta_r) / eta_r;
+                        }
+                        fluid_v + fac * d
+                    } else {
+                        fluid_v
+                    }
                 }
             };
         } else {
@@ -111,7 +127,7 @@ impl Part {
             self.primitives = Primitives::new(self.primitives.density(), self.primitives.velocity() * self.primitives.density() * 1e6, self.primitives.pressure());
             self.conserved = Conserved::from_primitives(&self.primitives, self.volume, eos);
         }
-        
+
         debug_assert!(
             self.primitives.density().is_finite(),
             "Infinite density detected!"

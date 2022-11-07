@@ -27,7 +27,7 @@ impl Runner {
                 space.convert_conserved_to_primitive(engine);
                 space.gradient_estimate(engine);
                 space.flux_exchange(engine);
-                space.flux_apply(engine);
+                space.apply_flux(engine);
                 space.kick2(engine);
                 let ti_next = space.timestep(engine);
                 space.timestep_limiter(engine);  // Note: this can never decrease ti_next
@@ -41,7 +41,7 @@ impl Runner {
                 space.sort();
                 space.volume_calculation(engine);
                 space.flux_exchange(engine);
-                space.flux_apply(engine);
+                space.apply_flux(engine);
                 space.convert_conserved_to_primitive(engine);
                 space.gradient_estimate(engine);
                 space.kick2(engine);
@@ -58,7 +58,7 @@ impl Runner {
                 space.volume_calculation(engine);
                 space.flux_exchange(engine);
                 space.drift(dt, dt);
-                space.flux_apply(engine);
+                space.apply_flux(engine);
                 space.convert_conserved_to_primitive(engine);
                 space.gradient_estimate(engine);
                 space.kick2(engine);

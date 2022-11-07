@@ -99,8 +99,10 @@ impl Space {
             Boundary::Periodic => {
                 self.parts[0] = self.parts[self.num_parts].clone();
                 self.parts[0].x -= self.box_size;
+                self.parts[0].centroid -= self.box_size;
                 self.parts[self.num_parts + 1] = self.parts[1].clone();
                 self.parts[self.num_parts + 1].x += self.box_size;
+                self.parts[self.num_parts + 1].centroid += self.box_size;
             }
             _ => unimplemented!(),
         }
@@ -111,8 +113,10 @@ impl Space {
             Boundary::Periodic => {
                 self.parts[0].conserved = self.parts[self.num_parts].conserved.clone();
                 self.parts[0].volume = self.parts[self.num_parts].volume;
+                self.parts[0].centroid = self.parts[self.num_parts].centroid - self.box_size;
                 self.parts[self.num_parts + 1].conserved = self.parts[1].conserved.clone();
                 self.parts[self.num_parts + 1].volume = self.parts[1].volume;
+                self.parts[self.num_parts + 1].centroid = self.parts[1].centroid + self.box_size;
             }
             _ => unimplemented!(),
         }
@@ -129,6 +133,7 @@ impl Space {
             let x_right = self.parts[i + 1].x;
             let part = &mut self.parts[i];
             part.volume = 0.5 * (x_right - x_left);
+            part.centroid = 0.25 * (x_left + 2. * part.x + x_right);
             debug_assert!(self.parts[i].volume >= 0.);
         }
     }
@@ -153,6 +158,7 @@ impl Space {
             let x_right = self.parts[i + 1].x;
             let part = &mut self.parts[i];
             part.volume = 0.5 * (x_right - x_left);
+            part.centroid = 0.25 * (x_left + 2. * part.x + x_right);
             debug_assert!(self.parts[i].volume >= 0.);
         }
 
@@ -221,7 +227,7 @@ impl Space {
     }
 
     /// Apply the accumulated fluxes to all active particles
-    pub fn flux_apply(&mut self, engine: &Engine) {
+    pub fn apply_flux(&mut self, engine: &Engine) {
         for part in self.parts_mut() {
             if part.is_active(engine) {
                 part.apply_flux();
