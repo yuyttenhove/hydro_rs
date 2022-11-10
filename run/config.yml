@@ -7,14 +7,15 @@ time_integration:
 
 snapshots:
   t_between_snaps: 0.05
-  prefix: "sodshock_"
+  prefix: "noh_"
 
 engine:
   t_status: 0.01
   solver: "HLLC"
   particle_motion: "steer"
-  runner: "OptimalOrderHalfDrift"
-#   runner: "OptimalOrder"
+#   runner: "DefaultHalfDrift"
+#   runner: "OptimalOrderHalfDrift"
+  runner: "OptimalOrder"
 #   runner: "Default"
 
 space:
@@ -22,8 +23,8 @@ space:
   periodic: true
 
 initial_conditions:
-  type: "sodshock"
-  num_part: 500
+  type: "noh"
+  num_part: 1000
 
 equation_of_state:
   gamma: 1.66666666667

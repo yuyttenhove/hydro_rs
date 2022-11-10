@@ -2,7 +2,7 @@ pub use crate::physical_quantities::{Conserved, Primitives};
 use crate::{
     engine::{Engine, ParticleMotion},
     equation_of_state::EquationOfState,
-    timeline::*,
+    timeline::*, time_integration::Runner,
 };
 
 #[derive(Default, Debug, Clone)]
@@ -19,6 +19,7 @@ pub struct Part {
     pub centroid: f64,
     pub v: f64,
     pub timebin: Timebin,
+    pub wakeup: Timebin,
     pub dt: f64,
 
     pub a_grav: f64,
@@ -41,12 +42,12 @@ impl Part {
         }
 
         // Normal case
-        assert!(self.conserved.mass() > 0.);
-        assert!((self.conserved.mass() / self.volume - self.primitives.density()).abs() <= self.primitives.density().abs() * 1e-8);
-        assert!((self.conserved.momentum() / self.conserved.mass() - self.primitives.velocity()).abs() <= self.primitives.velocity().abs() * 1e-8);
+        // assert!(self.conserved.mass() > 0.);
+        // assert!((self.conserved.mass() / self.volume - self.primitives.density()).abs() <= self.primitives.density().abs() * 2e-2);
+        // assert!((self.conserved.momentum() / self.conserved.mass() - self.primitives.velocity()).abs() <= self.primitives.velocity().abs() * 2e-2);
         let internal_energy = self.conserved.energy() - 0.5 * self.conserved.momentum() * self.primitives.velocity();
-        assert!(internal_energy > 0.);
-        assert!((eos.gas_pressure_from_internal_energy(internal_energy, self.volume) - self.primitives.pressure()).abs() <= self.primitives.pressure().abs() * 1e-8);
+        // assert!(internal_energy > 0.);
+        // assert!((eos.gas_pressure_from_internal_energy(internal_energy, self.volume) - self.primitives.pressure()).abs() <= self.primitives.pressure().abs() * 2e-2);
 
         let mass_inv = 1. / self.conserved.mass();
         let fluid_v = self.conserved.momentum() * mass_inv;
@@ -176,8 +177,14 @@ impl Part {
         );
     }
 
-    pub fn timestep_limit(&mut self, new_bin: Timebin, engine: &Engine) {
-        self.timebin = new_bin;
+    pub fn timestep_limit(&mut self, engine: &Engine) {
+        // Anything to do here?
+        if self.wakeup >= self.timebin {
+            return;
+        }
+
+        // Wake this particle up
+        self.timebin = self.wakeup;
 
         // TODO: Rewind kick1 if necessary
         // TODO: Reapply kick1 if necessary
@@ -188,8 +195,31 @@ impl Part {
             / self.conserved.mass()
     }
 
-    pub fn is_active(&self, engine: &Engine) -> bool {
+    pub fn is_ending(&self, engine: &Engine) -> bool {
         return self.timebin <= get_max_active_bin(engine.ti_current());
+    }
+
+    fn is_halfway(&self, engine: &Engine) -> bool {
+        let dti = engine.ti_current() - engine.ti_old();
+        return !self.is_ending(engine) && self.timebin <= get_max_active_bin(engine.ti_old() + 2 * dti);
+    }
+
+    pub fn is_active_flux(&self, engine: &Engine) -> bool {
+        match engine.runner() {
+            Runner::OptimalOrderHalfDrift | Runner::DefaultHalfDrift => self.is_halfway(engine),
+            _ => self.is_ending(engine),
+        }
+    }
+
+    pub fn is_active_primitive_calculation(&self, engine: &Engine) -> bool {
+        match engine.runner() {
+            Runner::DefaultHalfDrift => self.is_halfway(engine),
+            _ => self.is_ending(engine),
+        }
+    }
+
+    pub fn is_active(&self, engine: &Engine) -> bool {
+        self.is_ending(engine)
     }
 
     pub fn set_timebin(&mut self, new_dti: IntegerTime) {

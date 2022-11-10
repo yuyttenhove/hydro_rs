@@ -64,15 +64,20 @@ fn pairwise_limiter_single_quantity(q_l: f64, q_r: f64, q_dash: f64) -> f64 {
 }
 
 pub fn pairwise_limiter(primitives_left: Primitives, primitives_right: Primitives, primitives_dash: Primitives) -> Primitives {
-    Primitives::new(
+    let mut limited = Primitives::new(
         pairwise_limiter_single_quantity(
             primitives_left.density(), primitives_right.density(), primitives_dash.density()
-        ), 
+        ),
         pairwise_limiter_single_quantity(
             primitives_left.velocity(), primitives_right.velocity(), primitives_dash.velocity()
         ), 
         pairwise_limiter_single_quantity(
             primitives_left.pressure(), primitives_right.pressure(), primitives_dash.pressure()
         )
-    )
+    );
+
+    limited.check_physical();
+
+    limited
+
 }

@@ -128,8 +128,8 @@ impl Primitives {
         if self.density() > 0. {
             Self::new(self.density(), self.velocity() + velocity, self.pressure())
         } else {
-            debug_assert_eq!(self.velocity(), 0.);
-            debug_assert_eq!(self.velocity(), 0.);
+            debug_assert_eq!(self.density(), 0.);
+            debug_assert_eq!(self.pressure(), 0.);
             *self
         }
     }

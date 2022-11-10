@@ -10,7 +10,7 @@ use crate::{
     riemann_solver::{get_solver, RiemannSolver},
     space::Space,
     time_integration::Runner,
-    timeline::*, equation_of_state::EquationOfState,
+    timeline::*, equation_of_state::EquationOfState, part::Part,
 };
 
 pub enum ParticleMotion {
@@ -37,6 +37,7 @@ pub struct Engine {
     t_current: f64,
     ti_old: IntegerTime,
     ti_current: IntegerTime,
+    ti_next: IntegerTime,
     time_base: f64,
     time_base_inv: f64,
     cfl_criterion: f64,
@@ -120,6 +121,7 @@ impl Engine {
             t_current: 0.0,
             ti_old: 0,
             ti_current: 0,
+            ti_next: 0,
             time_base,
             time_base_inv,
             cfl_criterion,
@@ -153,13 +155,17 @@ impl Engine {
                 }
             }
 
-            // take a step
-            self.step(space);
-
             // Do we need to save a snapshot?
-            if self.ti_current == self.ti_snap {
+            if self.ti_next > self.ti_snap {
+                if self.ti_current < self.ti_snap {
+                    // Drift to snapshot time
+                    self.step(space, self.ti_snap)
+                }
                 self.dump(space)?;
             }
+
+            // take a step
+            self.step(space, self.ti_next);
         }
 
         // Save the final state of the simulation
@@ -168,12 +174,25 @@ impl Engine {
         Ok(())
     }
 
-    fn step(&mut self, space: &mut Space) {
-        let ti_next = self.ti_snap.min(self.runner.step(self, space));
+    fn step(&mut self, space: &mut Space, ti_next: IntegerTime) {
         let dti = ti_next - self.ti_current;
-        self.ti_old = self.ti_current;
-        self.ti_current = ti_next;
-        self.t_current += make_timestep(dti, self.time_base);
+
+        if self.runner.use_half_step() {
+            assert!(dti % 2 == 0, "Integer timestep not divisable by 2!");
+            let half_dti = dti / 2;
+            self.ti_old = self.ti_current;
+            self.ti_current += half_dti;
+            self.runner.half_step1(self, space);
+            self.ti_current += half_dti;
+            self.ti_next = self.runner.half_step2(self, space);
+        } else {
+            self.ti_old = self.ti_current;
+            self.ti_current = ti_next;
+            self.ti_next = self.runner.step(self, space);
+        }
+
+        let dt = make_timestep(dti, self.time_base);
+        self.t_current += dt;
     }
 
     fn dump(&mut self, space: &mut Space) -> Result<(), IoError> {
@@ -192,6 +211,14 @@ impl Engine {
 
     pub fn ti_current(&self) -> IntegerTime {
         self.ti_current
+    }
+
+    pub fn ti_old(&self) -> IntegerTime {
+        self.ti_old
+    }
+
+    pub fn runner(&self) -> &Runner {
+        &self.runner
     }
 
     pub fn time_base_inv(&self) -> f64 {

@@ -126,7 +126,7 @@ impl Space {
     pub fn volume_calculation(&mut self, engine: &Engine) {
         for i in 1..self.num_parts + 1 {
             let part = &self.parts[i];
-            if !part.is_active(engine) {
+            if !part.is_active_flux(engine) {
                 continue;
             }
             let x_left = self.parts[i - 1].x;
@@ -141,8 +141,11 @@ impl Space {
     pub fn convert_conserved_to_primitive(&mut self, engine: &Engine) {
         let eos = self.eos;
         for part in self.parts_mut() {
-            if part.is_active(engine) {
+            if part.is_active_primitive_calculation(engine) {
                 part.convert_conserved_to_primitive(eos);
+
+                // This also invalidates the extrapolations
+                part.extrapolations = Primitives::vacuum();
             }
         }
 
@@ -185,7 +188,7 @@ impl Space {
             let left = &self.parts[i - 1];
             let right = &self.parts[i + 1];
 
-            if !part.is_active(engine) {
+            if !part.is_active_flux(engine) {
                 continue;
             }
 
@@ -246,26 +249,34 @@ impl Space {
             let right = &self.parts[i + 1];
 
             // anything to do here?
-            let left_active = left.is_active(engine);
-            let right_active = right.is_active(engine);
-            if !left_active && !right_active {
+            // Since we do the flux exchange symmetrically, we only want to do it when the particle with the
+            // smallest timestep is active for the flux exchange. This is important for the half drift case,
+            // since then the half of the longer timestep might coincide with the full smaller timestep and we
+            // do not want to do the flux exchange in that case.
+            let dt = if left.is_active_flux(engine) && left.dt <= right.dt {
+                left.dt
+            } else if right.is_active_flux(engine) && right.dt <= left.dt {
+                right.dt
+            } else {
                 continue;
-            }
+            };
 
-            // At least one of the particles is active: Update the fluxes of both (symmetrically)
-            let dt = left.dt.min(right.dt);
+            // The particle with the smallest timestep is active: Update the fluxes of both (symmetrically)
+            // We extrapolate from the centroid of the particles (test).
+            let dx_left = 0.5 * left.volume;
+            let dx_right = 0.5 * right.volume;
             let dx = 0.5 * (right.x - left.x);
 
             // Gradient extrapolation
             let primitives_left = pairwise_limiter(
                 left.primitives,
                 right.primitives,
-                left.primitives + dx * left.gradients + left.extrapolations,
+                left.primitives + dx_left * left.gradients + left.extrapolations,
             );
             let primitives_right = pairwise_limiter(
                 right.primitives,
                 left.primitives,
-                right.primitives - dx * right.gradients + right.extrapolations,
+                right.primitives - dx_right * right.gradients + right.extrapolations,
             );
 
             // Boost the primitives to the frame of reference of the interface:
@@ -291,7 +302,6 @@ impl Space {
         for part in self.parts_mut() {
             if part.is_active(engine) {
                 part.apply_flux();
-                part.extrapolations = Primitives::vacuum();
             }
         }
     }
@@ -327,7 +337,7 @@ impl Space {
     pub fn gradient_estimate(&mut self, engine: &Engine) {
         for i in 1..self.num_parts + 1 {
             let part = &self.parts[i];
-            if !part.is_active(engine) {
+            if !part.is_active_primitive_calculation(engine) {
                 continue;
             }
 
@@ -363,7 +373,7 @@ impl Space {
         let mut ti_end_min = MAX_NR_TIMESTEPS;
 
         for part in self.parts.iter_mut() {
-            if part.is_active(engine) {
+            if part.is_ending(engine) {
                 // Compute new timestep
                 let mut dt =
                     part.timestep(engine.cfl_criterion(), &self.eos, &engine.particle_motion);
@@ -399,23 +409,27 @@ impl Space {
 
     /// Apply the timestep limiter to the particles
     pub fn timestep_limiter(&mut self, engine: &Engine) {
+        // First collect info about the timesteps of the neighbouring particles
         for i in 1..self.num_parts + 1 {
             // Get a slice of neighbouring parts
             let parts = &mut self.parts[i - 1..=i + 1];
 
             // This particles timebin
-            let mut new_bin = parts[1].timebin;
+            let mut wakeup = parts[1].timebin;
 
-            if parts[0].is_active(engine) {
-                new_bin = new_bin.min(parts[0].timebin + TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN);
+            if parts[0].is_ending(engine) {
+                wakeup = wakeup.min(parts[0].timebin + TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN);
             }
-            if parts[2].is_active(engine) {
-                new_bin = new_bin.min(parts[2].timebin + TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN);
+            if parts[2].is_ending(engine) {
+                wakeup = wakeup.min(parts[2].timebin + TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN);
             }
 
-            if new_bin != parts[1].timebin {
-                parts[1].timestep_limit(new_bin, engine);
-            }
+            parts[1].wakeup = wakeup;
+        }
+
+        // Now apply the limiter
+        for part in self.parts_mut() {
+            part.timestep_limit(engine);
         }
     }
 
