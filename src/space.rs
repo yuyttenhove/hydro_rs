@@ -272,27 +272,27 @@ impl Space {
             // We extrapolate from the centroid of the particles (test).
             let dx_left = 0.5 * left.volume;
             let dx_right = 0.5 * right.volume;
-            let dx = 0.5 * (right.x - left.x);
+            let dx = dx_left + dx_right;
 
             // Gradient extrapolation
             let primitives_left = pairwise_limiter(
-                left.primitives,
-                right.primitives,
-                left.primitives + dx_left * left.gradients + left.extrapolations,
+                    left.primitives,
+            right.primitives,
+            left.primitives + dx_left * left.gradients + left.extrapolations,
             );
             let primitives_right = pairwise_limiter(
-                right.primitives,
-                left.primitives,
-                right.primitives - dx_right * right.gradients + right.extrapolations,
+                    right.primitives,
+            left.primitives,
+            right.primitives - dx_right * right.gradients + right.extrapolations,
             );
 
             // Boost the primitives to the frame of reference of the interface:
             let v_face = 0.5 * (left.v + right.v);
             let fluxes = engine.solver.solve_for_flux(
-                &primitives_left.boost(-v_face),
-                &primitives_right.boost(-v_face),
-                v_face,
-                &self.eos,
+                    &primitives_left.boost(-v_face),
+            &primitives_right.boost(-v_face),
+            v_face,
+            &self.eos,
             );
 
             // update accumulated fluxes
