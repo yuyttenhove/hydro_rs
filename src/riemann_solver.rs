@@ -203,6 +203,7 @@ impl HLLCRiemannSolver {
 }
 
 impl RiemannSolver for HLLCRiemannSolver {
+    /// See Section 10.6 in Toro (2009)
     fn solve_for_flux(
         &self,
         left: &Primitives,
@@ -236,7 +237,7 @@ impl RiemannSolver for HLLCRiemannSolver {
 
         // STEP 1: Pressure estimate
         let ppvrs = 0.5 * (left.pressure() + right.pressure())
-            - 0.25 * v_r_m_v_l * (left.density() + right.density()) * (a_l + a_r); // -0.125
+            - 0.125 * v_r_m_v_l * (left.density() + right.density()) * (a_l + a_r);
         let p_star = ppvrs.max(0.);
 
         // STEP 2: wave speed estimates
