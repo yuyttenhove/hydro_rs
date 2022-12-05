@@ -1,7 +1,7 @@
 use crate::{
     equation_of_state::EquationOfState,
     errors::ConfigError,
-    part::{Conserved, Primitives},
+    physical_quantities::{Conserved, Primitives},
 };
 
 pub trait RiemannSolver {
@@ -376,8 +376,16 @@ mod tests {
         );
 
         assert_approx_eq!(fluxes.mass(), -fluxes_reversed.mass(), fluxes.mass() * 1e-6);
-        assert_approx_eq!(fluxes.momentum(), fluxes_reversed.momentum(), fluxes.momentum() * 1e-6);
-        assert_approx_eq!(fluxes.energy(), -fluxes_reversed.energy(), fluxes.energy() * 1e-6);
+        assert_approx_eq!(
+            fluxes.momentum(),
+            fluxes_reversed.momentum(),
+            fluxes.momentum() * 1e-6
+        );
+        assert_approx_eq!(
+            fluxes.energy(),
+            -fluxes_reversed.energy(),
+            fluxes.energy() * 1e-6
+        );
     }
 
     #[test]
@@ -402,13 +410,65 @@ mod tests {
         let half_s = Primitives::new(0.57625934, 0.7596532, 0.19952622);
         let flux_s = flux_from_riemann_solution(half_s, interface_velocity, gamma);
 
-        assert_approx_eq!(fluxes.mass(), flux_s.mass(), fluxes.mass() * 0.05);
+        assert_approx_eq!(fluxes.mass(), flux_s.mass(), fluxes.mass() * 2e-2);
         assert_approx_eq!(
             fluxes.momentum(),
             flux_s.momentum(),
-            fluxes.momentum() * 0.05
+            fluxes.momentum() * 2e-2
         );
-        assert_approx_eq!(fluxes.energy(), flux_s.energy(), fluxes.energy() * 0.05);
+        assert_approx_eq!(fluxes.energy(), flux_s.energy(), fluxes.energy() * 2e-2);
+    }
+
+    #[test]
+    fn test_hllc_solver_symmetry() {
+        let gamma = 5. / 3.;
+        let interface_velocity = -3e-1;
+        let solver = HLLCRiemannSolver::new(gamma);
+        let eos = EquationOfState::Ideal { gamma };
+        let left = Primitives::new(1., 0., 1.);
+        let left_reversed = Primitives::new(1., 0., 1.);
+        let right = Primitives::new(1., -6e-1, 1.);
+        let right_reversed = Primitives::new(1., 6e-1, 1.);
+
+        let fluxes = solver.solve_for_flux(
+            &left.boost(-interface_velocity),
+            &right.boost(-interface_velocity),
+            interface_velocity,
+            &eos,
+        );
+        let fluxes_reversed = solver.solve_for_flux(
+            &right_reversed.boost(interface_velocity),
+            &left_reversed.boost(interface_velocity),
+            -interface_velocity,
+            &eos,
+        );
+
+        let fluxes_s = flux_from_riemann_solution(
+            Primitives::new(1.24867487, -0.3, 1.24867487),
+            interface_velocity,
+            gamma,
+        );
+        let fluxes_s_reversed = flux_from_riemann_solution(
+            Primitives::new(1.24867487, 0.3, 1.24867487),
+            -interface_velocity,
+            gamma,
+        );
+
+        assert_approx_eq!(
+            fluxes.mass(),
+            -fluxes_reversed.mass(),
+            (fluxes.mass() * 1e-6).abs().max(left.density() * 1e-13)
+        );
+        assert_approx_eq!(
+            fluxes.momentum(),
+            fluxes_reversed.momentum(),
+            fluxes.momentum().abs() * 1e-6
+        );
+        assert_approx_eq!(
+            fluxes.energy(),
+            -fluxes_reversed.energy(),
+            fluxes.energy().abs() * 1e-6
+        );
     }
 
     #[test]
@@ -430,12 +490,12 @@ mod tests {
         let half_s = Primitives::new(0.7064862, 0.49950013, 0.28020517);
         let flux_s = flux_from_riemann_solution(half_s, interface_velocity, gamma);
 
-        assert_approx_eq!(fluxes.mass(), flux_s.mass(), fluxes.mass() * 2e-1);
+        assert_approx_eq!(fluxes.mass(), flux_s.mass(), fluxes.mass() * 6e-2);
         assert_approx_eq!(
             fluxes.momentum(),
             flux_s.momentum(),
-            fluxes.momentum() * 2e-1
+            fluxes.momentum() * 6e-2
         );
-        assert_approx_eq!(fluxes.energy(), flux_s.energy(), fluxes.energy() * 2e-1);
+        assert_approx_eq!(fluxes.energy(), flux_s.energy(), fluxes.energy() * 6e-2);
     }
 }
