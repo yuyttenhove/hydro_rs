@@ -1,8 +1,11 @@
-pub use crate::physical_quantities::{Conserved, Primitives};
+use crate::physical_quantities::{Conserved, Primitives, Vec3f64};
+#[cfg(any(dimensionality = "2D", dimensionality = "3D"))]
+use crate::spherical::ALPHA;
 use crate::{
     engine::{Engine, ParticleMotion},
     equation_of_state::EquationOfState,
-    timeline::*, time_integration::Runner,
+    time_integration::Runner,
+    timeline::*,
 };
 
 #[derive(Default, Debug, Clone)]
@@ -45,15 +48,17 @@ impl Part {
         // assert!(self.conserved.mass() > 0.);
         // assert!((self.conserved.mass() / self.volume - self.primitives.density()).abs() <= self.primitives.density().abs() * 2e-2);
         // assert!((self.conserved.momentum() / self.conserved.mass() - self.primitives.velocity()).abs() <= self.primitives.velocity().abs() * 2e-2);
-        let internal_energy = self.conserved.energy() - 0.5 * self.conserved.momentum() * self.primitives.velocity();
+        let m_inv = 1. / self.conserved.mass();
+        let internal_energy = (self.conserved.energy()
+            - 0.5 * self.conserved.momentum() * self.primitives.velocity())
+            * m_inv;
         // assert!(internal_energy > 0.);
         // assert!((eos.gas_pressure_from_internal_energy(internal_energy, self.volume) - self.primitives.pressure()).abs() <= self.primitives.pressure().abs() * 2e-2);
 
-        let mass_inv = 1. / self.conserved.mass();
-        let fluid_v = self.conserved.momentum() * mass_inv;
+        let fluid_v = self.conserved.momentum() * m_inv;
         let sound_speed = eos.sound_speed(
-            eos.gas_pressure_from_internal_energy(internal_energy, self.volume),
-            self.volume * mass_inv,
+            eos.gas_pressure_from_internal_energy(internal_energy, self.primitives.density()),
+            self.physical_volume() * m_inv,
         );
         // Set the velocity with which this particle will be drifted over the course of it's next timestep
         self.v = match particle_motion {
@@ -121,7 +126,6 @@ impl Part {
 
     pub fn apply_flux(&mut self) {
         self.conserved += self.fluxes;
-        self.fluxes = Conserved::vacuum();
 
         if self.conserved.mass() < 0. {
             eprintln!("Negative mass after applying fluxes");
@@ -131,6 +135,11 @@ impl Part {
             eprintln!("Negative energy after applying fluxes");
             self.conserved = Conserved::vacuum();
         }
+    }
+
+    pub fn reset_fluxes(&mut self) {
+        self.fluxes = Conserved::vacuum();
+        self.gravity_mflux = 0.;
     }
 
     pub fn convert_conserved_to_primitive(&mut self, eos: EquationOfState) {
@@ -148,7 +157,7 @@ impl Part {
             );
             Primitives::vacuum()
         } else {
-            Primitives::from_conserved(&self.conserved, self.volume, eos)
+            Primitives::from_conserved(&self.conserved, self.physical_volume(), eos)
         };
 
         // if self.primitives.density() < 1e-6 {
@@ -190,6 +199,58 @@ impl Part {
         // TODO: Reapply kick1 if necessary
     }
 
+    /// Add the spherical source terms.
+    ///
+    /// See Toro, 2009, chapter 17.
+    /// We use a second order Runge-Kutta step and apply an operator splitting method
+    /// to couple the source term to the hydro step.
+    #[cfg(any(dimensionality = "2D", dimensionality = "3D"))]
+    pub fn add_spherical_source_term(&mut self, eos: &EquationOfState) {
+        if self.conserved.mass() == 0. {
+            return;
+        }
+
+        let r = self.centroid;
+        let r_inv = ALPHA / r;
+        let vol = self.physical_volume();
+        let vol_inv = 1. / vol;
+        let u = (vol_inv * self.conserved).values();
+
+        let u0_inv = 1. / u.0;
+        let u1_2 = u.1 * u.1;
+        let internal_energy = u.2 - 0.5 * u1_2 * u0_inv; // rho e
+        let p1 = eos.gas_pressure_from_internal_energy(internal_energy * u0_inv, u.0);
+        let k1 = -self.dt * r_inv * Vec3f64(u.1, u1_2 * u0_inv, u.1 * u0_inv * (u.2 + p1));
+
+        let u_prime = u + k1;
+        let u_prime0_inv = 1. / u_prime.0;
+        let u_prime1_2 = u_prime.1 * u_prime.1;
+        let internal_energy = u_prime.2 - 0.5 * u_prime1_2 * u_prime0_inv;
+        let p2 = eos.gas_pressure_from_internal_energy(internal_energy, u_prime.0);
+        let k2 = -self.dt
+            * r_inv
+            * Vec3f64(
+                u_prime.1,
+                u_prime1_2 * u_prime0_inv,
+                u_prime.1 * u_prime0_inv * (u_prime.2 + p2),
+            );
+
+        let u = vol * (u + 0.5 * (k1 + k2));
+
+        self.conserved = Conserved::new(u.0, u.1, u.2);
+    }
+
+    pub fn grav_kick(&mut self) {
+        let mass = self.conserved.mass();
+        let momentum = self.conserved.momentum();
+        let grav_kick_factor = 0.5 * self.dt * self.a_grav;
+        self.conserved += Conserved::new(
+            0.,
+            grav_kick_factor * mass,
+            grav_kick_factor * (momentum - self.gravity_mflux),
+        );
+    }
+
     pub fn internal_energy(&self) -> f64 {
         (self.conserved.energy() - 0.5 * self.conserved.momentum() * self.primitives.velocity())
             / self.conserved.mass()
@@ -201,7 +262,8 @@ impl Part {
 
     fn is_halfway(&self, engine: &Engine) -> bool {
         let dti = engine.ti_current() - engine.ti_old();
-        return !self.is_ending(engine) && self.timebin <= get_max_active_bin(engine.ti_old() + 2 * dti);
+        return !self.is_ending(engine)
+            && self.timebin <= get_max_active_bin(engine.ti_old() + 2 * dti);
     }
 
     pub fn is_active_flux(&self, engine: &Engine) -> bool {
@@ -224,5 +286,57 @@ impl Part {
 
     pub fn set_timebin(&mut self, new_dti: IntegerTime) {
         self.timebin = get_time_bin(new_dti);
+    }
+
+    pub fn physical_volume(&self) -> f64 {
+        let x_left = self.centroid - 0.5 * self.volume;
+        let x_right = self.centroid + 0.5 * self.volume;
+        if cfg!(dimensionality = "2D") {
+            std::f64::consts::PI * (x_right * x_right - x_left * x_left)
+        } else if cfg!(dimensionality = "3D") {
+            4. * std::f64::consts::FRAC_PI_3 * (x_right.powi(3) - x_left.powi(3))
+        } else {
+            self.volume
+        }
+    }
+
+    pub fn half_physical_volume(&self) -> f64 {
+        let x_left = self.centroid - 0.5 * self.volume;
+        let r = self.centroid;
+        if cfg!(dimensionality = "2D") {
+            std::f64::consts::PI * (r * r - x_left * x_left)
+        } else if cfg!(dimensionality = "3D") {
+            4. * std::f64::consts::FRAC_PI_3 * (r.powi(3) - x_left.powi(3))
+        } else {
+            self.volume
+        }
+    }
+
+    pub fn reflect(&mut self, around: f64) -> &mut Self {
+        self.x += 2. * (around - self.x);
+        self.centroid += 2. * (around - self.centroid);
+        self.v *= -1.;
+
+        self
+    }
+
+    pub fn reflect_quantities(&mut self) -> &mut Self {
+        self.primitives = Primitives::new(
+            self.primitives.density(),
+            -self.primitives.velocity(),
+            self.primitives.pressure(),
+        );
+        self.gradients = Primitives::new(
+            -self.gradients.density(),
+            self.gradients.velocity(),
+            -self.gradients.pressure(),
+        );
+        self.conserved = Conserved::new(
+            self.conserved.mass(),
+            -self.conserved.momentum(),
+            self.conserved.energy(),
+        );
+
+        self
     }
 }

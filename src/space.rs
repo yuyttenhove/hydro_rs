@@ -8,12 +8,13 @@ use yaml_rust::Yaml;
 use crate::{
     engine::Engine,
     equation_of_state::EquationOfState,
-    part::{Conserved, Part, Primitives},
+    part::Part,
+    physical_quantities::{Conserved, Primitives},
     slope_limiters::{cell_wide_limiter, pairwise_limiter},
     timeline::{
         get_integer_time_end, make_integer_timestep, make_timestep, IntegerTime, MAX_NR_TIMESTEPS,
         NUM_TIME_BINS, TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN,
-    },
+    }, physical_constants::NEWTON_G_IN_SI,
 };
 
 #[derive(Clone, Copy)]
@@ -22,6 +23,7 @@ pub enum Boundary {
     Reflective,
     Open,
     Vacuum,
+    Spherical,
 }
 
 pub struct Space {
@@ -71,11 +73,14 @@ impl Space {
         }
 
         // create space
+        #[cfg(dimensionality = "1D")]
         let boundary = if periodic {
             Boundary::Periodic
         } else {
             Boundary::Reflective
         };
+        #[cfg(any(dimensionality = "2D", dimensionality = "3D"))]
+        let boundary = Boundary::Spherical;
         let mut space = Space {
             parts,
             boundary,
@@ -94,7 +99,7 @@ impl Space {
         space
     }
 
-    fn apply_boundary_condition(&mut self) {
+    pub fn apply_boundary_condition(&mut self) {
         match self.boundary {
             Boundary::Periodic => {
                 self.parts[0] = self.parts[self.num_parts].clone();
@@ -104,19 +109,22 @@ impl Space {
                 self.parts[self.num_parts + 1].x += self.box_size;
                 self.parts[self.num_parts + 1].centroid += self.box_size;
             }
-            _ => unimplemented!(),
-        }
-    }
+            Boundary::Reflective => {
+                self.parts[0] = self.parts[1].clone();
+                self.parts[0].reflect(0.).reflect_quantities();
 
-    fn apply_boundary_conserved(&mut self) {
-        match self.boundary {
-            Boundary::Periodic => {
-                self.parts[0].conserved = self.parts[self.num_parts].conserved.clone();
-                self.parts[0].volume = self.parts[self.num_parts].volume;
-                self.parts[0].centroid = self.parts[self.num_parts].centroid - self.box_size;
-                self.parts[self.num_parts + 1].conserved = self.parts[1].conserved.clone();
-                self.parts[self.num_parts + 1].volume = self.parts[1].volume;
-                self.parts[self.num_parts + 1].centroid = self.parts[1].centroid + self.box_size;
+                self.parts[self.num_parts + 1] = self.parts[self.num_parts].clone();
+                self.parts[self.num_parts + 1].reflect(self.box_size).reflect_quantities();
+            }
+            Boundary::Spherical => {
+                // Reflective at center, vacuum at edge
+                self.parts[0] = self.parts[1].clone();
+                self.parts[0].reflect(0.).reflect_quantities();
+
+                self.parts[self.num_parts + 1] = self.parts[self.num_parts].clone();
+                self.parts[self.num_parts + 1].reflect(self.box_size);
+                self.parts[self.num_parts + 1].primitives = Primitives::vacuum();
+                self.parts[self.num_parts + 1].conserved = Conserved::vacuum();
             }
             _ => unimplemented!(),
         }
@@ -148,8 +156,6 @@ impl Space {
                 part.extrapolations = Primitives::vacuum();
             }
         }
-
-        self.apply_boundary_condition();
     }
 
     /// Convert the primitive quantities to conserved quantities. This is only done when creating the space from ic's.
@@ -167,10 +173,11 @@ impl Space {
         // Calculate the conserved quantities
         let eos = self.eos;
         for part in self.parts_mut() {
-            part.conserved = Conserved::from_primitives(&part.primitives, part.volume, eos);
+            part.conserved = Conserved::from_primitives(&part.primitives, part.physical_volume(), eos);
         }
 
-        self.apply_boundary_conserved();
+        // re-apply BC, now with updated conserved quantities
+        self.apply_boundary_condition();
     }
 
     /// Sort the parts in space according to their x coordinate
@@ -309,27 +316,42 @@ impl Space {
     /// drift all particles foward over the given timestep
     pub fn drift(&mut self, dt_drift: f64, dt_extrapolate: f64) {
         let eos = self.eos;
-        for part in self.parts_mut() {
+        // drift all particles, including boundary particles
+        for part in self.parts.iter_mut() {
             part.drift(dt_drift, dt_extrapolate, &eos);
         }
 
         // Handle particles that left the box.
         let box_size = self.box_size;
         let boundary = self.boundary;
-        for part in self.parts_mut() {
+        let mut to_remove = vec![];
+        for (idx, part) in self.parts_mut().iter_mut().enumerate() {
             if part.x < 0. || part.x >= box_size {
                 match boundary {
                     Boundary::Periodic => {
                         while part.x < 0. {
-                            part.x += box_size
+                            part.x += box_size;
                         }
                         while part.x >= box_size {
-                            part.x -= box_size
+                            part.x -= box_size;
+                        }
+                    }
+                    Boundary::Spherical => {
+                        if part.x < 0. {
+                            part.x = -part.x;
+                        }
+                        if part.x >= box_size {
+                            to_remove.push(idx + 1);
                         }
                     }
                     _ => todo!(),
                 }
             }
+        }
+        // remove particles if needed
+        for idx in to_remove {
+            self.parts.remove(idx);
+            self.num_parts -= 1;
         }
     }
 
@@ -361,9 +383,6 @@ impl Space {
                 )
             };
         }
-
-        // Make sure the gradients are applied to the boundary particles
-        self.apply_boundary_condition();
     }
 
     /// Calculate the next timestep for all active particles
@@ -433,14 +452,64 @@ impl Space {
         }
     }
 
+    /// Collect the gravitational accellerations in the particles
+    pub fn self_gravity(&mut self, engine: &Engine) {
+        if !engine.with_gravity {
+            return;
+        }
+
+        let mut m_tot = 0.;
+        for part in self.parts_mut() {
+            let m_cell = m_tot + part.primitives.density() * part.half_physical_volume();
+            let r2 = part.centroid.powi(2);
+            part.a_grav = 1. * m_cell / r2;
+            m_tot += part.primitives.density() * part.physical_volume();
+        }
+    }
+
     /// Apply the first half kick (gravity) to the particles
     pub fn kick1(&mut self, engine: &Engine) {
-        // TODO
+        if !engine.with_gravity {
+            return;
+        }
+        for part in self.parts_mut() {
+            if part.is_active(engine) {
+                part.grav_kick();
+            }
+        }
     }
 
     /// Apply the second half kick (gravity) to the particles
     pub fn kick2(&mut self, engine: &Engine) {
-        // TODO
+        if !engine.with_gravity {
+            return;
+        }
+        for part in self.parts_mut() {
+            if part.is_active(engine) {
+                part.grav_kick();
+                part.reset_fluxes();
+            }
+        }
+    }
+
+    #[cfg(any(dimensionality = "2D", dimensionality = "3D"))]
+    pub fn add_spherical_source_term(&mut self, engine: &Engine) {
+        let eos = self.eos;
+        for part in self.parts_mut() {
+            if part.is_active(engine) {
+                part.add_spherical_source_term(&eos);
+            }
+        }
+    }
+
+    /// Prepare the particles for the next timestep
+    pub fn prepare(&mut self, engine: &Engine) {
+        self.apply_boundary_condition();
+        for part in self.parts_mut() {
+            if part.is_active(engine) {
+                part.reset_fluxes();
+            }
+        }
     }
 
     /// Dump snapshot of space at the current time
@@ -508,6 +577,7 @@ mod test {
     const CFG_STR: &'_ str = "box_size: 2. \nperiodic: true";
 
     #[test]
+    #[cfg(dimensionality="1D")]
     fn test_init() {
         let eos = EquationOfState::Ideal { gamma: GAMMA };
         let config = &YamlLoader::load_from_str(CFG_STR).unwrap()[0];

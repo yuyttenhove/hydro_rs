@@ -23,6 +23,8 @@ mod physical_quantities;
 mod riemann_solver;
 mod slope_limiters;
 mod space;
+#[cfg(any(dimensionality="2D", dimensionality="3D"))]
+mod spherical;
 mod time_integration;
 mod timeline;
 mod utils;

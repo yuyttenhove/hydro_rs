@@ -1,4 +1,4 @@
-use crate::part::Primitives;
+use crate::physical_quantities::Primitives;
 
 fn cell_wide_limiter_single_quantity(max: f64, min: f64, emax: f64, emin: f64) -> f64 {
     if emax == 0. || emin == 0. {

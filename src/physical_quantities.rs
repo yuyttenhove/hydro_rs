@@ -1,9 +1,10 @@
+use std::cmp::min;
 use std::ops::{Add, AddAssign, Index, Mul, Sub, SubAssign};
 
 use crate::equation_of_state::EquationOfState;
 
 #[derive(Default, Debug, Clone, Copy)]
-pub struct Vec3f64(f64, f64, f64);
+pub struct Vec3f64(pub f64, pub f64, pub f64);
 
 impl Add for Vec3f64 {
     type Output = Self;
@@ -112,10 +113,11 @@ impl Primitives {
 
     pub fn from_conserved(conserved: &Conserved, volume: f64, eos: EquationOfState) -> Self {
         if conserved.mass() > 0. {
+            let m_inv = 1. / conserved.mass();
             let density = conserved.mass() / volume;
-            let velocity = conserved.momentum() / conserved.mass();
-            let internal_energy = conserved.energy() - 0.5 * conserved.momentum() * velocity;
-            let pressure = eos.gas_pressure_from_internal_energy(internal_energy, volume);
+            let velocity = conserved.momentum() * m_inv;
+            let internal_energy = conserved.internal_energy();
+            let pressure = eos.gas_pressure_from_internal_energy(internal_energy, density);
             Self {
                 values: Vec3f64(density, velocity, pressure),
             }
@@ -203,6 +205,13 @@ impl Conserved {
         self.values.2
     }
 
+    /// returns the specific internal energy e: E = E_kin + E_therm = E_kin + m * e
+    pub fn internal_energy(&self) -> f64 {
+        let m_inv = 1. / self.mass();
+        let thermal_energy = self.values.2 - 0.5 * self.values.1 * self.values.1 * m_inv;
+        thermal_energy * m_inv
+    }
+
     pub fn vacuum() -> Self {
         Conserved {
             values: Vec3f64::zeros(),
@@ -219,7 +228,7 @@ impl Conserved {
         let mass = primitives.density() * volume;
         let momentum = mass * primitives.velocity();
         let energy = 0.5 * momentum * primitives.velocity()
-            + eos.gas_internal_energy_from_pressure(primitives.pressure(), volume);
+            + mass * eos.gas_internal_energy_from_pressure(primitives.pressure(), primitives.density());
         Self {
             values: Vec3f64(mass, momentum, energy),
         }
@@ -235,6 +244,10 @@ impl Conserved {
         Self {
             values: self.values.pairwise_min(other.values),
         }
+    }
+
+    pub fn values(&self) -> Vec3f64 {
+        self.values
     }
 }
 

@@ -50,6 +50,7 @@ pub struct Engine {
     snap: u16,
     snapshot_prefix: String,
     pub particle_motion: ParticleMotion,
+    pub with_gravity: bool,
 }
 
 impl Engine {
@@ -73,6 +74,7 @@ impl Engine {
             .as_str()
             .ok_or(ConfigError::MissingParameter("engine:solver".to_string()))?;
         let particle_motion = engine_cfg["particle_motion"].as_str().unwrap_or("fluid");
+        let with_gravity = engine_cfg["with_gravity"].as_bool().unwrap_or(false);
         let dt_min =
             time_integration_cfg["dt_min"]
                 .as_f64()
@@ -134,6 +136,7 @@ impl Engine {
             snap: 0,
             snapshot_prefix: prefix.to_string(),
             particle_motion,
+            with_gravity,
         })
     }
 
