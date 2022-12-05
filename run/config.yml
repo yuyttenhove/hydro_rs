@@ -1,30 +1,31 @@
 time_integration:
-  dt_min: 1e-11
-  dt_max: 1e-2
-  t_min: 1e-8
-  t_end: 0.5
-  cfl_criterion: 0.1
+    dt_min: 1e-11
+    dt_max: 1e-2
+    t_min: 1e-8
+    t_end: 0.5
+    cfl_criterion: 0.1
 
 snapshots:
-  t_between_snaps: 0.05
-  prefix: "noh_"
+    t_between_snaps: 0.05
+    prefix: "square_"
 
 engine:
-  t_status: 0.01
-  solver: "HLLC"
-  particle_motion: "steer"
-#   runner: "DefaultHalfDrift"
-#   runner: "OptimalOrderHalfDrift"
-  runner: "OptimalOrder"
-#   runner: "Default"
+    t_status: 0.01
+    solver: "HLLC"
+    particle_motion: "fixed"
+    runner: "DefaultHalfDrift"
+#    runner: "OptimalOrderHalfDrift"
+#    runner: "OptimalOrder"
+#    runner: "Default"
+    with_gravity: false
 
 space:
-  box_size: 2.
-  periodic: true
+    box_size: 1.
+    periodic: true
 
 initial_conditions:
-  type: "noh"
-  num_part: 1000
+    type: "square"
+    num_part: 100
 
 equation_of_state:
-  gamma: 1.66666666667
+    gamma: 1.66666666667
