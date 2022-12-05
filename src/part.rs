@@ -35,7 +35,6 @@ impl Part {
         eos: &EquationOfState,
         particle_motion: &ParticleMotion,
     ) -> f64 {
-
         if self.conserved.mass() == 0. {
             // We have vacuum
             debug_assert_eq!(self.conserved.momentum(), 0.);
@@ -192,8 +191,32 @@ impl Part {
             return;
         }
 
-        // Wake this particle up
-        self.timebin = self.wakeup;
+        if self.is_active(engine) {
+            // Particle was active/starting anyway, so just updating the timestep/timebin suffices.
+            self.timebin = self.wakeup;
+            self.dt = make_timestep(get_integer_timestep(self.timebin), engine.time_base());
+        } else {
+            // Wake this particle up
+            let ti_current = engine.ti_current();
+            let ti_end_old = get_integer_time_end(ti_current, self.timebin);
+            debug_assert_ne!(ti_end_old, ti_current);
+            // Substract the remainder of this particles old timestep from its dt
+            self.dt -= make_timestep(ti_end_old - ti_current, engine.time_base());
+            // Update the timebin
+            self.timebin = self.wakeup;
+            let dti_new = get_integer_timestep(self.timebin);
+            let ti_end = get_integer_time_end(ti_current, self.timebin);
+            // Add the remainder of the new timestep to the particle's dt
+            self.dt += if ti_end == ti_current {
+                make_timestep(dti_new, engine.time_base())
+                // Part is now active/starting, so the remaining KICK1 will be applied automatically
+            } else {
+                make_timestep(ti_end - ti_current, engine.time_base())
+                // TODO: reapply second part of KICK1 if neccessary
+            };
+
+            // TODO this might still not be correct for particles that have a longer timestep then this particles new timestep, but shorter than this particles old timestep
+        }
 
         // TODO: Rewind kick1 if necessary
         // TODO: Reapply kick1 if necessary
