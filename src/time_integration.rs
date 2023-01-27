@@ -25,7 +25,6 @@ impl Runner {
             Runner::Default => {
                 let dt = engine.dt();
                 space.drift(dt, 0.5 * dt);
-                space.sort();
                 space.volume_calculation(engine);
                 space.convert_conserved_to_primitive(engine);
                 space.gradient_estimate(engine);
@@ -40,7 +39,6 @@ impl Runner {
             Runner::OptimalOrder => {
                 let dt = engine.dt();
                 space.drift(dt, 0.5 * dt);
-                space.sort();
                 space.volume_calculation(engine);
                 space.flux_exchange(engine);
                 space.apply_flux(engine);
@@ -71,14 +69,12 @@ impl Runner {
             Runner::OptimalOrderHalfDrift => {
                 let dt = engine.dt();
                 space.drift(dt, 0.5 * dt);
-                space.sort();
                 space.volume_calculation(engine);
                 space.flux_exchange(engine);
             }
             Runner::DefaultHalfDrift => {
                 let dt = engine.dt();
                 space.drift(dt, 0.5 * dt);
-                space.sort();
                 space.volume_calculation(engine);
                 space.convert_conserved_to_primitive(engine);
                 space.gradient_estimate(engine);
