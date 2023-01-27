@@ -286,6 +286,18 @@ impl RiemannSolver for HLLCRiemannSolver {
                         + rho_l_s_l_s_star_m_v_l
                             * (s_star + left.pressure() / (left.density() * s_l_m_v_l)),
                 );
+                //                let rho_l = left.density();
+                //                let v_l = left.velocity();
+                //                let p_l = left.pressure();
+                //                let s_star_m_v_l = s_star - v_l;
+                //                let starfac = rho_l * s_l_m_v_l / (s_l - s_star);
+                //                flux += s_l
+                //                    * Conserved::new(
+                //                        starfac - rho_l,
+                //                        starfac * s_star - rho_l * v_l,
+                //                        starfac * (e_l / rho_l + s_star_m_v_l * (s_star + p_l / rho_l / s_l_m_v_l))
+                //                            - e_l,
+                //                    );
             }
         } else {
             // flux FR
@@ -314,6 +326,18 @@ impl RiemannSolver for HLLCRiemannSolver {
                         + rho_r_s_r_s_star_m_v_r
                             * (s_star + right.pressure() / (right.density() * s_r_m_v_r)),
                 );
+                //                let rho_r = right.density();
+                //                let v_r = right.velocity();
+                //                let p_r = right.pressure();
+                //                let s_star_m_v_r = s_star - v_r;
+                //                let starfac = rho_r * s_r_m_v_r / (s_r - s_star);
+                //                flux += s_r
+                //                    * Conserved::new(
+                //                        starfac - rho_r,
+                //                        starfac * s_star - rho_r * v_r,
+                //                        starfac * (e_r / rho_r + s_star_m_v_r * (s_star + p_r / rho_r / s_r_m_v_r))
+                //                            - e_r,
+                //                    );
             }
         }
         debug_assert!(!(flux.mass().is_nan() || flux.mass().is_infinite()));
@@ -332,7 +356,7 @@ impl RiemannSolver for HLLCRiemannSolver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use assert_approx_eq::assert_approx_eq;
+    use float_cmp::assert_approx_eq;
 
     fn flux_from_riemann_solution(
         half: Primitives,
@@ -376,17 +400,9 @@ mod tests {
             -interface_velocity,
         );
 
-        assert_approx_eq!(fluxes.mass(), -fluxes_reversed.mass(), fluxes.mass() * 1e-6);
-        assert_approx_eq!(
-            fluxes.momentum(),
-            fluxes_reversed.momentum(),
-            fluxes.momentum() * 1e-6
-        );
-        assert_approx_eq!(
-            fluxes.energy(),
-            -fluxes_reversed.energy(),
-            fluxes.energy() * 1e-6
-        );
+        assert_approx_eq!(f64, fluxes.mass(), -fluxes_reversed.mass());
+        assert_approx_eq!(f64, fluxes.momentum(), fluxes_reversed.momentum());
+        assert_approx_eq!(f64, fluxes.energy(), -fluxes_reversed.energy());
     }
 
     #[test]
@@ -411,13 +427,9 @@ mod tests {
         let half_s = Primitives::new(0.57625934, 0.7596532, 0.19952622);
         let flux_s = flux_from_riemann_solution(half_s, interface_velocity, gamma);
 
-        assert_approx_eq!(fluxes.mass(), flux_s.mass(), fluxes.mass() * 2e-2);
-        assert_approx_eq!(
-            fluxes.momentum(),
-            flux_s.momentum(),
-            fluxes.momentum() * 2e-2
-        );
-        assert_approx_eq!(fluxes.energy(), flux_s.energy(), fluxes.energy() * 2e-2);
+        assert_approx_eq!(f64, fluxes.mass(), flux_s.mass());
+        assert_approx_eq!(f64, fluxes.momentum(), flux_s.momentum());
+        assert_approx_eq!(f64, fluxes.energy(), flux_s.energy());
     }
 
     #[test]
@@ -455,21 +467,9 @@ mod tests {
             gamma,
         );
 
-        assert_approx_eq!(
-            fluxes.mass(),
-            -fluxes_reversed.mass(),
-            (fluxes.mass() * 1e-6).abs().max(left.density() * 1e-13)
-        );
-        assert_approx_eq!(
-            fluxes.momentum(),
-            fluxes_reversed.momentum(),
-            fluxes.momentum().abs() * 1e-6
-        );
-        assert_approx_eq!(
-            fluxes.energy(),
-            -fluxes_reversed.energy(),
-            fluxes.energy().abs() * 1e-6
-        );
+        assert_approx_eq!(f64, fluxes.mass(), -fluxes_reversed.mass());
+        assert_approx_eq!(f64, fluxes.momentum(), fluxes_reversed.momentum());
+        assert_approx_eq!(f64, fluxes.energy(), -fluxes_reversed.energy());
     }
 
     #[test]
@@ -491,12 +491,8 @@ mod tests {
         let half_s = Primitives::new(0.7064862, 0.49950013, 0.28020517);
         let flux_s = flux_from_riemann_solution(half_s, interface_velocity, gamma);
 
-        assert_approx_eq!(fluxes.mass(), flux_s.mass(), fluxes.mass() * 6e-2);
-        assert_approx_eq!(
-            fluxes.momentum(),
-            flux_s.momentum(),
-            fluxes.momentum() * 6e-2
-        );
-        assert_approx_eq!(fluxes.energy(), flux_s.energy(), fluxes.energy() * 6e-2);
+        assert_approx_eq!(f64, fluxes.mass(), flux_s.mass());
+        assert_approx_eq!(f64, fluxes.momentum(), flux_s.momentum());
+        assert_approx_eq!(f64, fluxes.energy(), flux_s.energy());
     }
 }

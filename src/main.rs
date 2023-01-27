@@ -46,7 +46,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &eos,
     )?;
     let ic = create_ics(&config["initial_conditions"])?;
-    let mut space = Space::from_ic(&ic, &config["space"], eos);
+    let mut space = Space::from_ic(&ic, &config["space"], eos)?;
 
     // run
     engine.run(&mut space)?;

@@ -10,6 +10,7 @@ pub enum ConfigError {
     UnknownICs(String),
     UnknownRiemannSolver(String),
     UnknownParticleMotion(String),
+    UnknownBoundaryConditions(String),
 }
 
 impl Display for ConfigError {
@@ -29,6 +30,9 @@ impl Display for ConfigError {
             }
             ConfigError::UnknownParticleMotion(name) => {
                 write!(f, "Unknown type of particle motion configured: {}", name)
+            }
+            ConfigError::UnknownBoundaryConditions(name) => {
+                write!(f, "Unknown type of boundary condition configured: {}", name)
             }
         }
     }

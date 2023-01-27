@@ -63,7 +63,7 @@ def main(fname: str, savename: str):
 
     # read data
     data = pd.read_csv(fname, sep="\t")
-    data.columns = ["x", "rho", "v", "P", "a", "u", "S"]
+    data.columns = ["x", "rho", "v", "P", "a", "u", "S", "dt"]
 
     # Plot
     fig, axes = plt.subplots(2, 3, figsize=(9, 6))
@@ -85,6 +85,6 @@ if __name__ == "__main__":
         fname = sys.argv[1]
         savename = sys.argv[2]
     except IndexError:
-        fname = "../run/output/sodshock_0005.txt"
+        fname = "../run/output/sod_shock_0005.txt"
         savename = "test.png"
     main(fname, savename)

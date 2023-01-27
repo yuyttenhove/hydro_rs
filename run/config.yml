@@ -7,24 +7,24 @@ time_integration:
 
 snapshots:
     t_between_snaps: 0.05
-    prefix: "square_"
+    prefix: "toro_"
 
 engine:
     t_status: 0.01
     solver: "HLLC"
     particle_motion: "fixed"
-    runner: "DefaultHalfDrift"
-#    runner: "OptimalOrderHalfDrift"
+    # runner: "DefaultHalfDrift"
+    runner: "OptimalOrderHalfDrift"
 #    runner: "OptimalOrder"
 #    runner: "Default"
     with_gravity: false
 
 space:
     box_size: 1.
-    periodic: true
+    boundary: "reflective"
 
 initial_conditions:
-    type: "square"
+    type: "toro"
     num_part: 100
 
 equation_of_state:

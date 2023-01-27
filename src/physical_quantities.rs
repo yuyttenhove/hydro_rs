@@ -1,20 +1,22 @@
 use std::cmp::min;
 use std::ops::{Add, AddAssign, Index, Mul, Sub, SubAssign};
 
+use glam::DVec3;
+
 use crate::equation_of_state::EquationOfState;
 
 #[derive(Default, Debug, Clone, Copy)]
-pub struct Vec3f64(pub f64, pub f64, pub f64);
+pub struct StateVector(f64, DVec3, f64);
 
-impl Add for Vec3f64 {
+impl Add for StateVector {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
-        Vec3f64(self.0 + rhs.0, self.1 + rhs.1, self.2 + rhs.2)
+        StateVector(self.0 + rhs.0, self.1 + rhs.1, self.2 + rhs.2)
     }
 }
 
-impl AddAssign for Vec3f64 {
+impl AddAssign for StateVector {
     fn add_assign(&mut self, rhs: Self) {
         self.0 += rhs.0;
         self.1 += rhs.1;
@@ -22,15 +24,15 @@ impl AddAssign for Vec3f64 {
     }
 }
 
-impl Sub for Vec3f64 {
+impl Sub for StateVector {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        Vec3f64(self.0 - rhs.0, self.1 - rhs.1, self.2 - rhs.2)
+        StateVector(self.0 - rhs.0, self.1 - rhs.1, self.2 - rhs.2)
     }
 }
 
-impl SubAssign for Vec3f64 {
+impl SubAssign for StateVector {
     fn sub_assign(&mut self, rhs: Self) {
         self.0 -= rhs.0;
         self.1 -= rhs.1;
@@ -38,21 +40,21 @@ impl SubAssign for Vec3f64 {
     }
 }
 
-impl Mul<Vec3f64> for f64 {
-    type Output = Vec3f64;
+impl Mul<StateVector> for f64 {
+    type Output = StateVector;
 
-    fn mul(self, rhs: Vec3f64) -> Self::Output {
-        Vec3f64(self * rhs.0, self * rhs.1, self * rhs.2)
+    fn mul(self, rhs: StateVector) -> Self::Output {
+        StateVector(self * rhs.0, self * rhs.1, self * rhs.2)
     }
 }
 
-impl Vec3f64 {
+impl StateVector {
     pub fn zeros() -> Self {
-        Vec3f64(0., 0., 0.)
+        StateVector(0., DVec3::ZERO, 0.)
     }
 
     pub fn pairwise_max(&self, other: Self) -> Self {
-        Vec3f64(
+        StateVector(
             self.0.max(other.0),
             self.1.max(other.1),
             self.2.max(other.2),
@@ -60,7 +62,7 @@ impl Vec3f64 {
     }
 
     pub fn pairwise_min(&self, other: Self) -> Self {
-        Vec3f64(
+        StateVector(
             self.0.min(other.0),
             self.1.min(other.1),
             self.2.min(other.2),
@@ -68,22 +70,76 @@ impl Vec3f64 {
     }
 }
 
-impl Index<usize> for Vec3f64 {
+impl Index<usize> for StateVector {
     type Output = f64;
 
     fn index(&self, index: usize) -> &Self::Output {
         match index {
             0 => &self.0,
-            1 => &self.1,
-            2 => &self.2,
-            _ => panic!("Index out of bounds for Vec3f64!"),
+            1 => &self.1.x,
+            2 => &self.1.y,
+            3 => &self.1.z,
+            4 => &self.2,
+            _ => panic!("Index out of bounds for StateVector!"),
+        }
+    }
+}
+
+#[derive(Default, Debug, Clone, Copy)]
+pub struct StateGradients(DVec3, [DVec3; 3], DVec3);
+
+impl StateGradients {
+    pub fn new(
+        mass_like: DVec3,
+        momentum_like_0: DVec3,
+        momentum_like_1: DVec3,
+        momentum_like_2: DVec3,
+        energy_like: DVec3,
+    ) -> Self {
+        StateGradients(
+            mass_like,
+            [momentum_like_0, momentum_like_1, momentum_like_2],
+            energy_like,
+        )
+    }
+
+    pub fn dot(&self, dx: DVec3) -> StateVector {
+        StateVector(
+            self.0.dot(dx),
+            DVec3 {
+                x: self.1[0].dot(dx),
+                y: self.1[1].dot(dx),
+                z: self.1[2].dot(dx),
+            },
+            self.2.dot(dx),
+        )
+    }
+}
+
+impl Index<usize> for StateGradients {
+    type Output = DVec3;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        match index {
+            0 => &self.0,
+            1 => &self.1[0],
+            2 => &self.1[1],
+            3 => &self.1[2],
+            4 => &self.2,
+            _ => panic!("Index out of bounds for StateVector!"),
         }
     }
 }
 
 #[derive(Default, Debug, Clone, Copy, Add, Sub, AddAssign, SubAssign)]
 pub struct Primitives {
-    values: Vec3f64,
+    values: StateVector,
+}
+
+impl From<StateVector> for Primitives {
+    fn from(values: StateVector) -> Self {
+        Primitives { values }
+    }
 }
 
 impl Primitives {
@@ -91,7 +147,7 @@ impl Primitives {
         self.values.0
     }
 
-    pub fn velocity(&self) -> f64 {
+    pub fn velocity(&self) -> DVec3 {
         self.values.1
     }
 
@@ -101,13 +157,13 @@ impl Primitives {
 
     pub fn vacuum() -> Self {
         Primitives {
-            values: Vec3f64::zeros(),
+            values: StateVector::zeros(),
         }
     }
 
-    pub fn new(density: f64, velocity: f64, pressure: f64) -> Self {
+    pub fn new(density: f64, velocity: DVec3, pressure: f64) -> Self {
         Primitives {
-            values: Vec3f64(density, velocity, pressure),
+            values: StateVector(density, velocity, pressure),
         }
     }
 
@@ -119,14 +175,14 @@ impl Primitives {
             let internal_energy = conserved.internal_energy();
             let pressure = eos.gas_pressure_from_internal_energy(internal_energy, density);
             Self {
-                values: Vec3f64(density, velocity, pressure),
+                values: StateVector(density, velocity, pressure),
             }
         } else {
             Self::vacuum()
         }
     }
 
-    pub fn boost(&self, velocity: f64) -> Self {
+    pub fn boost(&self, velocity: DVec3) -> Self {
         if self.density() > 0. {
             Self::new(self.density(), self.velocity() + velocity, self.pressure())
         } else {
@@ -148,18 +204,18 @@ impl Primitives {
         }
     }
 
-    pub fn values(&self) -> Vec3f64 {
+    pub fn values(&self) -> StateVector {
         self.values
     }
 
     pub fn check_physical(&mut self) {
         if self.density() < 0. {
             eprintln!("Negative density encountered, resetting to vacuum!");
-            self.values = Vec3f64::zeros();
+            self.values = StateVector::zeros();
         }
         if self.pressure() < 0. {
             eprintln!("Negative density encountered, resetting to vacuum!");
-            self.values = Vec3f64::zeros();
+            self.values = StateVector::zeros();
         }
 
         debug_assert!(
@@ -189,7 +245,7 @@ impl Mul<Primitives> for f64 {
 
 #[derive(Default, Debug, Clone, Copy, Add, Sub, AddAssign, SubAssign)]
 pub struct Conserved {
-    values: Vec3f64,
+    values: StateVector,
 }
 
 impl Conserved {
@@ -197,7 +253,7 @@ impl Conserved {
         self.values.0
     }
 
-    pub fn momentum(&self) -> f64 {
+    pub fn momentum(&self) -> DVec3 {
         self.values.1
     }
 
@@ -208,29 +264,31 @@ impl Conserved {
     /// returns the specific internal energy e: E = E_kin + E_therm = E_kin + m * e
     pub fn internal_energy(&self) -> f64 {
         let m_inv = 1. / self.mass();
-        let thermal_energy = self.values.2 - 0.5 * self.values.1 * self.values.1 * m_inv;
+        let thermal_energy = self.energy() - 0.5 * self.momentum().length_squared() * m_inv;
         thermal_energy * m_inv
     }
 
     pub fn vacuum() -> Self {
         Conserved {
-            values: Vec3f64::zeros(),
+            values: StateVector::zeros(),
         }
     }
 
-    pub fn new(mass: f64, momentum: f64, energy: f64) -> Self {
+    pub fn new(mass: f64, momentum: DVec3, energy: f64) -> Self {
         Conserved {
-            values: Vec3f64(mass, momentum, energy),
+            values: StateVector(mass, momentum, energy),
         }
     }
 
     pub fn from_primitives(primitives: &Primitives, volume: f64, eos: EquationOfState) -> Self {
         let mass = primitives.density() * volume;
         let momentum = mass * primitives.velocity();
-        let energy = 0.5 * momentum * primitives.velocity()
-            + mass * eos.gas_internal_energy_from_pressure(primitives.pressure(), primitives.density());
+        let energy = 0.5 * momentum.dot(primitives.velocity())
+            + mass
+                * eos
+                    .gas_internal_energy_from_pressure(primitives.pressure(), primitives.density());
         Self {
-            values: Vec3f64(mass, momentum, energy),
+            values: StateVector(mass, momentum, energy),
         }
     }
 
@@ -246,7 +304,7 @@ impl Conserved {
         }
     }
 
-    pub fn values(&self) -> Vec3f64 {
+    pub fn values(&self) -> StateVector {
         self.values
     }
 }
@@ -263,30 +321,32 @@ impl Mul<Conserved> for f64 {
 
 #[cfg(test)]
 mod test {
-    use crate::equation_of_state::EquationOfState;
-    use crate::utils::Round;
+    use float_cmp::assert_approx_eq;
+    use glam::DVec3;
 
     use super::{Conserved, Primitives};
+    use crate::equation_of_state::EquationOfState;
 
     #[test]
     fn test_conversions() {
-        let primitives = Primitives::new(0.75, 0.4, 0.8);
+        let primitives = Primitives::new(
+            0.75,
+            DVec3 {
+                x: 0.4,
+                y: 0.,
+                z: 0.,
+            },
+            0.8,
+        );
         let volume = 0.1;
         let eos = EquationOfState::Ideal { gamma: 5. / 3. };
         let conserved = Conserved::from_primitives(&primitives, volume, eos);
         let primitives_new = Primitives::from_conserved(&conserved, volume, eos);
 
-        assert_eq!(
-            primitives.density().round_to(15),
-            primitives_new.density().round_to(15)
-        );
-        assert_eq!(
-            primitives.velocity().round_to(15),
-            primitives_new.velocity().round_to(15)
-        );
-        assert_eq!(
-            primitives.pressure().round_to(15),
-            primitives_new.pressure().round_to(15)
-        );
+        assert_approx_eq!(f64, primitives.density(), primitives_new.density());
+        assert_approx_eq!(f64, primitives.velocity().x, primitives_new.velocity().x);
+        assert_approx_eq!(f64, primitives.velocity().y, primitives_new.velocity().y);
+        assert_approx_eq!(f64, primitives.velocity().z, primitives_new.velocity().z);
+        assert_approx_eq!(f64, primitives.pressure(), primitives_new.pressure());
     }
 }

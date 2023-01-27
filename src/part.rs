@@ -1,4 +1,6 @@
-use crate::physical_quantities::{Conserved, Primitives, Vec3f64};
+use glam::DVec3;
+
+use crate::physical_quantities::{Conserved, Primitives, StateVector, StateGradients};
 #[cfg(any(dimensionality = "2D", dimensionality = "3D"))]
 use crate::spherical::ALPHA;
 use crate::{
@@ -11,21 +13,21 @@ use crate::{
 #[derive(Default, Debug, Clone)]
 pub struct Part {
     pub primitives: Primitives,
-    pub gradients: Primitives,
+    pub gradients: StateGradients,
     pub extrapolations: Primitives,
     pub conserved: Conserved,
     pub fluxes: Conserved,
-    pub gravity_mflux: f64,
+    pub gravity_mflux: DVec3,
 
     pub volume: f64,
-    pub x: f64,
-    pub centroid: f64,
-    pub v: f64,
+    pub x: DVec3,
+    pub centroid: DVec3,
+    pub v: DVec3,
     pub timebin: Timebin,
     pub wakeup: Timebin,
     pub dt: f64,
 
-    pub a_grav: f64,
+    pub a_grav: DVec3,
 }
 
 impl Part {
@@ -37,9 +39,9 @@ impl Part {
     ) -> f64 {
         if self.conserved.mass() == 0. {
             // We have vacuum
-            debug_assert_eq!(self.conserved.momentum(), 0.);
+            debug_assert_eq!(self.conserved.momentum().length(), 0.);
             debug_assert_eq!(self.conserved.energy(), 0.);
-            self.v = 0.;
+            self.v = DVec3::ZERO;
             return f64::INFINITY;
         }
 
@@ -49,7 +51,7 @@ impl Part {
         // assert!((self.conserved.momentum() / self.conserved.mass() - self.primitives.velocity()).abs() <= self.primitives.velocity().abs() * 2e-2);
         let m_inv = 1. / self.conserved.mass();
         let internal_energy = (self.conserved.energy()
-            - 0.5 * self.conserved.momentum() * self.primitives.velocity())
+            - 0.5 * self.conserved.momentum().dot(self.primitives.velocity()))
             * m_inv;
         // assert!(internal_energy > 0.);
         // assert!((eos.gas_pressure_from_internal_energy(internal_energy, self.volume) - self.primitives.pressure()).abs() <= self.primitives.pressure().abs() * 2e-2);
@@ -61,11 +63,11 @@ impl Part {
         );
         // Set the velocity with which this particle will be drifted over the course of it's next timestep
         self.v = match particle_motion {
-            ParticleMotion::FIXED => 0.,
+            ParticleMotion::FIXED => DVec3::ZERO,
             ParticleMotion::FLUID => fluid_v,
             ParticleMotion::STEER => {
                 let d = self.centroid - self.x;
-                let abs_d = d.abs();
+                let abs_d = d.length();
                 let r = 0.5 * self.volume;
                 let eta = 0.25;
                 let eta_r = eta * r;
@@ -84,7 +86,7 @@ impl Part {
         assert!(self.v.is_finite(), "Invalid value for v!");
 
         // determine the size of this particle's next timestep
-        let v_rel = (self.v - fluid_v).abs();
+        let v_rel = (self.v - fluid_v).length();
         let v_max = v_rel + sound_speed;
 
         if v_max > 0. {
@@ -109,11 +111,12 @@ impl Part {
                 let rho_inv = 1. / rho;
                 let v = self.primitives.velocity();
                 let p = self.primitives.pressure();
+                let div_v = self.gradients[1].x + self.gradients[2].y + self.gradients[3].z;
                 self.extrapolations -= dt_extrapolate
                     * Primitives::new(
-                        rho * self.gradients.velocity() + v * self.gradients.density(),
-                        v * self.gradients.velocity() + rho_inv * self.gradients.pressure(),
-                        gamma * p * self.gradients.velocity() + v * self.gradients.pressure(),
+                        rho * div_v + v.dot(self.gradients[0]),
+                        v * div_v + rho_inv * self.gradients[4],
+                        gamma * p * div_v + v.dot(self.gradients[4]),
                     )
             }
         } else {
@@ -138,7 +141,7 @@ impl Part {
 
     pub fn reset_fluxes(&mut self) {
         self.fluxes = Conserved::vacuum();
-        self.gravity_mflux = 0.;
+        self.gravity_mflux = DVec3::ZERO;
     }
 
     pub fn convert_conserved_to_primitive(&mut self, eos: EquationOfState) {
@@ -243,7 +246,7 @@ impl Part {
         let u1_2 = u.1 * u.1;
         let internal_energy = u.2 - 0.5 * u1_2 * u0_inv; // rho e
         let p1 = eos.gas_pressure_from_internal_energy(internal_energy * u0_inv, u.0);
-        let k1 = -self.dt * r_inv * Vec3f64(u.1, u1_2 * u0_inv, u.1 * u0_inv * (u.2 + p1));
+        let k1 = -self.dt * r_inv * StateVector(u.1, u1_2 * u0_inv, u.1 * u0_inv * (u.2 + p1));
 
         let u_prime = u + k1;
         let u_prime0_inv = 1. / u_prime.0;
@@ -252,7 +255,7 @@ impl Part {
         let p2 = eos.gas_pressure_from_internal_energy(internal_energy, u_prime.0);
         let k2 = -self.dt
             * r_inv
-            * Vec3f64(
+            * StateVector(
                 u_prime.1,
                 u_prime1_2 * u_prime0_inv,
                 u_prime.1 * u_prime0_inv * (u_prime.2 + p2),
@@ -270,12 +273,12 @@ impl Part {
         self.conserved += Conserved::new(
             0.,
             grav_kick_factor * mass,
-            grav_kick_factor * (momentum - self.gravity_mflux),
+            grav_kick_factor.dot(momentum - self.gravity_mflux),
         );
     }
 
     pub fn internal_energy(&self) -> f64 {
-        (self.conserved.energy() - 0.5 * self.conserved.momentum() * self.primitives.velocity())
+        (self.conserved.energy() - 0.5 * self.conserved.momentum().dot(self.primitives.velocity()))
             / self.conserved.mass()
     }
 
@@ -312,8 +315,8 @@ impl Part {
     }
 
     pub fn physical_volume(&self) -> f64 {
-        let x_left = self.centroid - 0.5 * self.volume;
-        let x_right = self.centroid + 0.5 * self.volume;
+        let x_left = self.centroid.x - 0.5 * self.volume;
+        let x_right = self.centroid.x + 0.5 * self.volume;
         if cfg!(dimensionality = "2D") {
             std::f64::consts::PI * (x_right * x_right - x_left * x_left)
         } else if cfg!(dimensionality = "3D") {
@@ -324,8 +327,8 @@ impl Part {
     }
 
     pub fn half_physical_volume(&self) -> f64 {
-        let x_left = self.centroid - 0.5 * self.volume;
-        let r = self.centroid;
+        let x_left = self.centroid.x - 0.5 * self.volume;
+        let r = self.centroid.distance(self.x);
         if cfg!(dimensionality = "2D") {
             std::f64::consts::PI * (r * r - x_left * x_left)
         } else if cfg!(dimensionality = "3D") {
@@ -344,22 +347,14 @@ impl Part {
     }
 
     pub fn reflect_quantities(&mut self) -> &mut Self {
-        self.primitives = Primitives::new(
-            self.primitives.density(),
-            -self.primitives.velocity(),
-            self.primitives.pressure(),
-        );
-        self.gradients = Primitives::new(
-            -self.gradients.density(),
-            self.gradients.velocity(),
-            -self.gradients.pressure(),
-        );
-        self.conserved = Conserved::new(
-            self.conserved.mass(),
-            -self.conserved.momentum(),
-            self.conserved.energy(),
-        );
+        unimplemented!()
+    }
 
-        self
+    pub fn loc(&self) -> DVec3 {
+        self.x
+    }
+
+    pub fn set_centroid(&mut self, centroid: DVec3) {
+        self.centroid = centroid;
     }
 }
