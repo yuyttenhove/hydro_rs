@@ -82,7 +82,10 @@ def main(fname: str, savename: str):
 
     # read data
     data = pd.read_csv(fname, sep="\t")
-    data.columns = ["x", "rho", "v", "P", "a", "u", "S"]
+    data.columns = ["x", "rho", "v", "P", "a", "u", "S", "dt"]
+    data["x"] = [np.fromstring(l[1:-1], sep=",")[0] for l in data["x"].values]
+    data["v"] = [np.fromstring(l[1:-1], sep=",")[0] for l in data["v"].values]
+    data["a"] = [np.fromstring(l[1:-1], sep=",")[0] for l in data["a"].values]
 
     # Plot
     fig, axes = plt.subplots(2, 3, figsize=(9, 6))
@@ -104,6 +107,6 @@ if __name__ == "__main__":
         fname = sys.argv[1]
         savename = sys.argv[2]
     except IndexError:
-        fname = "../run/output/toro_0005.txt"
+        fname = Path(__file__).parent.parent / "run/output/toro_0005.txt"
         savename = "test.png"
     main(fname, savename)

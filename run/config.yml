@@ -7,7 +7,7 @@ time_integration:
 
 snapshots:
     t_between_snaps: 0.05
-    prefix: "toro_"
+    prefix: "sodshock_"
 
 engine:
     t_status: 0.01
@@ -20,11 +20,11 @@ engine:
     with_gravity: false
 
 space:
-    box_size: 1.
+    box_size: 2.
     boundary: "reflective"
 
 initial_conditions:
-    type: "toro"
+    type: "sodshock"
     num_part: 100
 
 equation_of_state:

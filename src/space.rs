@@ -216,7 +216,8 @@ impl Space {
             let flux = engine.solver.solve_for_flux(
                 &primitives_left.boost(-v_face),
                 &primitives.boost(-v_face),
-                v_face.x,
+                v_face,
+                -dx.normalize(),
                 &self.eos,
             );
             let mut fluxes = dt * flux;
@@ -238,7 +239,8 @@ impl Space {
             let flux = engine.solver.solve_for_flux(
                 &primitives.boost(-v_face),
                 &primitives_right.boost(-v_face),
-                v_face.x,
+                v_face,
+                dx.normalize(),
                 &self.eos,
             );
             fluxes -= dt * flux;
@@ -292,7 +294,8 @@ impl Space {
             let fluxes = engine.solver.solve_for_flux(
                 &primitives_left.boost(-v_face),
                 &primitives_right.boost(-v_face),
-                v_face.x,
+                v_face,
+                -dx.normalize(),
                 &self.eos,
             );
 
@@ -327,7 +330,7 @@ impl Space {
         let boundary = self.boundary;
         let mut to_remove = vec![];
         for (idx, part) in self.parts_mut().iter_mut().enumerate() {
-            unimplemented!()
+            // UNIMPLEMENTED
         }
         // remove particles if needed
         for idx in to_remove {
@@ -343,6 +346,8 @@ impl Space {
             if !part.is_active_primitive_calculation(engine) {
                 continue;
             }
+
+            continue; // UNIMPLEMENTED
 
             self.parts[i].gradients = {
                 let left = &self.parts[i - 1];
