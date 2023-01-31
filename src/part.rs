@@ -440,6 +440,7 @@ impl Part {
 
     pub fn set_timebin(&mut self, new_dti: IntegerTime) {
         self.timebin = get_time_bin(new_dti);
+        self.wakeup = self.timebin;
     }
 
     pub fn physical_volume(&self) -> f64 {

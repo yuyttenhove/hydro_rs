@@ -10,7 +10,7 @@ use crate::{
     riemann_solver::{get_solver, RiemannSolver},
     space::Space,
     time_integration::Runner,
-    timeline::*, equation_of_state::EquationOfState, part::Part,
+    timeline::*, equation_of_state::EquationOfState,
 };
 
 pub enum ParticleMotion {

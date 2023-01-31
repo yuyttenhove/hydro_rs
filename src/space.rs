@@ -13,11 +13,12 @@ use crate::{
     errors::ConfigError,
     part::Part,
     physical_quantities::{Conserved, Primitives, StateGradients},
-    slope_limiters::{cell_wide_limiter, pairwise_limiter},
+    slope_limiters::pairwise_limiter,
     timeline::{
         get_integer_time_end, make_integer_timestep, make_timestep, IntegerTime, MAX_NR_TIMESTEPS,
         NUM_TIME_BINS, TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN,
     },
+    utils::{box_reflect, box_wrap, contains},
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -39,13 +40,6 @@ pub struct Space {
 }
 
 impl Space {
-    pub fn parts(&self) -> &[Part] {
-        &self.parts
-    }
-
-    pub fn parts_mut(&mut self) -> &mut [Part] {
-        &mut self.parts
-    }
 
     /// Constructs a space from given ic's (tuples of position, density, velocity and pressure) and
     /// boundary conditions.
@@ -151,9 +145,9 @@ impl Space {
 
     /// Do the volume calculation for all the active parts in the space
     pub fn volume_calculation(&mut self, engine: &Engine) {
-        let generators: Vec<_> = self.parts().iter().map(|p| p.loc()).collect();
+        let generators: Vec<_> = self.parts.iter().map(|p| p.loc()).collect();
         let voronoi = Voronoi::build(&generators, DVec3::ZERO, self.box_size);
-        for (part, voronoi_cell) in self.parts_mut().iter_mut().zip(voronoi.cells().iter()) {
+        for (part, voronoi_cell) in self.parts.iter_mut().zip(voronoi.cells().iter()) {
             if !part.is_active_flux(engine) {
                 continue;
             }
@@ -166,7 +160,7 @@ impl Space {
 
     pub fn convert_conserved_to_primitive(&mut self, engine: &Engine) {
         let eos = self.eos;
-        for part in self.parts_mut() {
+        for part in self.parts.iter_mut() {
             if part.is_active_primitive_calculation(engine) {
                 part.convert_conserved_to_primitive(eos);
 
@@ -179,9 +173,9 @@ impl Space {
     /// Convert the primitive quantities to conserved quantities. This is only done when creating the space from ic's.
     fn first_init_parts(&mut self) {
         // Calculate the volume of *all* particles
-        let generators: Vec<_> = self.parts().iter().map(|p| p.loc()).collect();
+        let generators: Vec<_> = self.parts.iter().map(|p| p.loc()).collect();
         let voronoi = Voronoi::build(&generators, DVec3::ZERO, self.box_size);
-        for (part, voronoi_cell) in self.parts_mut().iter_mut().zip(voronoi.cells().iter()) {
+        for (part, voronoi_cell) in self.parts.iter_mut().zip(voronoi.cells().iter()) {
             part.volume = voronoi_cell.volume();
             part.set_centroid(voronoi_cell.centroid());
             debug_assert!(part.volume >= 0.);
@@ -190,7 +184,7 @@ impl Space {
 
         // Calculate the conserved quantities
         let eos = self.eos;
-        for part in self.parts_mut() {
+        for part in self.parts.iter_mut() {
             part.conserved =
                 Conserved::from_primitives(&part.primitives, part.physical_volume(), eos);
         }
@@ -206,10 +200,10 @@ impl Space {
     /// Do flux exchange between neighbouring particles
     pub fn flux_exchange(&mut self, engine: &Engine) {
         for face in self.voronoi_faces.iter() {
-            let left = &self.parts()[face.left()];
+            let left = &self.parts[face.left()];
             let _reflected;
             let right = match face.right() {
-                Some(idx) => &self.parts()[idx],
+                Some(idx) => &self.parts[idx],
                 None => {
                     _reflected = self.get_boundary_part(left, face);
                     &_reflected
@@ -303,7 +297,7 @@ impl Space {
 
     /// Apply the accumulated fluxes to all active particles
     pub fn apply_flux(&mut self, engine: &Engine) {
-        for part in self.parts_mut() {
+        for part in self.parts.iter_mut() {
             if part.is_active(engine) {
                 part.apply_flux();
             }
@@ -320,10 +314,16 @@ impl Space {
 
         // Handle particles that left the box.
         let box_size = self.box_size;
-        let boundary = self.boundary;
         let mut to_remove = vec![];
-        for (idx, part) in self.parts_mut().iter_mut().enumerate() {
-            // UNIMPLEMENTED
+        for (idx, part) in self.parts.iter_mut().enumerate() {
+            if !contains(self.box_size, part.x) {
+                match self.boundary {
+                    Boundary::Reflective => box_reflect(self.box_size, part),
+                    Boundary::Open | Boundary::Vacuum => to_remove.push(idx),
+                    Boundary::Periodic => box_wrap(self.box_size, &mut part.x),
+                    _ => unimplemented!(),
+                }
+            }
         }
         // remove particles if needed
         for idx in to_remove {
@@ -336,10 +336,10 @@ impl Space {
     pub fn gradient_estimate(&mut self, engine: &Engine) {
         // Loop over the voronoi faces and do the gradient interactions
         for face in self.voronoi_faces.iter() {
-            let left = &self.parts()[face.left()];
+            let left = &self.parts[face.left()];
             let _reflected;
             let right = match face.right() {
-                Some(idx) => &self.parts()[idx],
+                Some(idx) => &self.parts[idx],
                 None => {
                     _reflected = self.get_boundary_part(left, face);
                     &_reflected
@@ -387,10 +387,10 @@ impl Space {
 
         // Now, loop again over the faces to collect information for the cell wide limiter
         for face in self.voronoi_faces.iter() {
-            let left = &self.parts()[face.left()];
+            let left = &self.parts[face.left()];
             let _reflected;
             let right = match face.right() {
-                Some(idx) => &self.parts()[idx],
+                Some(idx) => &self.parts[idx],
                 None => {
                     _reflected = self.get_boundary_part(left, face);
                     &_reflected
@@ -478,29 +478,43 @@ impl Space {
         ti_end_min
     }
 
-    /// Apply the timestep limiter to the particles
+    /// Apply the timestep limiter to the particles 
     pub fn timestep_limiter(&mut self, engine: &Engine) {
-        return; // UNIMPLEMENTED
-                // First collect info about the timesteps of the neighbouring particles
-        for i in 1..self.num_parts + 1 {
-            // Get a slice of neighbouring parts
-            let parts = &mut self.parts[i - 1..=i + 1];
+        // Loop over all the voronoi faces to collect info about the timesteps of the neighbouring particles
+        for face in self.voronoi_faces.iter() {
+            // Get the two neighbouring parts of the face
+            let left = &self.parts[face.left()];
+            let _reflected;
+            let right = match face.right() {
+                Some(idx) => &self.parts[idx],
+                None => {
+                    _reflected = self.get_boundary_part(left, face);
+                    &_reflected
+                }
+            };
 
-            // This particles timebin
-            let mut wakeup = parts[1].timebin;
+            let left_is_ending = left.is_ending(engine);
+            let right_is_ending = right.is_ending(engine);
+            let left_timebin = left.timebin;
+            let right_timebin = right.timebin;
 
-            if parts[0].is_ending(engine) {
-                wakeup = wakeup.min(parts[0].timebin + TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN);
+            drop(left);
+            drop(right);
+
+            if right_is_ending {
+                let left = &mut self.parts[face.left()];
+                left.wakeup = left.wakeup.min(right_timebin + TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN);
             }
-            if parts[2].is_ending(engine) {
-                wakeup = wakeup.min(parts[2].timebin + TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN);
+            if let Some(idx) = face.right() {
+                if left_is_ending {
+                    let right = &mut self.parts[idx];
+                    right.wakeup = right.wakeup.min(left_timebin + TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN);
+                }
             }
-
-            parts[1].wakeup = wakeup;
         }
 
         // Now apply the limiter
-        for part in self.parts_mut() {
+        for part in self.parts.iter_mut() {
             part.timestep_limit(engine);
         }
     }
@@ -519,7 +533,7 @@ impl Space {
         if !engine.with_gravity {
             return;
         }
-        for part in self.parts_mut() {
+        for part in self.parts.iter_mut() {
             if part.is_active(engine) {
                 part.grav_kick();
             }
@@ -531,7 +545,7 @@ impl Space {
         if !engine.with_gravity {
             return;
         }
-        for part in self.parts_mut() {
+        for part in self.parts.iter_mut() {
             if part.is_active(engine) {
                 part.grav_kick();
                 part.reset_fluxes();
@@ -542,7 +556,7 @@ impl Space {
     #[cfg(any(dimensionality = "2D", dimensionality = "3D"))]
     pub fn add_spherical_source_term(&mut self, engine: &Engine) {
         let eos = self.eos;
-        for part in self.parts_mut() {
+        for part in self.parts.iter_mut() {
             if part.is_active(engine) {
                 part.add_spherical_source_term(&eos);
             }
@@ -551,7 +565,7 @@ impl Space {
 
     /// Prepare the particles for the next timestep
     pub fn prepare(&mut self, engine: &Engine) {
-        for part in self.parts_mut() {
+        for part in self.parts.iter_mut() {
             if part.is_active(engine) {
                 part.reset_fluxes();
             }
@@ -564,7 +578,7 @@ impl Space {
             f,
             "# x (m)\trho (kg m^-3)\tv (m s^-1)\tP (kg m^-1 s^-2)\ta (m s^-2)\tu (J / kg)\tS\ttime (s)"
         )?;
-        for part in self.parts() {
+        for part in self.parts.iter() {
             let internal_energy = part.internal_energy();
             let density = part.primitives.density();
             let entropy = self
@@ -588,7 +602,7 @@ impl Space {
     }
 
     pub fn self_check(&self) {
-        for part in self.parts() {
+        for part in self.parts.iter() {
             debug_assert!(part.x.is_finite());
             debug_assert!(part.primitives.density().is_finite());
             debug_assert!(part.primitives.velocity().is_finite());
