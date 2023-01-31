@@ -37,10 +37,10 @@ pub fn box_reflect(box_size: DVec3, part: &mut Part) {
     let x_old = part.x;
     for i in 0..3 {
         if part.x[i] < 0. {
-            part.x[i] += 2. * part.x[i];
+            part.x[i] -= 2. * part.x[i];
         }
         if part.x[i] > box_size[i] {
-            part.x[i] -= 2. * (box_size[i] - part.x[i]);
+            part.x[i] -= 2. * (part.x[i] - box_size[i]);
         }
     }
     debug_assert!(contains(box_size, part.x));
