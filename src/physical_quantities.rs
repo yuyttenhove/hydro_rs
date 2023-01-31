@@ -1,5 +1,5 @@
 use std::cmp::min;
-use std::ops::{Add, AddAssign, Index, Mul, Sub, SubAssign};
+use std::ops::{Add, AddAssign, Index, Mul, Sub, SubAssign, IndexMut};
 
 use glam::DVec3;
 
@@ -103,6 +103,10 @@ impl StateGradients {
         )
     }
 
+    pub fn zeros() -> Self {
+        StateGradients(DVec3::ZERO, [DVec3::ZERO; 3], DVec3::ZERO)
+    }
+
     pub fn dot(&self, dx: DVec3) -> StateVector {
         StateVector(
             self.0.dot(dx),
@@ -126,6 +130,19 @@ impl Index<usize> for StateGradients {
             2 => &self.1[1],
             3 => &self.1[2],
             4 => &self.2,
+            _ => panic!("Index out of bounds for StateVector!"),
+        }
+    }
+}
+
+impl IndexMut<usize> for StateGradients {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        match index {
+            0 => &mut self.0,
+            1 => &mut self.1[0],
+            2 => &mut self.1[1],
+            3 => &mut self.1[2],
+            4 => &mut self.2,
             _ => panic!("Index out of bounds for StateVector!"),
         }
     }

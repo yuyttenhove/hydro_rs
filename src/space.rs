@@ -12,7 +12,7 @@ use crate::{
     equation_of_state::EquationOfState,
     errors::ConfigError,
     part::Part,
-    physical_quantities::{Conserved, Primitives},
+    physical_quantities::{Conserved, Primitives, StateGradients},
     slope_limiters::{cell_wide_limiter, pairwise_limiter},
     timeline::{
         get_integer_time_end, make_integer_timestep, make_timestep, IntegerTime, MAX_NR_TIMESTEPS,
@@ -20,7 +20,7 @@ use crate::{
     },
 };
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum Boundary {
     Periodic,
     Reflective,
@@ -40,11 +40,11 @@ pub struct Space {
 
 impl Space {
     pub fn parts(&self) -> &[Part] {
-        &self.parts[1..self.num_parts + 1]
+        &self.parts
     }
 
     pub fn parts_mut(&mut self) -> &mut [Part] {
-        &mut self.parts[1..self.num_parts + 1]
+        &mut self.parts
     }
 
     /// Constructs a space from given ic's (tuples of position, density, velocity and pressure) and
@@ -75,10 +75,9 @@ impl Space {
         }
 
         // create vector of parts for space
-        let mut parts = vec![Part::default(); ic.len() + 2];
+        let mut parts = vec![Part::default(); ic.len()];
         // Copy positions and primitives to particles
-        for (idx, properties) in ic.iter().enumerate() {
-            let part = &mut parts[idx + 1];
+        for (part, properties) in parts.iter_mut().zip(ic.iter()) {
             part.x = DVec3 {
                 x: properties.0,
                 y: 0.5,
@@ -118,8 +117,7 @@ impl Space {
             voronoi_faces: vec![],
             eos,
         };
-        // Set up the primitive variables of the boundary particles
-        space.apply_boundary_condition();
+
         // Set up the conserved quantities
         space.first_init_parts();
 
@@ -127,13 +125,23 @@ impl Space {
         Ok(space)
     }
 
-    pub fn apply_boundary_condition(&mut self) {
+    fn get_boundary_part(&self, part: &Part, face: &VoronoiFace) -> Part {
+        let mut reflected = part.reflect(face.midpoint(), face.normal());
         match self.boundary {
             Boundary::Reflective => {
-                // nothing to do here
+                reflected.reflect_quantities(face.normal()).reflect_gradients(face.normal());
             }
-            _ => unimplemented!(),
+            Boundary::Open => {
+                reflected.reflect_gradients(face.normal());
+            }
+            Boundary::Vacuum => {
+                reflected.primitives = Primitives::vacuum();
+                reflected.gradients = StateGradients::zeros();
+            }
+            _ => panic!("Trying to create boundary particle with {:?} boundary conditions", self.boundary),
         }
+
+        reflected
     }
 
     /// Do the volume calculation for all the active parts in the space
@@ -181,9 +189,6 @@ impl Space {
             part.conserved =
                 Conserved::from_primitives(&part.primitives, part.physical_volume(), eos);
         }
-
-        // re-apply BC, now with updated conserved quantities
-        self.apply_boundary_condition();
     }
 
     /// Do the flux exchange in a non symmetrical manner
@@ -253,9 +258,16 @@ impl Space {
 
     /// Do flux exchange between neighbouring particles
     pub fn flux_exchange(&mut self, engine: &Engine) {
-        for i in 0..self.num_parts + 1 {
-            let left = &self.parts[i];
-            let right = &self.parts[i + 1];
+        for face in self.voronoi_faces.iter() {
+            let left = &self.parts()[face.left()];
+            let _reflected;
+            let right = match face.right() {
+                Some(idx) => &self.parts()[idx],
+                None => {
+                    _reflected = self.get_boundary_part(left, face);
+                    &_reflected
+                }
+            };
 
             // anything to do here?
             // Since we do the flux exchange symmetrically, we only want to do it when the particle with the
@@ -272,10 +284,25 @@ impl Space {
 
             // The particle with the smallest timestep is active: Update the fluxes of both (symmetrically)
             // We extrapolate from the centroid of the particles (test).
-            let face = 0.5 * (left.x + right.x);
-            let dx_left = face - left.centroid;
-            let dx_right = face - right.centroid;
-            let dx = left.centroid - right.centroid;
+            let dx_left = face.midpoint() - left.centroid;
+            let dx_right = face.midpoint() - right.centroid;
+            let dx = right.centroid - left.centroid;
+
+            // Calculate the maximal signal velocity (used for timestep computation)
+            let mut v_max = 0.;
+            if left.primitives.density() > 0. {
+                v_max += self
+                    .eos
+                    .sound_speed(left.primitives.pressure(), 1. / left.primitives.density());
+            }
+            if right.primitives.density() > 0. {
+                v_max += self
+                    .eos
+                    .sound_speed(right.primitives.pressure(), 1. / right.primitives.density());
+            }
+            v_max -= (right.primitives.velocity() - left.primitives.velocity())
+                .dot(dx)
+                .min(0.);
 
             // Gradient extrapolation
             let primitives_left = pairwise_limiter(
@@ -289,22 +316,41 @@ impl Space {
                 right.primitives + right.gradients.dot(dx_right).into() + right.extrapolations,
             );
 
-            // Boost the primitives to the frame of reference of the interface:
-            let v_face = 0.5 * (left.v + right.v);
+            // Compute interface velocity (Springel (2010), eq. 33):
+            let midpoint = 0.5 * (left.x + right.x);
+            let fac = (right.v - left.v).dot(face.midpoint() - midpoint) / dx.length_squared();
+            let v_face = 0.5 * (left.v + right.v) - fac * dx;
+
+            // Calculate fluxes
             let fluxes = engine.solver.solve_for_flux(
                 &primitives_left.boost(-v_face),
                 &primitives_right.boost(-v_face),
                 v_face,
-                -dx.normalize(),
+                dx.normalize(),
                 &self.eos,
             );
 
-            // update accumulated fluxes
-            self.parts[i].fluxes -= dt * fluxes;
-            self.parts[i].gravity_mflux -= dx * fluxes.mass();
+            // Explicitely drop the references to left and right to reborrow them as mutable
+            drop(left);
+            drop(right);
 
-            self.parts[i + 1].fluxes += dt * fluxes;
-            self.parts[i + 1].gravity_mflux += dx * fluxes.mass();
+            // Update the flux accumulators
+            {
+                let left = &mut self.parts[face.left()];
+                left.fluxes -= dt * fluxes;
+                left.gravity_mflux -= dx * fluxes.mass();
+                if left.is_active_flux(engine) {
+                    left.max_signal_velocity = v_max.max(left.max_signal_velocity);
+                }
+            }
+            if let Some(idx) = face.right() {
+                let right = &mut self.parts[idx];
+                right.fluxes += dt * fluxes;
+                right.gravity_mflux -= dx * fluxes.mass();
+                if right.is_active_flux(engine) {
+                    right.max_signal_velocity = v_max.max(right.max_signal_velocity);
+                }
+            }
         }
     }
 
@@ -341,34 +387,7 @@ impl Space {
 
     /// Estimate the gradients for all particles
     pub fn gradient_estimate(&mut self, engine: &Engine) {
-        for i in 1..self.num_parts + 1 {
-            let part = &self.parts[i];
-            if !part.is_active_primitive_calculation(engine) {
-                continue;
-            }
-
-            continue; // UNIMPLEMENTED
-
-            self.parts[i].gradients = {
-                let left = &self.parts[i - 1];
-                let right = &self.parts[i + 1];
-                let dx = right.x - left.x;
-                let dx_inv = 1. / dx;
-                let dx_left = 0.5 * (left.x - part.x);
-                let dx_right = 0.5 * (right.x - part.x);
-
-                let gradients = unimplemented!();
-
-                cell_wide_limiter(
-                    gradients,
-                    part.primitives,
-                    left.primitives,
-                    right.primitives,
-                    dx_left,
-                    dx_right,
-                )
-            };
-        }
+        // UNIMPLEMENTED
     }
 
     /// Calculate the next timestep for all active particles
@@ -414,6 +433,7 @@ impl Space {
 
     /// Apply the timestep limiter to the particles
     pub fn timestep_limiter(&mut self, engine: &Engine) {
+        return; // UNIMPLEMENTED
         // First collect info about the timesteps of the neighbouring particles
         for i in 1..self.num_parts + 1 {
             // Get a slice of neighbouring parts
@@ -484,7 +504,6 @@ impl Space {
 
     /// Prepare the particles for the next timestep
     pub fn prepare(&mut self, engine: &Engine) {
-        self.apply_boundary_condition();
         for part in self.parts_mut() {
             if part.is_active(engine) {
                 part.reset_fluxes();

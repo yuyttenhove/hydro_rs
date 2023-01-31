@@ -23,6 +23,7 @@ pub struct Part {
     pub x: DVec3,
     pub centroid: DVec3,
     pub v: DVec3,
+    pub max_signal_velocity: f64,
     pub timebin: Timebin,
     pub wakeup: Timebin,
     pub dt: f64,
@@ -87,7 +88,7 @@ impl Part {
 
         // determine the size of this particle's next timestep
         let v_rel = (self.v - fluid_v).length();
-        let v_max = v_rel + sound_speed;
+        let v_max = self.max_signal_velocity.max(v_rel + sound_speed);
 
         if v_max > 0. {
             0.5 * cfl_criterion * self.volume / v_max
@@ -338,16 +339,48 @@ impl Part {
         }
     }
 
-    pub fn reflect(&mut self, around: f64) -> &mut Self {
-        self.x += 2. * (around - self.x);
-        self.centroid += 2. * (around - self.centroid);
-        self.v *= -1.;
+    pub fn reflect(&self, around: DVec3, normal: DVec3) -> Self {
+        let mut reflected = self.clone();
+        let dx = around - self.x;
+        reflected.x += 2. * (around - self.x).dot(normal) * normal;
+        reflected.centroid += 2. * (around - self.centroid).dot(normal) * normal;
+        reflected.v -= 2. * reflected.v.dot(normal) * normal;
+
+        reflected
+    }
+
+    pub fn reflect_quantities(&mut self, normal: DVec3) -> &mut Self {
+        // Reflect fluid velocity component along normal
+        let mut v = self.primitives.velocity();
+        v -= 2. * v.dot(normal) * normal;
+        self.primitives = Primitives::new(self.primitives.density(), v, self.primitives.pressure());
 
         self
     }
 
-    pub fn reflect_quantities(&mut self) -> &mut Self {
-        unimplemented!()
+    pub fn reflect_gradients(&mut self, normal: DVec3) -> &mut Self {
+        // Reflect gradients along normal
+        let mut grad_reflected = self.gradients;
+        grad_reflected[0] = grad_reflected[0] - 2. * grad_reflected[0].dot(normal) * normal;
+        grad_reflected[4] = grad_reflected[4] - 2. * grad_reflected[0].dot(normal) * normal;
+        // For the velocity: first account for sign change due to reflection of velocity:
+        let (dv_dx, dv_dy, dv_dz) = (
+            DVec3 { x: grad_reflected[1].x, y: grad_reflected[2].x, z: grad_reflected[3].x},
+            DVec3 { x: grad_reflected[1].y, y: grad_reflected[2].y, z: grad_reflected[3].y},
+            DVec3 { x: grad_reflected[1].z, y: grad_reflected[2].z, z: grad_reflected[3].z},
+        );
+        let dv_dot_n = DVec3{x: dv_dx.dot(normal), y: dv_dy.dot(normal), z: dv_dz.dot(normal)};
+        grad_reflected[1] = grad_reflected[1] - 2. * dv_dot_n * normal.x;
+        grad_reflected[2] = grad_reflected[2] - 2. * dv_dot_n * normal.y;
+        grad_reflected[3] = grad_reflected[3] - 2. * dv_dot_n * normal.z;
+        // Now flip the gradients:
+        grad_reflected[1] = grad_reflected[1] - 2. * grad_reflected[1].dot(normal) * normal;
+        grad_reflected[2] = grad_reflected[2] - 2. * grad_reflected[2].dot(normal) * normal;
+        grad_reflected[3] = grad_reflected[3] - 2. * grad_reflected[3].dot(normal) * normal;
+
+        self.gradients = grad_reflected;
+
+        self
     }
 
     pub fn loc(&self) -> DVec3 {

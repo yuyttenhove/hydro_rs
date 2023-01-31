@@ -28,7 +28,6 @@ impl Runner {
                 space.volume_calculation(engine);
                 space.convert_conserved_to_primitive(engine);
                 space.gradient_estimate(engine);
-                space.apply_boundary_condition();
                 space.flux_exchange(engine);
                 space.apply_flux(engine);
                 space.kick2(engine);
@@ -78,7 +77,6 @@ impl Runner {
                 space.volume_calculation(engine);
                 space.convert_conserved_to_primitive(engine);
                 space.gradient_estimate(engine);
-                space.apply_boundary_condition();
                 space.flux_exchange(engine);
             }
         }
