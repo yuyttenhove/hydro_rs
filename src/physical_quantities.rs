@@ -53,6 +53,10 @@ impl StateVector {
         StateVector(0., DVec3::ZERO, 0.)
     }
 
+    pub fn splat(value: f64) -> Self {
+        Self(value, DVec3::splat(value), value)
+    }
+
     pub fn pairwise_max(&self, other: Self) -> Self {
         StateVector(
             self.0.max(other.0),
@@ -209,13 +213,13 @@ impl Primitives {
         }
     }
 
-    pub fn pairwise_max(&self, other: Self) -> Self {
+    pub fn pairwise_max(&self, other: &Self) -> Self {
         Self {
             values: self.values.pairwise_max(other.values),
         }
     }
 
-    pub fn pairwise_min(&self, other: Self) -> Self {
+    pub fn pairwise_min(&self, other: &Self) -> Self {
         Self {
             values: self.values.pairwise_min(other.values),
         }

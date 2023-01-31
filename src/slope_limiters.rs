@@ -2,58 +2,51 @@ use glam::DVec3;
 
 use crate::physical_quantities::{Primitives, StateGradients};
 
-fn cell_wide_limiter_single_quantity(max: f64, min: f64, emax: f64, emin: f64) -> f64 {
-    if emax == 0. || emin == 0. {
+fn cell_wide_limiter_single_quantity(max: f64, min: f64, e_max: f64, e_min: f64) -> f64 {
+    if e_max == 0. || e_min == 0. {
         1.
     } else {
-        (1.0f64).min((max / emax).min(min / emin))
+        (1.0f64).min((max / e_max).min(min / e_min))
     }
 }
 
 pub fn cell_wide_limiter(
     gradients: StateGradients,
-    primitives: Primitives,
-    left: Primitives,
-    right: Primitives,
-    dx_left: DVec3,
-    dx_right: DVec3,
+    min: &Primitives,
+    max: &Primitives,
+    e_min: &Primitives,
+    e_max: &Primitives,
 ) -> StateGradients {
-    let max_primitives = left.pairwise_max(right) - primitives;
-    let min_primitives = left.pairwise_min(right) - primitives;
-    let ext_left: Primitives = gradients.dot(dx_left).into();
-    let ext_right: Primitives = gradients.dot(dx_right).into();
-    let ext_max = ext_left.pairwise_max(ext_right);
-    let ext_min = ext_left.pairwise_min(ext_right);
 
     let density_alpha = cell_wide_limiter_single_quantity(
-        max_primitives.density(),
-        min_primitives.density(),
-        ext_max.density(),
-        ext_min.density(),
+        max.density(),
+        min.density(),
+        e_max.density(),
+        e_min.density(),
     );
     let velocity_alpha_x = cell_wide_limiter_single_quantity(
-        max_primitives.velocity().x,
-        min_primitives.velocity().x,
-        ext_max.velocity().x,
-        ext_min.velocity().x,
+        max.velocity().x,
+        min.velocity().x,
+        e_max.velocity().x,
+        e_min.velocity().x,
     );
     let velocity_alpha_y = cell_wide_limiter_single_quantity(
-        max_primitives.velocity().y,
-        min_primitives.velocity().y,
-        ext_max.velocity().y,
-        ext_min.velocity().y,
+        max.velocity().y,
+        min.velocity().y,
+        e_max.velocity().y,
+        e_min.velocity().y,
     );
     let velocity_alpha_z = cell_wide_limiter_single_quantity(
-        max_primitives.velocity().z,
-        min_primitives.velocity().z,
-        ext_max.velocity().z,
-        ext_min.velocity().z,
+        max.velocity().z,
+        min.velocity().z,
+        e_max.velocity().z,
+        e_min.velocity().z,
     );
     let pressure_alpha = cell_wide_limiter_single_quantity(
-        max_primitives.pressure(),
-        min_primitives.pressure(),
-        ext_max.pressure(),
-        ext_min.pressure(),
+        max.pressure(),
+        min.pressure(),
+        e_max.pressure(),
+        e_min.pressure(),
     );
 
     StateGradients::new(

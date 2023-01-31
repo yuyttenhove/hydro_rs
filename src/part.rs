@@ -1,6 +1,5 @@
-use glam::DVec3;
+use glam::{DMat3, DVec3};
 
-use crate::physical_quantities::{Conserved, Primitives, StateVector, StateGradients};
 #[cfg(any(dimensionality = "2D", dimensionality = "3D"))]
 use crate::spherical::ALPHA;
 use crate::{
@@ -9,6 +8,29 @@ use crate::{
     time_integration::Runner,
     timeline::*,
 };
+use crate::{
+    physical_quantities::{Conserved, Primitives, StateGradients, StateVector},
+    slope_limiters::cell_wide_limiter,
+};
+
+#[derive(Debug, Clone, Copy)]
+pub struct LimiterData {
+    pub min: Primitives,
+    pub max: Primitives,
+    pub e_min: Primitives,
+    pub e_max: Primitives,
+}
+
+impl Default for LimiterData {
+    fn default() -> Self {
+        Self {
+            min: StateVector::splat(f64::INFINITY).into(),
+            max: StateVector::splat(f64::NEG_INFINITY).into(),
+            e_min: StateVector::splat(f64::INFINITY).into(),
+            e_max: StateVector::splat(f64::NEG_INFINITY).into(),
+        }
+    }
+}
 
 #[derive(Default, Debug, Clone)]
 pub struct Part {
@@ -18,6 +40,9 @@ pub struct Part {
     pub conserved: Conserved,
     pub fluxes: Conserved,
     pub gravity_mflux: DVec3,
+
+    pub limiter: LimiterData,
+    pub matrix_wls: DMat3,
 
     pub volume: f64,
     pub x: DVec3,
@@ -226,6 +251,108 @@ impl Part {
         // TODO: Reapply kick1 if necessary
     }
 
+    pub fn gradient_estimate(
+        &mut self,
+        primitives_other: &Primitives,
+        w: f64,
+        ds: DVec3,
+        matrix_wls: DMat3,
+    ) {
+        fn gradient_est_single_quantity(q_l: f64, q_r: f64, w: f64, ds: DVec3, grad: &mut DVec3) {
+            *grad += w * (q_r - q_l) * ds;
+        }
+
+        gradient_est_single_quantity(
+            self.density(),
+            primitives_other.density(),
+            w,
+            ds,
+            &mut self.gradients[0],
+        );
+        gradient_est_single_quantity(
+            self.velocity().x,
+            primitives_other.velocity().x,
+            w,
+            ds,
+            &mut self.gradients[1],
+        );
+        gradient_est_single_quantity(
+            self.velocity().y,
+            primitives_other.velocity().y,
+            w,
+            ds,
+            &mut self.gradients[2],
+        );
+        gradient_est_single_quantity(
+            self.velocity().z,
+            primitives_other.velocity().z,
+            w,
+            ds,
+            &mut self.gradients[3],
+        );
+        gradient_est_single_quantity(
+            self.pressure(),
+            primitives_other.pressure(),
+            w,
+            ds,
+            &mut self.gradients[4],
+        );
+
+        self.matrix_wls += matrix_wls;
+    }
+
+    pub fn gradient_finalize(&mut self) {
+        fn gradient_finalize_single_quantity(grad: &mut DVec3, mat_wls_inv: &DMat3) {
+            *grad = mat_wls_inv.mul_vec3(*grad);
+        }
+
+        self.matrix_wls = self.matrix_wls.inverse();
+        gradient_finalize_single_quantity(&mut self.gradients[0], &self.matrix_wls);
+        gradient_finalize_single_quantity(&mut self.gradients[1], &self.matrix_wls);
+        gradient_finalize_single_quantity(&mut self.gradients[2], &self.matrix_wls);
+        gradient_finalize_single_quantity(&mut self.gradients[3], &self.matrix_wls);
+        gradient_finalize_single_quantity(&mut self.gradients[4], &self.matrix_wls);
+    }
+
+    pub fn gradient_limiter_collect(
+        &mut self,
+        primitives_other: &Primitives,
+        extrapolations: &Primitives,
+    ) {
+        self.limiter.min = self.limiter.min.pairwise_min(primitives_other);
+        self.limiter.max = self.limiter.max.pairwise_max(primitives_other);
+        self.limiter.e_min = self.limiter.min.pairwise_min(extrapolations);
+        self.limiter.e_max = self.limiter.max.pairwise_max(extrapolations);
+    }
+
+    pub fn gradient_limit(&mut self) {
+        self.gradients = cell_wide_limiter(
+            self.gradients,
+            &self.limiter.min,
+            &self.limiter.max,
+            &self.limiter.e_min,
+            &self.limiter.e_max,
+        );
+    }
+
+    pub(crate) fn reset_gradients(&mut self) {
+        self.gradients = StateGradients::zeros();
+        self.limiter = LimiterData::default();
+        self.extrapolations = Primitives::vacuum();
+    }
+
+    fn density(&mut self) -> f64 {
+        self.primitives.density()
+    }
+
+    fn velocity(&mut self) -> DVec3 {
+        self.primitives.velocity()
+    }
+
+    fn pressure(&mut self) -> f64 {
+        self.primitives.pressure()
+    }
+
     /// Add the spherical source terms.
     ///
     /// See Toro, 2009, chapter 17.
@@ -365,11 +492,27 @@ impl Part {
         grad_reflected[4] = grad_reflected[4] - 2. * grad_reflected[0].dot(normal) * normal;
         // For the velocity: first account for sign change due to reflection of velocity:
         let (dv_dx, dv_dy, dv_dz) = (
-            DVec3 { x: grad_reflected[1].x, y: grad_reflected[2].x, z: grad_reflected[3].x},
-            DVec3 { x: grad_reflected[1].y, y: grad_reflected[2].y, z: grad_reflected[3].y},
-            DVec3 { x: grad_reflected[1].z, y: grad_reflected[2].z, z: grad_reflected[3].z},
+            DVec3 {
+                x: grad_reflected[1].x,
+                y: grad_reflected[2].x,
+                z: grad_reflected[3].x,
+            },
+            DVec3 {
+                x: grad_reflected[1].y,
+                y: grad_reflected[2].y,
+                z: grad_reflected[3].y,
+            },
+            DVec3 {
+                x: grad_reflected[1].z,
+                y: grad_reflected[2].z,
+                z: grad_reflected[3].z,
+            },
         );
-        let dv_dot_n = DVec3{x: dv_dx.dot(normal), y: dv_dy.dot(normal), z: dv_dz.dot(normal)};
+        let dv_dot_n = DVec3 {
+            x: dv_dx.dot(normal),
+            y: dv_dy.dot(normal),
+            z: dv_dz.dot(normal),
+        };
         grad_reflected[1] = grad_reflected[1] - 2. * dv_dot_n * normal.x;
         grad_reflected[2] = grad_reflected[2] - 2. * dv_dot_n * normal.y;
         grad_reflected[3] = grad_reflected[3] - 2. * dv_dot_n * normal.z;
