@@ -47,7 +47,7 @@ impl ExactRiemannSolver {
             let cap_b = self.gm1dgp1 * state.pressure();
             (p - state.pressure()) * (cap_a / (p + cap_b)).sqrt()
         } else {
-            self.tdgm1 * a * (p / state.pressure() - 1.).powf(self.gm1d2g)
+            self.tdgm1 * a * ((p / state.pressure()).powf(self.gm1d2g) - 1.)
         }
     }
 
@@ -155,6 +155,7 @@ impl ExactRiemannSolver {
         let mut fa = low_f;
         let mut fb = up_f;
         let mut fc = 0.;
+
         let mut s = 0.;
         let mut fs = 0.;
 
@@ -185,12 +186,11 @@ impl ExactRiemannSolver {
 
             let tmp = 0.25 * (3. * a + b);
 
-            if !((s > tmp && s < b)
-                || (s < tmp && s > b)
+            if !((s > tmp && s < b) || (s < tmp && s > b))
                 || (mflag && (s - b).abs() >= (0.5 * (b - c).abs()))
                 || (!mflag && (s - b).abs() >= (0.5 * (c - d).abs()))
-                || (mflag && (b - c).abs() < error_tol)
-                || (!mflag && (c - d).abs() < error_tol))
+                || (mflag && (b - c).abs() < 0.5 * error_tol * (b + c))
+                || (!mflag && (c - d).abs() < 0.5 * error_tol * (c + d))
             {
                 s = 0.5 * (a + b);
                 mflag = true;
@@ -220,57 +220,129 @@ impl ExactRiemannSolver {
         b
     }
 
-    fn sample_shock_wave(
+    fn shock_speed(&self, v: f64, a: f64, pdps: f64) -> f64 {
+        v - a * (0.5 * self.gp1dg * pdps + self.gm1d2g).sqrt()
+    }
+
+    fn sample_left_shock_wave(
         &self,
         p: f64,
         u: f64,
-        state: &Primitives,
+        left: &Primitives,
         v: f64,
         a: f64,
         n_unit: DVec3,
     ) -> Primitives {
-        let pdp = p / state.pressure();
-        let s = v - a * (0.5 * self.gp1dg * pdp + self.gm1d2g).sqrt();
-        if s < 0. {
+        let pdps = p / left.pressure();
+        if self.shock_speed(v, a, pdps) < 0. {
+            // Inside shock wave
             Primitives::new(
-                state.density() * (pdp + self.gm1dgp1) / (self.gm1dgp1 * pdp + 1.),
-                state.velocity() + (u - v) * n_unit,
-                state.pressure(),
+                left.density() * (pdps + self.gm1dgp1) / (self.gm1dgp1 * pdps + 1.),
+                left.velocity() + (u - v) * n_unit,
+                p,
             )
         } else {
-            *state
+            // left state
+            *left
         }
     }
 
-    fn sample_rarefaction_wave(
+    fn sample_right_shock_wave(
         &self,
         p: f64,
         u: f64,
-        state: &Primitives,
+        right: &Primitives,
         v: f64,
         a: f64,
         n_unit: DVec3,
     ) -> Primitives {
-        let sh = v - a;
-        if sh < 0. {
-            let st = u - a * (p / state.pressure()).powf(self.gm1d2g);
-            if st > 0. {
+        let pdps = p / right.pressure();
+        if self.shock_speed(v, -a, pdps) > 0. {
+            // Inside shock wave
+            Primitives::new(
+                right.density() * (pdps + self.gm1dgp1) / (self.gm1dgp1 * pdps + 1.),
+                right.velocity() + (u - v) * n_unit,
+                p,
+            )
+        } else {
+            // right state
+            *right
+        }
+    }
+
+    fn rarefaction_head_speed(&self, v: f64, a: f64) -> f64 {
+        v - a
+    }
+
+    fn rarefaction_tail_speed(&self, u: f64, a: f64, pdps: f64) -> f64 {
+        u - a * pdps.powf(self.gm1d2g)
+    }
+
+    fn sample_left_rarefaction_wave(
+        &self,
+        p: f64,
+        u: f64,
+        left: &Primitives,
+        v: f64,
+        a: f64,
+        n_unit: DVec3,
+    ) -> Primitives {
+        if self.rarefaction_head_speed(v, a) < 0. {
+            // Inside rarefaction wave
+            if self.rarefaction_tail_speed(u, a, p / left.pressure()) > 0. {
+                // Inside rarefaction fan
                 let v_half = self.tdgp1 * (a + 0.5 * (self.gamma - 1.) * v) - v;
                 let base = self.tdgp1 + self.gm1dgp1 / a * v;
                 Primitives::new(
-                    state.density() * base.powf(self.tdgm1),
-                    state.velocity() + v_half * n_unit,
-                    state.pressure() * base.powf(self.tdgp1),
+                    left.density() * base.powf(self.tdgm1),
+                    left.velocity() + v_half * n_unit,
+                    left.pressure() * base.powf(self.gamma * self.tdgm1),
                 )
             } else {
+                // middle state
                 Primitives::new(
-                    state.density() * (p / state.pressure()).powf(1. / self.gamma),
-                    state.velocity() * (u - v) * n_unit,
-                    state.pressure(),
+                    left.density() * (p / left.pressure()).powf(1. / self.gamma),
+                    left.velocity() + (u - v) * n_unit,
+                    p,
                 )
             }
         } else {
-            *state
+            // Left state
+            *left
+        }
+    }
+
+    fn sample_right_rarefaction_wave(
+        &self,
+        p: f64,
+        u: f64,
+        right: &Primitives,
+        v: f64,
+        a: f64,
+        n_unit: DVec3,
+    ) -> Primitives {
+        if self.rarefaction_head_speed(v, -a) > 0. {
+            // Inside rarefaction wave
+            if self.rarefaction_tail_speed(u, -a, p / right.pressure()) < 0. {
+                // Inside rarefaction fan
+                let v_half = self.tdgp1 * (-a + 0.5 * (self.gamma - 1.) * v) - v;
+                let base = self.tdgp1 - self.gm1dgp1 / a * v;
+                Primitives::new(
+                    right.density() * base.powf(self.tdgm1),
+                    right.velocity() + v_half * n_unit,
+                    right.pressure() * base.powf(self.gamma * self.tdgm1),
+                )
+            } else {
+                // middle state
+                Primitives::new(
+                    right.density() * (p / right.pressure()).powf(1. / self.gamma),
+                    right.velocity() + (u - v) * n_unit,
+                    p,
+                )
+            }
+        } else {
+            // right state
+            *right
         }
     }
 
@@ -333,15 +405,15 @@ impl ExactRiemannSolver {
         // This corresponds to the flow chart in Fig. 4.14 in Toro
         if u < 0. {
             if p > right.pressure() {
-                self.sample_shock_wave(p, u, right, v_r, -a_r, n_unit)
+                self.sample_right_shock_wave(p, u, right, v_r, a_r, n_unit)
             } else {
-                self.sample_rarefaction_wave(p, u, right, v_r, -a_r, n_unit)
+                self.sample_right_rarefaction_wave(p, u, right, v_r, a_r, n_unit)
             }
         } else {
             if p > left.pressure() {
-                self.sample_shock_wave(p, u, left, v_l, a_l, n_unit)
+                self.sample_left_shock_wave(p, u, left, v_l, a_l, n_unit)
             } else {
-                self.sample_rarefaction_wave(p, u, left, v_l, a_l, n_unit)
+                self.sample_left_rarefaction_wave(p, u, left, v_l, a_l, n_unit)
             }
         }
     }
@@ -381,5 +453,104 @@ impl RiemannSolver for ExactRiemannSolver {
 
         let half = self.solve(left, right, v_l, v_r, a_l, a_r, n_unit);
         flux_from_half_state(&half, interface_velocity, self.odgm1, n_unit)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    use float_cmp::assert_approx_eq;
+
+    const GAMMA: f64 = 5. / 3.;
+    const EOS: EquationOfState = EquationOfState::Ideal { gamma: GAMMA };
+
+    #[test]
+    fn test_symmetry() {
+        let solver = ExactRiemannSolver::new(GAMMA);
+        let interface_velocity = -3e-1 * DVec3::X;
+        let left = Primitives::new(1., DVec3::ZERO, 1.);
+        let left_reversed = Primitives::new(1., DVec3::ZERO, 1.);
+        let right = Primitives::new(1., -6e-1 * DVec3::X, 1.);
+        let right_reversed = Primitives::new(1., 6e-1 * DVec3::X, 1.);
+
+        let fluxes = solver.solve_for_flux(
+            &left.boost(-interface_velocity),
+            &right.boost(-interface_velocity),
+            interface_velocity,
+            DVec3::X,
+            &EOS,
+        );
+        let fluxes_reversed = solver.solve_for_flux(
+            &right_reversed.boost(interface_velocity),
+            &left_reversed.boost(interface_velocity),
+            -interface_velocity,
+            DVec3::X,
+            &EOS,
+        );
+
+        assert_approx_eq!(f64, fluxes.mass(), -fluxes_reversed.mass());
+        assert_approx_eq!(f64, fluxes.momentum().x, fluxes_reversed.momentum().x);
+        assert_approx_eq!(f64, fluxes.momentum().y, fluxes_reversed.momentum().y);
+        assert_approx_eq!(f64, fluxes.momentum().z, fluxes_reversed.momentum().z);
+        assert_approx_eq!(f64, fluxes.energy(), -fluxes_reversed.energy());
+    }
+
+    #[test]
+    fn test_half_state() {
+        let solver = ExactRiemannSolver::new(GAMMA);
+
+        fn get_half(
+            rho_l: f64,
+            v_l: f64,
+            p_l: f64,
+            rho_r: f64,
+            v_r: f64,
+            p_r: f64,
+            solver: &ExactRiemannSolver,
+        ) -> Primitives {
+            let left = Primitives::new(rho_l, v_l * DVec3::X, p_l);
+            let right = Primitives::new(rho_r, v_r * DVec3::X, p_r);
+            let a_l = EOS.sound_speed(left.pressure(), 1. / left.density());
+            let a_r = EOS.sound_speed(right.pressure(), 1. / right.density());
+
+            solver.solve(&left, &right, v_l, v_r, a_l, a_r, DVec3::X)
+        }
+
+        // Left shock
+        let half = get_half(0.75, 0.6, 0.8, 0.55, -0.25, 0.5, &solver);
+        assert_approx_eq!(f64, half.density(), 0.8927393244785966);
+        assert_approx_eq!(f64, half.velocity().x, 0.35966250129769556);
+        assert_approx_eq!(f64, half.pressure(), 1.0709476357371466);
+
+        // right shock
+        let half = get_half(0.75, 0.3, 0.8, 0.55, -0.75, 0.5, &solver);
+        assert_approx_eq!(f64, half.density(), 0.9114320476995261);
+        assert_approx_eq!(f64, half.velocity().x, -0.03895103710637815);
+        assert_approx_eq!(f64, half.pressure(), 1.201228148376388);
+
+        // Left rarefaction (middle state)
+        let half = get_half(0.75, 0.1, 0.8, 0.55, 0.5, 0.5, &solver);
+        assert_approx_eq!(f64, half.density(), 0.5562398903431287);
+        assert_approx_eq!(f64, half.velocity().x, 0.4792910646431622);
+        assert_approx_eq!(f64, half.pressure(), 0.4861363537732538);
+
+        // Left rarefaction (fan)
+        let half = get_half(1.75, -0.1, 0.75, 0.55, 1.5, 0.5, &solver);
+        assert_approx_eq!(f64, half.density(), 0.65432665196683);
+        assert_approx_eq!(f64, half.velocity().x, 0.6088656910463873);
+        assert_approx_eq!(f64, half.pressure(), 0.14554217677392042);
+
+        // Right rarefaction (middle state)
+        let half = get_half(0.75, -0.5, 0.8, 0.55, -0.1, 0.5, &solver);
+        assert_approx_eq!(f64, half.density(), 0.5407985848180775);
+        assert_approx_eq!(f64, half.velocity().x, -0.1207089353568378);
+        assert_approx_eq!(f64, half.pressure(), 0.4861363537732538);
+
+        // Right rarefaction (fan)
+        let half = get_half(1.75, -1.5, 0.75, 1.55, 0.1, 0.5, &solver);
+        assert_approx_eq!(f64, half.density(), 0.5687181105004402);
+        assert_approx_eq!(f64, half.velocity().x, -0.5249266813300747);
+        assert_approx_eq!(f64, half.pressure(), 0.09402548983542296);
     }
 }

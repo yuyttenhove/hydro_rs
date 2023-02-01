@@ -195,16 +195,16 @@ mod tests {
         );
 
         let fluxes_s = flux_from_half_state(
-            &Primitives::new(1.24867487, DVec3::ZERO, 1.24867487),
+            &Primitives::new(1.24867487, DVec3::ZERO, 1.45191836),
             interface_velocity,
             solver.odgm1,
             DVec3::X,
         );
         let fluxes_s_reversed = flux_from_half_state(
-            &Primitives::new(1.24867487, DVec3::ZERO, 1.24867487),
+            &Primitives::new(1.24867487, DVec3::ZERO, 1.45191836),
             -interface_velocity,
             solver.odgm1,
-            -DVec3::X,
+            DVec3::X,
         );
 
         assert_approx_eq!(f64, fluxes.mass(), -fluxes_reversed.mass());
