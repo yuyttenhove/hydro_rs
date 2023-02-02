@@ -82,7 +82,10 @@ def main(fname: str, savename: str):
 
     # read data
     data = pd.read_csv(fname, sep="\t")
-    data.columns = ["x", "rho", "v", "P", "a", "u", "S"]
+    data.columns = ["x", "rho", "v", "P", "a", "u", "S", "dt"]
+    data["x"] = [np.fromstring(l[1:-1], sep=",")[0] for l in data["x"].values]
+    data["v"] = [np.fromstring(l[1:-1], sep=",")[0] for l in data["v"].values]
+    data["a"] = [np.fromstring(l[1:-1], sep=",")[0] for l in data["a"].values]
 
     # Plot
     fig, axes = plt.subplots(2, 3, figsize=(9, 6))

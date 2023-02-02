@@ -72,15 +72,10 @@ impl Part {
         }
 
         // Normal case
-        // assert!(self.conserved.mass() > 0.);
-        // assert!((self.conserved.mass() / self.volume - self.primitives.density()).abs() <= self.primitives.density().abs() * 2e-2);
-        // assert!((self.conserved.momentum() / self.conserved.mass() - self.primitives.velocity()).abs() <= self.primitives.velocity().abs() * 2e-2);
         let m_inv = 1. / self.conserved.mass();
         let internal_energy = (self.conserved.energy()
             - 0.5 * self.conserved.momentum().dot(self.primitives.velocity()))
             * m_inv;
-        // assert!(internal_energy > 0.);
-        // assert!((eos.gas_pressure_from_internal_energy(internal_energy, self.volume) - self.primitives.pressure()).abs() <= self.primitives.pressure().abs() * 2e-2);
 
         let fluid_v = self.conserved.momentum() * m_inv;
         let sound_speed = eos.sound_speed(
@@ -94,7 +89,7 @@ impl Part {
             ParticleMotion::STEER => {
                 let d = self.centroid - self.x;
                 let abs_d = d.length();
-                let r = 0.5 * self.volume;
+                let r = self.radius();
                 let eta = 0.25;
                 let eta_r = eta * r;
                 let xi = 1.0;
@@ -116,7 +111,7 @@ impl Part {
         let v_max = self.max_signal_velocity.max(v_rel + sound_speed);
 
         if v_max > 0. {
-            0.5 * cfl_criterion * self.volume / v_max
+            cfl_criterion * self.radius() / v_max
         } else {
             f64::INFINITY
         }
@@ -326,12 +321,12 @@ impl Part {
     }
 
     pub fn gradient_limit(&mut self) {
-        self.gradients = cell_wide_limiter(
-            self.gradients,
+        cell_wide_limiter(
             &self.limiter.min,
             &self.limiter.max,
             &self.limiter.e_min,
             &self.limiter.e_max,
+            &mut self.gradients,
         );
     }
 
@@ -463,7 +458,7 @@ impl Part {
         } else if cfg!(dimensionality = "3D") {
             4. * std::f64::consts::FRAC_PI_3 * (r.powi(3) - x_left.powi(3))
         } else {
-            self.volume
+            0.5 * self.volume
         }
     }
 
@@ -533,5 +528,9 @@ impl Part {
 
     pub fn set_centroid(&mut self, centroid: DVec3) {
         self.centroid = centroid;
+    }
+
+    fn radius(&self) -> f64 {
+        0.5 * self.physical_volume()
     }
 }

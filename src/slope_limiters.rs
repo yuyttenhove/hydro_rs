@@ -11,13 +11,12 @@ fn cell_wide_limiter_single_quantity(max: f64, min: f64, e_max: f64, e_min: f64)
 }
 
 pub fn cell_wide_limiter(
-    gradients: StateGradients,
     min: &Primitives,
     max: &Primitives,
     e_min: &Primitives,
     e_max: &Primitives,
-) -> StateGradients {
-
+    gradients: &mut StateGradients,
+) {
     let density_alpha = cell_wide_limiter_single_quantity(
         max.density(),
         min.density(),
@@ -49,13 +48,11 @@ pub fn cell_wide_limiter(
         e_min.pressure(),
     );
 
-    StateGradients::new(
-        density_alpha * gradients[0],
-        velocity_alpha_x * gradients[1],
-        velocity_alpha_y * gradients[2],
-        velocity_alpha_z * gradients[3],
-        pressure_alpha * gradients[4],
-    )
+    gradients[0] *= density_alpha;
+    gradients[1] *= velocity_alpha_x;
+    gradients[2] *= velocity_alpha_y;
+    gradients[3] *= velocity_alpha_z;
+    gradients[4] *= pressure_alpha;
 }
 
 fn pairwise_limiter_single_quantity(q_l: f64, q_r: f64, q_dash: f64) -> f64 {

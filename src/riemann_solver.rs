@@ -32,7 +32,7 @@ pub fn get_solver(
     };
     match kind {
         "HLLC" => Ok(Box::new(HLLCRiemannSolver::new(gamma))),
-        "exact" => Ok(Box::new(ExactRiemannSolver::new(gamma))),
+        "Exact" => Ok(Box::new(ExactRiemannSolver::new(gamma))),
         _ => Err(ConfigError::UnknownRiemannSolver(kind.to_string())),
     }
 }
@@ -125,12 +125,12 @@ impl VacuumRiemannSolver {
         a_r: f64,
         n_unit: DVec3,
     ) -> Primitives {
-        if -a_r < v_r {
+        if v_r > -a_r {
             let s_r = v_r - self.tdgm1 * a_r;
-            if s_r >= 0. {
-                Primitives::vacuum()
-            } else {
+            if s_r < 0. {
                 self.sample_half_vacuum(right, v_r, -a_r, n_unit)
+            } else {
+                Primitives::vacuum()
             }
         } else {
             *right

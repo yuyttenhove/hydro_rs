@@ -40,7 +40,6 @@ pub struct Space {
 }
 
 impl Space {
-
     /// Constructs a space from given ic's (tuples of position, density, velocity and pressure) and
     /// boundary conditions.
     pub fn from_ic(
@@ -119,6 +118,11 @@ impl Space {
         Ok(space)
     }
 
+    fn from_hdf5(fname: &str, space_cfg: &Yaml, eos: EquationOfState) -> Self {
+        
+        todo!()
+    }
+
     fn get_boundary_part(&self, part: &Part, face: &VoronoiFace) -> Part {
         let mut reflected = part.reflect(face.midpoint(), face.normal());
         match self.boundary {
@@ -185,8 +189,7 @@ impl Space {
         // Calculate the conserved quantities
         let eos = self.eos;
         for part in self.parts.iter_mut() {
-            part.conserved =
-                Conserved::from_primitives(&part.primitives, part.physical_volume(), eos);
+            part.convert_conserved_to_primitive(eos);
         }
     }
 
@@ -478,7 +481,7 @@ impl Space {
         ti_end_min
     }
 
-    /// Apply the timestep limiter to the particles 
+    /// Apply the timestep limiter to the particles
     pub fn timestep_limiter(&mut self, engine: &Engine) {
         // Loop over all the voronoi faces to collect info about the timesteps of the neighbouring particles
         for face in self.voronoi_faces.iter() {
@@ -503,12 +506,16 @@ impl Space {
 
             if right_is_ending {
                 let left = &mut self.parts[face.left()];
-                left.wakeup = left.wakeup.min(right_timebin + TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN);
+                left.wakeup = left
+                    .wakeup
+                    .min(right_timebin + TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN);
             }
             if let Some(idx) = face.right() {
                 if left_is_ending {
                     let right = &mut self.parts[idx];
-                    right.wakeup = right.wakeup.min(left_timebin + TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN);
+                    right.wakeup = right
+                        .wakeup
+                        .min(left_timebin + TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN);
                 }
             }
         }
