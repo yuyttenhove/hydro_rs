@@ -1,6 +1,7 @@
 use std::{
+    error::Error,
     fs::File,
-    io::{BufWriter, Error as IoError, Write},
+    io::{BufWriter, Error as IoError, Write}, path::Path,
 };
 
 use glam::{DMat3, DVec3};
@@ -18,7 +19,7 @@ use crate::{
         get_integer_time_end, make_integer_timestep, make_timestep, IntegerTime, MAX_NR_TIMESTEPS,
         NUM_TIME_BINS, TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN,
     },
-    utils::{box_reflect, box_wrap, contains},
+    utils::{box_reflect, box_wrap, contains}, initial_conditions::InitialConditions,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -34,58 +35,26 @@ pub struct Space {
     parts: Vec<Part>,
     boundary: Boundary,
     box_size: DVec3,
-    num_parts: usize,
     voronoi_faces: Vec<VoronoiFace>,
     eos: EquationOfState,
 }
 
 impl Space {
-    /// Constructs a space from given ic's (tuples of position, density, velocity and pressure) and
+    /// Constructs a space from given ic's (partially initialised particles) and
     /// boundary conditions.
+    /// 
+    /// Particles typically will only have conserved quantities and coordinates set at this point.
     pub fn from_ic(
-        ic: &[(f64, f64, f64, f64)],
+        initial_conditions: InitialConditions,
         space_cfg: &Yaml,
         eos: EquationOfState,
     ) -> Result<Self, ConfigError> {
         // read config
-        let box_size = space_cfg["box_size"].as_f64().unwrap_or(1.);
+        let box_size = initial_conditions.box_size();
         let boundary = space_cfg["boundary"]
             .as_str()
             .unwrap_or("reflective")
             .to_string();
-
-        // Get our own mutable copy of the ICs
-        let mut ic = ic.to_vec();
-        // Wrap particles to be inside box:
-        for properties in ic.iter_mut() {
-            properties.0 *= box_size;
-            while properties.0 < 0. {
-                properties.0 += box_size
-            }
-            while properties.0 >= box_size {
-                properties.0 -= box_size
-            }
-        }
-
-        // create vector of parts for space
-        let mut parts = vec![Part::default(); ic.len()];
-        // Copy positions and primitives to particles
-        for (part, properties) in parts.iter_mut().zip(ic.iter()) {
-            part.x = DVec3 {
-                x: properties.0,
-                y: 0.5,
-                z: 0.5,
-            };
-            part.primitives = Primitives::new(
-                properties.1,
-                DVec3 {
-                    x: properties.2,
-                    y: 0.,
-                    z: 0.,
-                },
-                properties.3,
-            );
-        }
 
         // create space
         #[cfg(dimensionality = "1D")]
@@ -99,14 +68,9 @@ impl Space {
         #[cfg(any(dimensionality = "2D", dimensionality = "3D"))]
         let boundary = Boundary::Spherical;
         let mut space = Space {
-            parts,
+            parts: initial_conditions.into_parts(),
             boundary,
-            box_size: DVec3 {
-                x: box_size,
-                y: 1.,
-                z: 1.,
-            },
-            num_parts: ic.len(),
+            box_size,
             voronoi_faces: vec![],
             eos,
         };
@@ -116,11 +80,6 @@ impl Space {
 
         // return
         Ok(space)
-    }
-
-    fn from_hdf5(fname: &str, space_cfg: &Yaml, eos: EquationOfState) -> Self {
-        
-        todo!()
     }
 
     fn get_boundary_part(&self, part: &Part, face: &VoronoiFace) -> Part {
@@ -166,7 +125,7 @@ impl Space {
         let eos = self.eos;
         for part in self.parts.iter_mut() {
             if part.is_active_primitive_calculation(engine) {
-                part.convert_conserved_to_primitive(eos);
+                part.convert_conserved_to_primitive(&eos);
 
                 // This also invalidates the extrapolations
                 part.reset_gradients();
@@ -189,7 +148,7 @@ impl Space {
         // Calculate the conserved quantities
         let eos = self.eos;
         for part in self.parts.iter_mut() {
-            part.convert_conserved_to_primitive(eos);
+            part.first_init(&eos);
         }
     }
 
@@ -331,7 +290,6 @@ impl Space {
         // remove particles if needed
         for idx in to_remove {
             self.parts.remove(idx);
-            self.num_parts -= 1;
         }
     }
 
@@ -642,21 +600,33 @@ mod test {
         (0.85, 0.125, 0.5, 0.1),
     ];
     const GAMMA: f64 = 5. / 3.;
-    const CFG_STR: &'_ str = "box_size: 2. \nboundary: \"reflective\"";
+    const CFG_STR: &'_ str = "boundary: \"reflective\"";
+    const IC_CFG: &'_ str = 
+r###"type: "config"
+num_part: 4
+box_size: [1., 1., 1.]
+particles:
+    x: [0.25, 0.65, 0.75, 0.85]
+    mass: [1., 1.125, 1.125, 1.125]
+    velocity: [0.5, 0.5, 0.5, 0.5]
+    internal_energy: [1., 0.1, 0.1, 0.1]"###;
 
     #[test]
     #[cfg(dimensionality = "1D")]
     fn test_init_1d() {
+        use crate::initial_conditions::InitialConditions;
+
         let eos = EquationOfState::Ideal { gamma: GAMMA };
-        let config = &YamlLoader::load_from_str(CFG_STR).unwrap()[0];
-        let space = Space::from_ic(&IC, config, eos).expect("Config should be valid!");
-        assert_eq!(space.parts.len(), 6);
-        assert_eq!(space.num_parts, 4);
+        let space_config = &YamlLoader::load_from_str(CFG_STR).unwrap()[0];
+        let ic_config = &YamlLoader::load_from_str(IC_CFG).unwrap()[0];
+        let ics = InitialConditions::new(ic_config, &eos).unwrap();
+        let space = Space::from_ic(ics, space_config, eos).expect("Config should be valid!");
+        assert_eq!(space.parts.len(), 4);
         // Check volumes
-        assert_approx_eq!(f64, space.parts[1].volume, 0.9);
-        assert_approx_eq!(f64, space.parts[2].volume, 0.5);
+        assert_approx_eq!(f64, space.parts[0].volume, 0.45);
+        assert_approx_eq!(f64, space.parts[1].volume, 0.25);
+        assert_approx_eq!(f64, space.parts[2].volume, 0.1);
         assert_approx_eq!(f64, space.parts[3].volume, 0.2);
-        assert_approx_eq!(f64, space.parts[4].volume, 0.4);
         // Check faces
         assert_eq!(space.voronoi_faces.len(), 21);
         assert_approx_eq!(f64, space.voronoi_faces[0].area(), 1.);
@@ -665,9 +635,9 @@ mod test {
         assert_approx_eq!(f64, space.voronoi_faces[15].area(), 1.);
         assert_approx_eq!(f64, space.voronoi_faces[16].area(), 1.);
         assert_approx_eq!(f64, space.voronoi_faces[0].midpoint().x, 0.0);
-        assert_approx_eq!(f64, space.voronoi_faces[5].midpoint().x, 0.9);
-        assert_approx_eq!(f64, space.voronoi_faces[10].midpoint().x, 1.4);
-        assert_approx_eq!(f64, space.voronoi_faces[15].midpoint().x, 1.6);
-        assert_approx_eq!(f64, space.voronoi_faces[16].midpoint().x, 2.);
+        assert_approx_eq!(f64, space.voronoi_faces[5].midpoint().x, 0.45);
+        assert_approx_eq!(f64, space.voronoi_faces[10].midpoint().x, 0.7);
+        assert_approx_eq!(f64, space.voronoi_faces[15].midpoint().x, 0.8);
+        assert_approx_eq!(f64, space.voronoi_faces[16].midpoint().x, 1.);
     }
 }

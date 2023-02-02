@@ -5,3 +5,4 @@
 run/output
 *.png
 *.pyc
+*.hdf5

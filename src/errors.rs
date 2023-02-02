@@ -3,6 +3,8 @@ use std::{
     fmt::{Debug, Display},
 };
 
+use yaml_rust::Yaml;
+
 #[derive(Debug)]
 pub enum ConfigError {
     MissingParameter(String),
@@ -11,6 +13,9 @@ pub enum ConfigError {
     UnknownRiemannSolver(String),
     UnknownParticleMotion(String),
     UnknownBoundaryConditions(String),
+    IllegalBoxSize(String),
+    InvalidArrayFormat(Yaml),
+    InvalidArrayLenght(usize, usize),
 }
 
 impl Display for ConfigError {
@@ -33,6 +38,15 @@ impl Display for ConfigError {
             }
             ConfigError::UnknownBoundaryConditions(name) => {
                 write!(f, "Unknown type of boundary condition configured: {}", name)
+            }
+            ConfigError::IllegalBoxSize(name) => {
+                write!(f, "Illegal box_size format: {}!", name)
+            }
+            ConfigError::InvalidArrayFormat(value) => {
+                write!(f, "Expected array but found: {:?}", value)
+            }
+            ConfigError::InvalidArrayLenght(a, b) => {
+                write!(f, "Expected array of lenght {}, but found {}", a, b)
             }
         }
     }

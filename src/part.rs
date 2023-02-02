@@ -165,7 +165,23 @@ impl Part {
         self.gravity_mflux = DVec3::ZERO;
     }
 
-    pub fn convert_conserved_to_primitive(&mut self, eos: EquationOfState) {
+    pub fn first_init(&mut self, eos: &EquationOfState) {
+        self.primitives = Primitives::from_conserved(&self.conserved, self.physical_volume(), eos);
+    }
+
+    pub fn from_ic(x: DVec3, mass: f64, velocity: DVec3, internal_energy: f64) -> Self {
+        Self {
+            x,
+            conserved: Conserved::new(
+                mass,
+                mass * velocity,
+                mass * internal_energy + 0.5 * mass * velocity.length_squared(),
+            ),
+            ..Self::default()
+        }
+    }
+
+    pub fn convert_conserved_to_primitive(&mut self, eos: &EquationOfState) {
         debug_assert!(self.conserved.mass() >= 0., "Encountered negative mass!");
         debug_assert!(
             self.conserved.energy() >= 0.,

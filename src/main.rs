@@ -10,7 +10,7 @@ use engine::Engine;
 use space::Space;
 use yaml_rust::YamlLoader;
 
-use crate::{initial_conditions::create_ics, equation_of_state::EquationOfState};
+use crate::{initial_conditions::InitialConditions, equation_of_state::EquationOfState};
 
 mod cli;
 mod engine;
@@ -45,8 +45,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &config["snapshots"],
         &eos,
     )?;
-    let ic = create_ics(&config["initial_conditions"])?;
-    let mut space = Space::from_ic(&ic, &config["space"], eos)?;
+    let ic = InitialConditions::new(&config["initial_conditions"], &eos)?;
+    let mut space = Space::from_ic(ic, &config["space"], eos)?;
 
     // run
     engine.run(&mut space)?;

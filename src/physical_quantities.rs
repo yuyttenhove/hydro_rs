@@ -187,7 +187,7 @@ impl Primitives {
         }
     }
 
-    pub fn from_conserved(conserved: &Conserved, volume: f64, eos: EquationOfState) -> Self {
+    pub fn from_conserved(conserved: &Conserved, volume: f64, eos: &EquationOfState) -> Self {
         if conserved.mass() > 0. {
             let m_inv = 1. / conserved.mass();
             let density = conserved.mass() / volume;
@@ -300,7 +300,7 @@ impl Conserved {
         }
     }
 
-    pub fn from_primitives(primitives: &Primitives, volume: f64, eos: EquationOfState) -> Self {
+    pub fn from_primitives(primitives: &Primitives, volume: f64, eos: &EquationOfState) -> Self {
         let mass = primitives.density() * volume;
         let momentum = mass * primitives.velocity();
         let energy = 0.5 * momentum.dot(primitives.velocity())
@@ -360,8 +360,8 @@ mod test {
         );
         let volume = 0.1;
         let eos = EquationOfState::Ideal { gamma: 5. / 3. };
-        let conserved = Conserved::from_primitives(&primitives, volume, eos);
-        let primitives_new = Primitives::from_conserved(&conserved, volume, eos);
+        let conserved = Conserved::from_primitives(&primitives, volume, &eos);
+        let primitives_new = Primitives::from_conserved(&conserved, volume, &eos);
 
         assert_approx_eq!(f64, primitives.density(), primitives_new.density());
         assert_approx_eq!(f64, primitives.velocity().x, primitives_new.velocity().x);

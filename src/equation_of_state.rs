@@ -44,4 +44,11 @@ impl EquationOfState {
             _ => unimplemented!(),
         }
     }
+
+    pub fn gamma(&self) -> f64 {
+        match self {
+            EquationOfState::Ideal { gamma } => *gamma,
+            EquationOfState::Isothermal => panic!("Trying to query gamma of isothermal gas!"),
+        }
+    }
 }
