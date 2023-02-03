@@ -77,16 +77,7 @@ impl ExactRiemannSolver {
     }
 
     /// The derivative of riemann_f w.r.t. p
-    fn fprime(
-        &self,
-        p: f64,
-        left: &Primitives,
-        right: &Primitives,
-        v_l: f64,
-        v_r: f64,
-        a_l: f64,
-        a_r: f64,
-    ) -> f64 {
+    fn fprime(&self, p: f64, left: &Primitives, right: &Primitives, a_l: f64, a_r: f64) -> f64 {
         self.fprimeb(p, left, a_l) + self.fprimeb(p, right, a_r)
     }
 
@@ -116,7 +107,9 @@ impl ExactRiemannSolver {
         let ppv = 0.5 * (left.pressure() + right.pressure())
             - 0.125 * (v_r - v_l) * (left.density() + right.density()) * (a_l + a_r);
         let ppv = ppv.max(1e-8);
-        let p_guess = if ppv < p_min {
+        let p_guess = if q_max <= 2. && p_min <= ppv && ppv <= p_max {
+            ppv
+        } else if ppv < p_min {
             // two rarefactions
             let base = (a_l + a_r - 0.5 * (self.gamma - 1.) * (v_r - v_l))
                 / (a_l / left.pressure().powf(self.gm1d2g)
@@ -149,15 +142,15 @@ impl ExactRiemannSolver {
     ) -> f64 {
         let mut a = lower_lim;
         let mut b = upper_lim;
-        let mut c = 0.;
+        let mut c;
         let mut d = f64::INFINITY;
 
         let mut fa = low_f;
         let mut fb = up_f;
-        let mut fc = 0.;
+        let mut fc;
 
-        let mut s = 0.;
-        let mut fs = 0.;
+        let mut s;
+        let mut fs;
 
         if fa * fb > 0. {
             panic!("Brent's method was called with equal sign function values!");
@@ -224,6 +217,22 @@ impl ExactRiemannSolver {
         v - a * (0.5 * self.gp1dg * pdps + self.gm1d2g).sqrt()
     }
 
+    fn sample_shock_middle_state(
+        &self,
+        p: f64,
+        u: f64,
+        pdps: f64,
+        state: &Primitives,
+        v: f64,
+        n_unit: DVec3,
+    ) -> Primitives {
+        Primitives::new(
+            state.density() * (pdps + self.gm1dgp1) / (self.gm1dgp1 * pdps + 1.),
+            state.velocity() + (u - v) * n_unit,
+            p,
+        )
+    }
+
     fn sample_left_shock_wave(
         &self,
         p: f64,
@@ -235,14 +244,8 @@ impl ExactRiemannSolver {
     ) -> Primitives {
         let pdps = p / left.pressure();
         if self.shock_speed(v, a, pdps) < 0. {
-            // Inside shock wave
-            Primitives::new(
-                left.density() * (pdps + self.gm1dgp1) / (self.gm1dgp1 * pdps + 1.),
-                left.velocity() + (u - v) * n_unit,
-                p,
-            )
+            self.sample_shock_middle_state(p, u, pdps, left, v, n_unit)
         } else {
-            // left state
             *left
         }
     }
@@ -258,14 +261,8 @@ impl ExactRiemannSolver {
     ) -> Primitives {
         let pdps = p / right.pressure();
         if self.shock_speed(v, -a, pdps) > 0. {
-            // Inside shock wave
-            Primitives::new(
-                right.density() * (pdps + self.gm1dgp1) / (self.gm1dgp1 * pdps + 1.),
-                right.velocity() + (u - v) * n_unit,
-                p,
-            )
+            self.sample_shock_middle_state(p, u, pdps, right, v, n_unit)
         } else {
-            // right state
             *right
         }
     }
@@ -278,6 +275,37 @@ impl ExactRiemannSolver {
         u - a * pdps.powf(self.gm1d2g)
     }
 
+    fn sample_rarefaction_fan(
+        &self,
+        state: &Primitives,
+        a: f64,
+        v: f64,
+        n_unit: DVec3,
+    ) -> Primitives {
+        let v_half = self.tdgp1 * (a + 0.5 * (self.gamma - 1.) * v);
+        let base = self.tdgp1 + self.gm1dgp1 / a * v;
+        Primitives::new(
+            state.density() * base.powf(self.tdgm1),
+            state.velocity() + (v_half - v) * n_unit,
+            state.pressure() * base.powf(self.gamma * self.tdgm1),
+        )
+    }
+
+    fn sample_rarefaction_middle_state(
+        &self,
+        p: f64,
+        u: f64,
+        state: &Primitives,
+        v: f64,
+        n_unit: DVec3,
+    ) -> Primitives {
+        Primitives::new(
+            state.density() * (p / state.pressure()).powf(1. / self.gamma),
+            state.velocity() + (u - v) * n_unit,
+            p,
+        )
+    }
+
     fn sample_left_rarefaction_wave(
         &self,
         p: f64,
@@ -288,26 +316,12 @@ impl ExactRiemannSolver {
         n_unit: DVec3,
     ) -> Primitives {
         if self.rarefaction_head_speed(v, a) < 0. {
-            // Inside rarefaction wave
             if self.rarefaction_tail_speed(u, a, p / left.pressure()) > 0. {
-                // Inside rarefaction fan
-                let v_half = self.tdgp1 * (a + 0.5 * (self.gamma - 1.) * v) - v;
-                let base = self.tdgp1 + self.gm1dgp1 / a * v;
-                Primitives::new(
-                    left.density() * base.powf(self.tdgm1),
-                    left.velocity() + v_half * n_unit,
-                    left.pressure() * base.powf(self.gamma * self.tdgm1),
-                )
+                self.sample_rarefaction_fan(left, a, v, n_unit)
             } else {
-                // middle state
-                Primitives::new(
-                    left.density() * (p / left.pressure()).powf(1. / self.gamma),
-                    left.velocity() + (u - v) * n_unit,
-                    p,
-                )
+                self.sample_rarefaction_middle_state(p, u, left, v, n_unit)
             }
         } else {
-            // Left state
             *left
         }
     }
@@ -322,26 +336,12 @@ impl ExactRiemannSolver {
         n_unit: DVec3,
     ) -> Primitives {
         if self.rarefaction_head_speed(v, -a) > 0. {
-            // Inside rarefaction wave
             if self.rarefaction_tail_speed(u, -a, p / right.pressure()) < 0. {
-                // Inside rarefaction fan
-                let v_half = self.tdgp1 * (-a + 0.5 * (self.gamma - 1.) * v) - v;
-                let base = self.tdgp1 - self.gm1dgp1 / a * v;
-                Primitives::new(
-                    right.density() * base.powf(self.tdgm1),
-                    right.velocity() + v_half * n_unit,
-                    right.pressure() * base.powf(self.gamma * self.tdgm1),
-                )
+                self.sample_rarefaction_fan(right, -a, v, n_unit)
             } else {
-                // middle state
-                Primitives::new(
-                    right.density() * (p / right.pressure()).powf(1. / self.gamma),
-                    right.velocity() + (u - v) * n_unit,
-                    p,
-                )
+                self.sample_rarefaction_middle_state(p, u, right, v, n_unit)
             }
         } else {
-            // right state
             *right
         }
     }
@@ -377,8 +377,7 @@ impl ExactRiemannSolver {
             let mut counter = 0;
             while (p - p_guess).abs() > 1e-6 * 0.5 * (p + p_guess) && fp_guess < 0.0 {
                 p = p_guess;
-                p_guess =
-                    p_guess - fp_guess / self.fprime(p_guess, left, right, v_l, v_r, a_l, a_r);
+                p_guess = p_guess - fp_guess / self.fprime(p_guess, left, right, a_l, a_r);
                 fp_guess = self.f(p_guess, left, right, v_l, v_r, a_l, a_r);
                 counter += 1;
                 if counter > 1000 {
@@ -425,7 +424,7 @@ impl RiemannSolver for ExactRiemannSolver {
         left: &Primitives,
         right: &Primitives,
         interface_velocity: glam::DVec3,
-        n_unit: glam::DVec3,
+        n_unit: DVec3,
         eos: &EquationOfState,
     ) -> Conserved {
         let v_l = left.velocity().dot(n_unit);

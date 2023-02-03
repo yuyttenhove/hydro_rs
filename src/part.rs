@@ -422,7 +422,6 @@ impl Part {
 
     pub fn reflect(&self, around: DVec3, normal: DVec3) -> Self {
         let mut reflected = self.clone();
-        let dx = around - self.x;
         reflected.x += 2. * (around - self.x).dot(normal) * normal;
         reflected.centroid += 2. * (around - self.centroid).dot(normal) * normal;
         reflected.v -= 2. * reflected.v.dot(normal) * normal;
