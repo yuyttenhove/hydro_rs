@@ -1,7 +1,6 @@
 use std::{
-    error::Error,
     fs::File,
-    io::{BufWriter, Error as IoError, Write}, path::Path,
+    io::{BufWriter, Error as IoError, Write},
 };
 
 use glam::{DMat3, DVec3};
@@ -13,13 +12,13 @@ use crate::{
     equation_of_state::EquationOfState,
     errors::ConfigError,
     part::Part,
-    physical_quantities::{Conserved, Primitives, StateGradients},
+    physical_quantities::{Primitives, StateGradients},
     slope_limiters::pairwise_limiter,
     timeline::{
         get_integer_time_end, make_integer_timestep, make_timestep, IntegerTime, MAX_NR_TIMESTEPS,
         NUM_TIME_BINS, TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN,
     },
-    utils::{box_reflect, box_wrap, contains}, initial_conditions::InitialConditions,
+    utils::{box_reflect, box_wrap, contains, HydroDimension}, initial_conditions::InitialConditions,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -28,7 +27,6 @@ pub enum Boundary {
     Reflective,
     Open,
     Vacuum,
-    Spherical,
 }
 
 pub struct Space {
@@ -37,6 +35,7 @@ pub struct Space {
     box_size: DVec3,
     voronoi_faces: Vec<VoronoiFace>,
     eos: EquationOfState,
+    dimensionality: HydroDimension,
 }
 
 impl Space {
@@ -57,7 +56,6 @@ impl Space {
             .to_string();
 
         // create space
-        #[cfg(dimensionality = "1D")]
         let boundary = match boundary.as_str() {
             "periodic" => Boundary::Periodic,
             "reflective" => Boundary::Reflective,
@@ -65,14 +63,13 @@ impl Space {
             "vacuum" => Boundary::Vacuum,
             _ => return Err(ConfigError::UnknownBoundaryConditions(boundary)),
         };
-        #[cfg(any(dimensionality = "2D", dimensionality = "3D"))]
-        let boundary = Boundary::Spherical;
         let mut space = Space {
-            parts: initial_conditions.into_parts(),
             boundary,
             box_size,
-            voronoi_faces: vec![],
             eos,
+            dimensionality: initial_conditions.dimensionality(),
+            parts: initial_conditions.into_parts(),
+            voronoi_faces: vec![],
         };
 
         // Set up the conserved quantities
@@ -152,13 +149,6 @@ impl Space {
         }
     }
 
-    /// Do the flux exchange in a non symmetrical manner
-    /// (each particle calculates the fluxes it recieves independently of
-    /// its neighbours using its own timestep).
-    pub fn flux_exchange_non_symmetrical(&mut self, engine: &Engine) {
-        unimplemented!();
-    }
-
     /// Do flux exchange between neighbouring particles
     pub fn flux_exchange(&mut self, engine: &Engine) {
         for face in self.voronoi_faces.iter() {
@@ -229,14 +219,11 @@ impl Space {
                 &primitives_left.boost(-v_face),
                 &primitives_right.boost(-v_face),
                 v_face,
-                dx.normalize(),
+                face.normal(),
                 &self.eos,
             );
 
-            // Explicitely drop the references to left and right to reborrow them as mutable
-            drop(left);
-            drop(right);
-
+            // Reborrow the particles one at a time as mutable
             // Update the flux accumulators
             {
                 let left = &mut self.parts[face.left()];
@@ -275,7 +262,6 @@ impl Space {
         }
 
         // Handle particles that left the box.
-        let box_size = self.box_size;
         let mut to_remove = vec![];
         for (idx, part) in self.parts.iter_mut().enumerate() {
             if !contains(self.box_size, part.x) {
@@ -283,7 +269,6 @@ impl Space {
                     Boundary::Reflective => box_reflect(self.box_size, part),
                     Boundary::Open | Boundary::Vacuum => to_remove.push(idx),
                     Boundary::Periodic => box_wrap(self.box_size, &mut part.x),
-                    _ => unimplemented!(),
                 }
             }
         }
@@ -321,10 +306,7 @@ impl Space {
             let primitives_left = left.primitives;
             let primitives_right = right.primitives;
 
-            // Drop the particles before reborrowing them as mutable
-            drop(left);
-            drop(right);
-
+            // Reborrow the particles one at a time as mutable
             {
                 let left = &mut self.parts[face.left()];
                 if left.is_active_primitive_calculation(engine) {
@@ -372,10 +354,7 @@ impl Space {
             let extrapolated_right =
                 right.primitives + right.gradients.dot(face.midpoint() - right.centroid).into();
 
-            // Drop the particles before reborrowing them as mutable
-            drop(left);
-            drop(right);
-
+            // Reborrow the particles one at a time as mutable
             {
                 let left = &mut self.parts[face.left()];
                 if left.is_active_primitive_calculation(engine) {
@@ -393,7 +372,7 @@ impl Space {
         // Finally, loop once more over the particles to apply the cell wide limiter
         for part in self.parts.iter_mut() {
             if part.is_active_primitive_calculation(engine) {
-                part.gradient_limit()
+                part.gradient_limit();
             }
         }
     }
@@ -408,7 +387,7 @@ impl Space {
             if part.is_ending(engine) {
                 // Compute new timestep
                 let mut dt =
-                    part.timestep(engine.cfl_criterion(), &self.eos, &engine.particle_motion);
+                    part.timestep(engine.cfl_criterion(), &self.eos, &engine.particle_motion, self.dimensionality);
                 dt = dt.min(engine.dt_max());
                 assert!(
                     dt > engine.dt_min(),
@@ -459,9 +438,7 @@ impl Space {
             let left_timebin = left.timebin;
             let right_timebin = right.timebin;
 
-            drop(left);
-            drop(right);
-
+            // Reborrow the particles one at a time as mutable
             if right_is_ending {
                 let left = &mut self.parts[face.left()];
                 left.wakeup = left
@@ -514,16 +491,6 @@ impl Space {
             if part.is_active(engine) {
                 part.grav_kick();
                 part.reset_fluxes();
-            }
-        }
-    }
-
-    #[cfg(any(dimensionality = "2D", dimensionality = "3D"))]
-    pub fn add_spherical_source_term(&mut self, engine: &Engine) {
-        let eos = self.eos;
-        for part in self.parts.iter_mut() {
-            if part.is_active(engine) {
-                part.add_spherical_source_term(&eos);
             }
         }
     }
@@ -593,12 +560,6 @@ mod test {
 
     use super::Space;
 
-    const IC: [(f64, f64, f64, f64); 4] = [
-        (0.25, 1., 0.5, 1.),
-        (0.65, 0.125, 0.5, 0.1),
-        (0.75, 0.125, 0.5, 0.1),
-        (0.85, 0.125, 0.5, 0.1),
-    ];
     const GAMMA: f64 = 5. / 3.;
     const CFG_STR: &'_ str = "boundary: \"reflective\"";
     const IC_CFG: &'_ str = 
@@ -612,7 +573,6 @@ particles:
     internal_energy: [1., 0.1, 0.1, 0.1]"###;
 
     #[test]
-    #[cfg(dimensionality = "1D")]
     fn test_init_1d() {
         use crate::initial_conditions::InitialConditions;
 

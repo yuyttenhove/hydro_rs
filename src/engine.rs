@@ -147,13 +147,13 @@ impl Engine {
 
         while self.t_current < self.t_end {
             // Print info?
-            if self.ti_current >= self.ti_status {
+            if self.ti_between_status == 0 || self.ti_current >= self.ti_status {
                 println!(
                     "Running at t={:.4e}. Stepping forward in time by: {:.4e}",
                     self.t_current,
                     make_timestep(self.ti_current - self.ti_old, self.time_base)
                 );
-                while self.ti_current >= self.ti_status {
+                while self.ti_between_status != 0 && self.ti_current >= self.ti_status {
                     self.ti_status += self.ti_between_status;
                 }
             }

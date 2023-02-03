@@ -194,6 +194,8 @@ impl Primitives {
             let velocity = conserved.momentum() * m_inv;
             let internal_energy = conserved.internal_energy();
             let pressure = eos.gas_pressure_from_internal_energy(internal_energy, density);
+            assert!(density >= 0.);
+            assert!(pressure >= 0.);
             Self {
                 values: StateVector(density, velocity, pressure),
             }

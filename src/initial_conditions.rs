@@ -5,7 +5,7 @@ use yaml_rust::Yaml;
 
 use crate::{
     equation_of_state::EquationOfState, errors::ConfigError, part::Part,
-    physical_quantities::Conserved,
+    physical_quantities::Conserved, utils::{HydroDimension, HydroDimension::* },
 };
 
 macro_rules! conv1d {
@@ -142,7 +142,6 @@ fn vacuum(num_part: usize, box_size: DVec3, eos: &EquationOfState) -> Vec<Part> 
 
 /// Generates a spherically symmetric 1/r density profile
 fn evrard(num_part: usize, box_size: DVec3, eos: &EquationOfState) -> Vec<Part> {
-    assert!(cfg!(dimensionality = "3D"));
 
     let mut ic = Vec::<Part>::with_capacity(num_part);
     let num_part_inv = 1. / (num_part as f64);
@@ -296,6 +295,7 @@ fn read_parts_from_cfg(
 pub struct InitialConditions {
     parts: Vec<Part>,
     box_size: DVec3,
+    dimensionality: HydroDimension,
 }
 
 impl InitialConditions {
@@ -346,7 +346,7 @@ impl InitialConditions {
                     _ => Err(ConfigError::UnknownICs(kind.to_string())),
                 }?;
 
-                Ok(Self { parts, box_size })
+                Ok(Self { parts, box_size, dimensionality: HydroDimension1D })
             }
         }
     }
@@ -401,7 +401,7 @@ impl InitialConditions {
             parts.push(Part::from_ic(x, masses[i], velocity, internal_energy[i]));
         }
 
-        Ok(Self { parts, box_size })
+        Ok(Self { parts, box_size, dimensionality: dimension.into() })
     }
 
     pub fn box_size(&self) -> DVec3 {
@@ -410,5 +410,9 @@ impl InitialConditions {
 
     pub fn into_parts(self) -> Vec<Part> {
         self.parts
+    }
+
+    pub fn dimensionality(&self) -> HydroDimension {
+        self.dimensionality
     }
 }

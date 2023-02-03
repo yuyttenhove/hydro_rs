@@ -2,6 +2,24 @@ use glam::DVec3;
 
 use crate::part::Part;
 
+#[derive(Clone, Copy)]
+pub enum HydroDimension {
+    HydroDimension1D,
+    HydroDimension2D,
+    HydroDimension3D,
+}
+
+impl From<usize> for HydroDimension {
+    fn from(u: usize) -> Self {
+        match u {
+            1 => HydroDimension::HydroDimension1D,
+            2 => HydroDimension::HydroDimension2D,
+            3 => HydroDimension::HydroDimension3D,
+            _ => panic!("Illegal hydro dimension: {}", u),
+        }
+    }
+}
+
 pub trait Round {
     fn round_to(&self, decimal_places: u8) -> Self;
 }

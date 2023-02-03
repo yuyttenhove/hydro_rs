@@ -41,8 +41,6 @@ impl Runner {
                 space.volume_calculation(engine);
                 space.flux_exchange(engine);
                 space.apply_flux(engine);
-                #[cfg(any(dimensionality="2D", dimensionality="3D"))]
-                space.add_spherical_source_term(engine);
                 space.convert_conserved_to_primitive(engine);
                 space.gradient_estimate(engine);
                 space.self_gravity(engine);
