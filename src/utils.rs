@@ -65,6 +65,6 @@ pub fn box_reflect(box_size: DVec3, part: &mut Part) {
     let dx = part.x - x_old;
     if dx.length_squared() > 0. {
         let normal = dx * dx.length_recip();
-        part.reflect_quantities(dx).reflect_gradients(dx);
+        part.reflect_quantities(normal).reflect_gradients(normal);
     }
 }

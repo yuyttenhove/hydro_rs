@@ -7,9 +7,9 @@ pub type IntegerTime = u64;
 
 pub const NUM_TIME_BINS: Timebin = 56;
 pub const MAX_NR_TIMESTEPS: IntegerTime = get_integer_timestep(NUM_TIME_BINS);
-pub const TIME_BIN_INHIBITED: Timebin = NUM_TIME_BINS + 2;
-pub const TIME_BIN_NOT_CREATED: Timebin = NUM_TIME_BINS + 3;
-pub const TIME_BIN_NOT_AWAKE: Timebin = -NUM_TIME_BINS;
+pub const _TIME_BIN_INHIBITED: Timebin = NUM_TIME_BINS + 2;
+pub const _TIME_BIN_NOT_CREATED: Timebin = NUM_TIME_BINS + 3;
+pub const _TIME_BIN_NOT_AWAKE: Timebin = -NUM_TIME_BINS;
 pub const TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN: Timebin = 2;
 
 
@@ -38,7 +38,7 @@ pub const fn get_time_bin(time_step: IntegerTime) -> Timebin {
 /// given by a time-bin.
 /// If the current time is a possible beginning for the given time-bin, return
 /// the current time minus the time-step size.
-pub const fn get_integer_time_begin(ti_current: IntegerTime, bin: Timebin) -> IntegerTime {
+pub const fn _get_integer_time_begin(ti_current: IntegerTime, bin: Timebin) -> IntegerTime {
     let dti = get_integer_timestep(bin);
 
     if dti == 0 { return 0; }
@@ -83,7 +83,7 @@ pub const fn get_max_active_bin(time: IntegerTime) -> Timebin {
 /// # Arguments
 /// * `ti_current` - The current point on the timeline.
 /// * `ti_old` - The last synchronisation point on the timeline.
-pub const fn get_min_active_bin(ti_current: IntegerTime, ti_old: IntegerTime) -> Timebin {
+pub const fn _get_min_active_bin(ti_current: IntegerTime, ti_old: IntegerTime) -> Timebin {
     debug_assert!(ti_old < ti_current);
 
     get_max_active_bin(ti_current - ti_old)

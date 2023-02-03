@@ -92,19 +92,6 @@ impl Index<usize> for StateVector {
 pub struct StateGradients(DVec3, [DVec3; 3], DVec3);
 
 impl StateGradients {
-    pub fn new(
-        mass_like: DVec3,
-        momentum_like_0: DVec3,
-        momentum_like_1: DVec3,
-        momentum_like_2: DVec3,
-        energy_like: DVec3,
-    ) -> Self {
-        StateGradients(
-            mass_like,
-            [momentum_like_0, momentum_like_1, momentum_like_2],
-            energy_like,
-        )
-    }
 
     pub fn zeros() -> Self {
         StateGradients(DVec3::ZERO, [DVec3::ZERO; 3], DVec3::ZERO)
