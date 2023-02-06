@@ -10,7 +10,7 @@ glam = "0.22"
 yaml-rust = "0.4"
 clap = {version = "3.2", features = ["derive"]}
 derive_more = "0.99"
-meshless_voro = { git = "https://github.com/yuyttenhove/meshless_voro.git" }
+meshless_voronoi = "0.1"
 hdf5 = "0.8.1"
 
 [dev-dependencies]

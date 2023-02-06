@@ -10,9 +10,9 @@ snapshots:
   prefix: "sodshock_2D_"
 
 engine:
-  t_status: 0.
+  t_status: 0.005
   solver: "Exact"
-  particle_motion: "fixed"
+  particle_motion: "fluid"
 #   runner: "DefaultHalfDrift"
 #   runner: "OptimalOrderHalfDrift"
   runner: "OptimalOrder"
@@ -23,10 +23,10 @@ space:
   boundary: "reflective"
 
 initial_conditions:
-  type: "file"
+  type: "sodshock"
   box_size: [2., 1., 1.]
-  num_part: 200
-  filename: "sodshock_2D_low_res.hdf5"
+  num_part: 100
+  filename: "sodshock_2D.hdf5"
 
 equation_of_state:
   gamma: 1.66666666667

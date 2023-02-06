@@ -2,7 +2,7 @@ use glam::DVec3;
 
 use crate::part::Part;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum HydroDimension {
     HydroDimension1D,
     HydroDimension2D,
@@ -16,6 +16,16 @@ impl From<usize> for HydroDimension {
             2 => HydroDimension::HydroDimension2D,
             3 => HydroDimension::HydroDimension3D,
             _ => panic!("Illegal hydro dimension: {}", u),
+        }
+    }
+}
+
+impl From<HydroDimension> for usize {
+    fn from(dim: HydroDimension) -> Self {
+        match dim {
+            HydroDimension::HydroDimension1D => 1,
+            HydroDimension::HydroDimension2D => 2,
+            HydroDimension::HydroDimension3D => 3,
         }
     }
 }

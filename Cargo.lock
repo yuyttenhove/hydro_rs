@@ -306,7 +306,7 @@ dependencies = [
  "float-cmp",
  "glam",
  "hdf5",
- "meshless_voro",
+ "meshless_voronoi",
  "yaml-rust",
 ]
 
@@ -398,9 +398,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "meshless_voro"
-version = "0.1.0"
-source = "git+https://github.com/yuyttenhove/meshless_voro.git#da277129be0c19fcbb39266e2aa23e8dcbdf06c3"
+name = "meshless_voronoi"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "79812f7f0737500243256e3b8a48070ae6106c5ee000f033d3e99348db6f6bcf"
 dependencies = [
  "glam",
  "rayon",

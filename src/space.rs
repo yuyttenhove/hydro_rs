@@ -4,7 +4,7 @@ use std::{
 };
 
 use glam::{DMat3, DVec3};
-use meshless_voro::{Voronoi, VoronoiFace};
+use meshless_voronoi::{Voronoi, VoronoiFace};
 use yaml_rust::Yaml;
 
 use crate::{
@@ -106,7 +106,7 @@ impl Space {
     /// Do the volume calculation for all the active parts in the space
     pub fn volume_calculation(&mut self, engine: &Engine) {
         let generators: Vec<_> = self.parts.iter().map(|p| p.loc()).collect();
-        let voronoi = Voronoi::build(&generators, DVec3::ZERO, self.box_size);
+        let voronoi = Voronoi::build(&generators, DVec3::ZERO, self.box_size, self.dimensionality.into());
         for (part, voronoi_cell) in self.parts.iter_mut().zip(voronoi.cells().iter()) {
             if !part.is_active_flux(engine) {
                 continue;
@@ -134,7 +134,7 @@ impl Space {
     fn first_init_parts(&mut self) {
         // Calculate the volume of *all* particles
         let generators: Vec<_> = self.parts.iter().map(|p| p.loc()).collect();
-        let voronoi = Voronoi::build(&generators, DVec3::ZERO, self.box_size);
+        let voronoi = Voronoi::build(&generators, DVec3::ZERO, self.box_size, self.dimensionality.into());
         for (part, voronoi_cell) in self.parts.iter_mut().zip(voronoi.cells().iter()) {
             part.volume = voronoi_cell.volume();
             part.set_centroid(voronoi_cell.centroid());
@@ -506,9 +506,10 @@ impl Space {
 
     /// Dump snapshot of space at the current time
     pub fn dump(&mut self, f: &mut BufWriter<File>) -> Result<(), IoError> {
+        writeln!(f, "## Particles:")?;
         writeln!(
             f,
-            "# x (m)\trho (kg m^-3)\tv (m s^-1)\tP (kg m^-1 s^-2)\ta (m s^-2)\tu (J / kg)\tS\ttime (s)"
+            "#p\tx (m)\ty\tz\trho (kg m^-3)\tvx (m s^-1)\tvy\tvz\tP (kg m^-1 s^-2)\tu (J / kg)\tS\ttime (s)"
         )?;
         for part in self.parts.iter() {
             let internal_energy = part.internal_energy();
@@ -518,16 +519,30 @@ impl Space {
                 .gas_entropy_from_internal_energy(internal_energy, density);
             writeln!(
                 f,
-                "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-                part.x,
+                "p\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                part.x.x,
+                part.x.y,
+                part.x.z,
                 density,
-                part.primitives.velocity(),
+                part.primitives.velocity().x,
+                part.primitives.velocity().y,
+                part.primitives.velocity().z,
                 part.primitives.pressure(),
-                part.a_grav,
                 internal_energy,
                 entropy,
                 part.dt,
             )?;
+        }
+
+        if self.dimensionality == HydroDimension::HydroDimension2D {
+            writeln!(f, "## Voronoi faces:")?;
+            writeln!(f, "#f\ta_x\ta_y\tb_x\t_by")?;
+            for face in self.voronoi_faces.iter() {
+                let d = face.normal().cross(DVec3::Z);
+                let a = face.midpoint() + 0.5 * face.area() * d;
+                let b = face.midpoint() - 0.5 * face.area() * d;
+                writeln!(f, "f\t{}\t{}\t{}\t{}", a.x, a.y, b.x, b.y)?;
+            }
         }
 
         Ok(())
