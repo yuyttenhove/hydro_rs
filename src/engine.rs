@@ -6,11 +6,12 @@ use std::{
 use yaml_rust::Yaml;
 
 use crate::{
+    equation_of_state::EquationOfState,
     errors::ConfigError,
     riemann_solver::{get_solver, RiemannSolver},
     space::Space,
     time_integration::Runner,
-    timeline::*, equation_of_state::EquationOfState,
+    timeline::*,
 };
 
 pub enum ParticleMotion {

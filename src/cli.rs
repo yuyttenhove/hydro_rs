@@ -1,7 +1,7 @@
 extern crate clap;
 
-use std::path;
 use clap::Parser;
+use std::path;
 
 #[derive(Parser)]
 pub struct Cli {

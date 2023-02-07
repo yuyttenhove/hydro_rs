@@ -1,4 +1,4 @@
-use crate::{engine::Engine, errors::ConfigError, space::Space, timeline::{IntegerTime}};
+use crate::{engine::Engine, errors::ConfigError, space::Space, timeline::IntegerTime};
 
 #[derive(Debug)]
 pub enum Runner {

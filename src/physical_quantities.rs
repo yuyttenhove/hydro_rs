@@ -1,4 +1,4 @@
-use std::ops::{Add, AddAssign, Index, Mul, Sub, SubAssign, IndexMut};
+use std::ops::{Add, AddAssign, Index, IndexMut, Mul, Sub, SubAssign};
 
 use glam::DVec3;
 
@@ -92,7 +92,6 @@ impl Index<usize> for StateVector {
 pub struct StateGradients(DVec3, [DVec3; 3], DVec3);
 
 impl StateGradients {
-
     pub fn zeros() -> Self {
         StateGradients(DVec3::ZERO, [DVec3::ZERO; 3], DVec3::ZERO)
     }

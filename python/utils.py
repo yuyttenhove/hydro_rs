@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
+import h5py
 
 from typing import Tuple
 
@@ -93,6 +94,55 @@ def plot_quantity(ax: plt.Axes, xdata: np.ndarray, ydata: np.ndarray, xlim: Tupl
             ax.loglog()
         else:
             ax.semilogx()
+
+def write_file(fname, box_size, num_part, coords, m, v, u, dimension):
+    with h5py.File(fname, 'w') as file:
+        # Header
+        grp = file.create_group("/Header")
+        grp.attrs["BoxSize"] = box_size
+        grp.attrs["NumPart_Total"] = [num_part, 0, 0, 0, 0, 0]
+        grp.attrs["NumPart_Total_HighWord"] = [0, 0, 0, 0, 0, 0]
+        grp.attrs["NumPart_ThisFile"] = [num_part, 0, 0, 0, 0, 0]
+        grp.attrs["Time"] = 0.0
+        grp.attrs["NumFilesPerSnapshot"] = 1
+        grp.attrs["MassTable"] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        grp.attrs["Flag_Entropy_ICs"] = [0, 0, 0, 0, 0, 0]
+        grp.attrs["NumPart_Total"] = num_part
+        grp.attrs["Dimension"] = dimension
+
+        # Units
+        grp = file.create_group("/Units")
+        grp.attrs["Unit length in cgs (U_L)"] = 1.
+        grp.attrs["Unit mass in cgs (U_M)"] = 1.
+        grp.attrs["Unit time in cgs (U_t)"] = 1.
+        grp.attrs["Unit current in cgs (U_I)"] = 1.
+        grp.attrs["Unit temperature in cgs (U_T)"] = 1.
+
+        # Particle group
+        grp = file.create_group("/PartType0")
+        grp.create_dataset('Coordinates', data=coords, dtype='d')
+        grp.create_dataset('Velocities', data=v, dtype='f')
+        grp.create_dataset('Masses', data=m, dtype='f')
+        grp.create_dataset('InternalEnergy', data=u, dtype='f')
+        ids = np.arange(len(m)) + 1
+        grp.create_dataset('ParticleIDs', data=ids, dtype='L')
+
+
+def get_plane(width, height, nx, ny, pert = 0):
+    coords = np.zeros((nx * ny, 2))
+    for i in range(nx):
+        for j in range(ny):
+            coords[i * ny + j, 0] = (i + 0.5) / nx * width
+            coords[i * ny + j, 1] = (j + 0.5) / ny * height
+    coords += pert * np.array([width / nx, height / ny]) * np.random.random((nx * ny, 2))
+    return np.concatenate([coords, np.zeros((len(coords), 1))], axis=1)
+
+def internal_energy_ideal_gas(P, rho, gamma):
+    return P / ((gamma - 1.) * rho)
+
+
+def get_root():
+    return Path(__file__).parent.parent
 
 
 if __name__ == "__main__":

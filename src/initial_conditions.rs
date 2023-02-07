@@ -4,8 +4,11 @@ use glam::DVec3;
 use yaml_rust::Yaml;
 
 use crate::{
-    equation_of_state::EquationOfState, errors::ConfigError, part::Part,
-    physical_quantities::Conserved, utils::{HydroDimension, HydroDimension::* },
+    equation_of_state::EquationOfState,
+    errors::ConfigError,
+    part::Part,
+    physical_quantities::Conserved,
+    utils::{HydroDimension, HydroDimension::*},
 };
 
 macro_rules! conv1d {
@@ -13,8 +16,8 @@ macro_rules! conv1d {
         Part::from_ic(
             DVec3 {
                 x: $x,
-                y: 0.5 * $box_size.y,
-                z: 0.5 * $box_size.z,
+                y: 0.,
+                z: 0.,
             },
             $density * $box_size.x * $box_size.y * $box_size.z * $num_part_inv,
             DVec3 {
@@ -142,7 +145,6 @@ fn vacuum(num_part: usize, box_size: DVec3, eos: &EquationOfState) -> Vec<Part> 
 
 /// Generates a spherically symmetric 1/r density profile
 fn evrard(num_part: usize, box_size: DVec3, eos: &EquationOfState) -> Vec<Part> {
-
     let mut ic = Vec::<Part>::with_capacity(num_part);
     let num_part_inv = 1. / (num_part as f64);
 
@@ -266,11 +268,7 @@ fn square(num_part: usize, box_size: DVec3, eos: &EquationOfState) -> Vec<Part> 
     ic
 }
 
-fn read_parts_from_cfg(
-    ic_cfg: &Yaml,
-    num_part: usize,
-    box_size: DVec3,
-) -> Result<Vec<Part>, ConfigError> {
+fn read_parts_from_cfg(ic_cfg: &Yaml, num_part: usize) -> Result<Vec<Part>, ConfigError> {
     let positions = cfg_ics2vec!(ic_cfg, "x", num_part)?;
     let masses = cfg_ics2vec!(ic_cfg, "mass", num_part)?;
     let velocities = cfg_ics2vec!(ic_cfg, "velocity", num_part)?;
@@ -281,8 +279,8 @@ fn read_parts_from_cfg(
         ic.push(Part::from_ic(
             DVec3 {
                 x: positions[i],
-                y: 0.5 * box_size.y,
-                z: 0.5 * box_size.z,
+                y: 0.,
+                z: 0.,
             },
             masses[i],
             velocities[i] * DVec3::X,
@@ -335,7 +333,7 @@ impl InitialConditions {
                 )?;
 
                 let parts = match kind.as_str() {
-                    "config" => read_parts_from_cfg(&ic_cfg["particles"], num_part, box_size),
+                    "config" => read_parts_from_cfg(&ic_cfg["particles"], num_part),
                     "sodshock" => Ok(sod_shock(num_part, box_size, eos)),
                     "noh" => Ok(noh(num_part, box_size, eos)),
                     "toro" => Ok(toro(num_part, box_size, eos)),
@@ -346,7 +344,11 @@ impl InitialConditions {
                     _ => Err(ConfigError::UnknownICs(kind.to_string())),
                 }?;
 
-                Ok(Self { parts, box_size, dimensionality: HydroDimension1D })
+                Ok(Self {
+                    parts,
+                    box_size,
+                    dimensionality: HydroDimension1D,
+                })
             }
         }
     }
@@ -374,34 +376,38 @@ impl InitialConditions {
         file.close()?;
 
         // Construct the actual particles
-        assert_eq!(3 * num_parts, coordinates.len());
-        assert_eq!(num_parts, masses.len());
-        assert_eq!(3 * num_parts, velocities.len());
-        assert_eq!(num_parts, internal_energy.len());
+        assert_eq!(
+            3 * num_parts,
+            coordinates.len(),
+            "Incorrect lenght of coordinates vector!"
+        );
+        assert_eq!(
+            num_parts,
+            masses.len(),
+            "Incorrect lenght of masses vector!"
+        );
+        assert_eq!(
+            3 * num_parts,
+            velocities.len(),
+            "Incorrect lenght of velocities vector!"
+        );
+        assert_eq!(
+            num_parts,
+            internal_energy.len(),
+            "Incorrect lenght of internal energies vector!"
+        );
         let mut parts = Vec::with_capacity(num_parts);
         for i in 0..num_parts {
-            let x = DVec3 {
-                x: coordinates[3 * i],
-                y: if dimension >= 2 {
-                    coordinates[3 * i + 1]
-                } else {
-                    0.5 * box_size.y
-                },
-                z: if dimension == 3 {
-                    coordinates[3 * i + 2]
-                } else {
-                    0.5 * box_size.z
-                },
-            };
-            let velocity = DVec3 {
-                x: velocities[3 * i],
-                y: velocities[3 * i + 1],
-                z: velocities[3 * i + 2],
-            };
+            let x = DVec3::from_slice(&coordinates[3 * i..3 * i + 3]);
+            let velocity = DVec3::from_slice(&coordinates[3 * i..3 * i + 3]);
             parts.push(Part::from_ic(x, masses[i], velocity, internal_energy[i]));
         }
 
-        Ok(Self { parts, box_size, dimensionality: dimension.into() })
+        Ok(Self {
+            parts,
+            box_size,
+            dimensionality: dimension.into(),
+        })
     }
 
     pub fn box_size(&self) -> DVec3 {

@@ -4,7 +4,8 @@ use crate::{
     engine::{Engine, ParticleMotion},
     equation_of_state::EquationOfState,
     time_integration::Runner,
-    timeline::*, utils::{HydroDimension, HydroDimension::*},
+    timeline::*,
+    utils::{HydroDimension, HydroDimension::*},
 };
 use crate::{
     physical_quantities::{Conserved, Primitives, StateGradients, StateVector},
@@ -417,7 +418,7 @@ impl Part {
     }
 
     pub fn volume(&self) -> f64 {
-            self.volume
+        self.volume
     }
 
     pub fn reflect(&self, around: DVec3, normal: DVec3) -> Self {
@@ -491,7 +492,9 @@ impl Part {
         match dimensionality {
             HydroDimension1D => 0.5 * self.volume(),
             HydroDimension2D => (std::f64::consts::FRAC_1_PI * self.volume()).sqrt(),
-            HydroDimension3D => (0.25 * 3. * std::f64::consts::FRAC_1_PI * self.volume()).powf(1. / 3.),
+            HydroDimension3D => {
+                (0.25 * 3. * std::f64::consts::FRAC_1_PI * self.volume()).powf(1. / 3.)
+            }
         }
     }
 }

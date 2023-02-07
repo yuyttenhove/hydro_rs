@@ -12,7 +12,6 @@ pub const _TIME_BIN_NOT_CREATED: Timebin = NUM_TIME_BINS + 3;
 pub const _TIME_BIN_NOT_AWAKE: Timebin = -NUM_TIME_BINS;
 pub const TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN: Timebin = 2;
 
-
 /// Returns the integer timestep corresponding to a given timebin.
 ///
 /// This is defined as 2^(timebin + 1). This way, timesteps are always
@@ -41,7 +40,9 @@ pub const fn get_time_bin(time_step: IntegerTime) -> Timebin {
 pub const fn _get_integer_time_begin(ti_current: IntegerTime, bin: Timebin) -> IntegerTime {
     let dti = get_integer_timestep(bin);
 
-    if dti == 0 { return 0; }
+    if dti == 0 {
+        return 0;
+    }
 
     dti * ((ti_current - 1) / dti)
 }
@@ -53,7 +54,9 @@ pub const fn _get_integer_time_begin(ti_current: IntegerTime, bin: Timebin) -> I
 pub const fn get_integer_time_end(ti_current: IntegerTime, bin: Timebin) -> IntegerTime {
     let dti = get_integer_timestep(bin);
 
-    if dti == 0 { return 0; }
+    if dti == 0 {
+        return 0;
+    }
 
     let modulus = ti_current % dti;
 
@@ -73,7 +76,9 @@ pub const fn get_max_active_bin(time: IntegerTime) -> Timebin {
     }
 
     let mut bin = 1;
-    while (1 << (bin + 1)) & time == 0 { bin += 1; }
+    while (1 << (bin + 1)) & time == 0 {
+        bin += 1;
+    }
 
     bin
 }
@@ -96,8 +101,13 @@ pub const fn _get_min_active_bin(ti_current: IntegerTime, ti_old: IntegerTime) -
 ///
 /// If min_ngb_bin is set to `NUM_TIME_BINS`, then no limit from the neighbours
 /// is imposed.
-pub fn make_integer_timestep(dt: f64, old_bin: Timebin, min_ngb_bin: Timebin, ti_current: IntegerTime, time_base_inv: f64) -> IntegerTime {
-
+pub fn make_integer_timestep(
+    dt: f64,
+    old_bin: Timebin,
+    min_ngb_bin: Timebin,
+    ti_current: IntegerTime,
+    time_base_inv: f64,
+) -> IntegerTime {
     /* Limit timestep given neighbours */
     let mut new_dti = (dt * time_base_inv) as IntegerTime;
     let new_bin = get_time_bin(new_dti).min(min_ngb_bin + TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN);
@@ -105,24 +115,29 @@ pub fn make_integer_timestep(dt: f64, old_bin: Timebin, min_ngb_bin: Timebin, ti
 
     /* Limit timestep increase. */
     let current_dti = get_integer_timestep(old_bin);
-    if old_bin > 0 { new_dti = new_dti.min(2 * current_dti); }
+    if old_bin > 0 {
+        new_dti = new_dti.min(2 * current_dti);
+    }
 
     /* Put this timestep on the timeline */
     let mut timeline_dti = MAX_NR_TIMESTEPS;
-    while new_dti < timeline_dti { timeline_dti /= 2; }
+    while new_dti < timeline_dti {
+        timeline_dti /= 2;
+    }
     new_dti = timeline_dti;
 
     /* Make sure we are allowed a timestep increase. */
     if new_dti > current_dti {
         let ti_end = get_integer_time_end(ti_current, old_bin);
-        if (MAX_NR_TIMESTEPS - ti_end) % new_dti != 0 { new_dti = current_dti; }
+        if (MAX_NR_TIMESTEPS - ti_end) % new_dti != 0 {
+            new_dti = current_dti;
+        }
     }
 
     debug_assert_ne!(new_dti, 0, "Computed new integer timestep of 0!");
 
     new_dti
 }
-
 
 pub fn make_timestep(dti: IntegerTime, time_base: f64) -> f64 {
     dti as f64 * time_base

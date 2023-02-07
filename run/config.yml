@@ -3,7 +3,7 @@ time_integration:
   dt_max: 1e-2
   t_min: 1e-8
   t_end: 0.5
-  cfl_criterion: 0.1
+  cfl_criterion: 0.03
 
 snapshots:
   t_between_snaps: 0.05
@@ -23,10 +23,10 @@ space:
   boundary: "reflective"
 
 initial_conditions:
-  type: "sodshock"
+  type: "file"
   box_size: [2., 1., 1.]
   num_part: 100
-  filename: "sodshock_2D.hdf5"
+  filename: "constant_2D.hdf5"
 
 equation_of_state:
   gamma: 1.66666666667

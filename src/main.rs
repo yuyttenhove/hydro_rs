@@ -10,7 +10,7 @@ use engine::Engine;
 use space::Space;
 use yaml_rust::YamlLoader;
 
-use crate::{initial_conditions::InitialConditions, equation_of_state::EquationOfState};
+use crate::{equation_of_state::EquationOfState, initial_conditions::InitialConditions};
 
 mod cli;
 mod engine;

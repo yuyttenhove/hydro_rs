@@ -10,9 +10,7 @@ pub enum EquationOfState {
 
 impl EquationOfState {
     pub fn new(cfg: &Yaml) -> Result<Self, ConfigError> {
-        let gamma = cfg["gamma"]
-            .as_f64()
-            .unwrap_or(5. / 3.);
+        let gamma = cfg["gamma"].as_f64().unwrap_or(5. / 3.);
         Ok(EquationOfState::Ideal { gamma })
     }
     pub fn gas_internal_energy_from_pressure(&self, pressure: f64, density: f64) -> f64 {

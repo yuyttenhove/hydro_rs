@@ -1,5 +1,5 @@
-mod hllc;
 mod exact;
+mod hllc;
 
 use glam::DVec3;
 
@@ -9,8 +9,8 @@ use crate::{
     physical_quantities::{Conserved, Primitives},
 };
 
-pub use hllc::HLLCRiemannSolver;
 pub use exact::ExactRiemannSolver;
+pub use hllc::HLLCRiemannSolver;
 
 pub trait RiemannSolver {
     fn solve_for_flux(

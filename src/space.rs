@@ -11,6 +11,7 @@ use crate::{
     engine::Engine,
     equation_of_state::EquationOfState,
     errors::ConfigError,
+    initial_conditions::InitialConditions,
     part::Part,
     physical_quantities::{Primitives, StateGradients},
     slope_limiters::pairwise_limiter,
@@ -18,7 +19,7 @@ use crate::{
         get_integer_time_end, make_integer_timestep, make_timestep, IntegerTime, MAX_NR_TIMESTEPS,
         NUM_TIME_BINS, TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN,
     },
-    utils::{box_reflect, box_wrap, contains, HydroDimension}, initial_conditions::InitialConditions,
+    utils::{box_reflect, box_wrap, contains, HydroDimension},
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -41,7 +42,7 @@ pub struct Space {
 impl Space {
     /// Constructs a space from given ic's (partially initialised particles) and
     /// boundary conditions.
-    /// 
+    ///
     /// Particles typically will only have conserved quantities and coordinates set at this point.
     pub fn from_ic(
         initial_conditions: InitialConditions,
@@ -80,7 +81,7 @@ impl Space {
     }
 
     fn get_boundary_part(&self, part: &Part, face: &VoronoiFace) -> Part {
-        let mut reflected = part.reflect(face.midpoint(), face.normal());
+        let mut reflected = part.reflect(face.centroid(), face.normal());
         match self.boundary {
             Boundary::Reflective => {
                 reflected
@@ -106,7 +107,12 @@ impl Space {
     /// Do the volume calculation for all the active parts in the space
     pub fn volume_calculation(&mut self, engine: &Engine) {
         let generators: Vec<_> = self.parts.iter().map(|p| p.loc()).collect();
-        let voronoi = Voronoi::build(&generators, DVec3::ZERO, self.box_size, self.dimensionality.into());
+        let voronoi = Voronoi::build(
+            &generators,
+            DVec3::ZERO,
+            self.box_size,
+            self.dimensionality.into(),
+        );
         for (part, voronoi_cell) in self.parts.iter_mut().zip(voronoi.cells().iter()) {
             if !part.is_active_flux(engine) {
                 continue;
@@ -134,7 +140,12 @@ impl Space {
     fn first_init_parts(&mut self) {
         // Calculate the volume of *all* particles
         let generators: Vec<_> = self.parts.iter().map(|p| p.loc()).collect();
-        let voronoi = Voronoi::build(&generators, DVec3::ZERO, self.box_size, self.dimensionality.into());
+        let voronoi = Voronoi::build(
+            &generators,
+            DVec3::ZERO,
+            self.box_size,
+            self.dimensionality.into(),
+        );
         for (part, voronoi_cell) in self.parts.iter_mut().zip(voronoi.cells().iter()) {
             part.volume = voronoi_cell.volume();
             part.set_centroid(voronoi_cell.centroid());
@@ -177,8 +188,8 @@ impl Space {
 
             // The particle with the smallest timestep is active: Update the fluxes of both (symmetrically)
             // We extrapolate from the centroid of the particles (test).
-            let dx_left = face.midpoint() - left.centroid;
-            let dx_right = face.midpoint() - right.centroid;
+            let dx_left = face.centroid() - left.centroid;
+            let dx_right = face.centroid() - right.centroid;
             let dx = right.centroid - left.centroid;
 
             // Calculate the maximal signal velocity (used for timestep computation)
@@ -211,7 +222,7 @@ impl Space {
 
             // Compute interface velocity (Springel (2010), eq. 33):
             let midpoint = 0.5 * (left.x + right.x);
-            let fac = (right.v - left.v).dot(face.midpoint() - midpoint) / dx.length_squared();
+            let fac = (right.v - left.v).dot(face.centroid() - midpoint) / dx.length_squared();
             let v_face = 0.5 * (left.v + right.v) - fac * dx;
 
             // Calculate fluxes
@@ -350,9 +361,9 @@ impl Space {
             let primitives_left = left.primitives;
             let primitives_right = right.primitives;
             let extrapolated_left =
-                left.primitives + left.gradients.dot(face.midpoint() - left.centroid).into();
+                left.primitives + left.gradients.dot(face.centroid() - left.centroid).into();
             let extrapolated_right =
-                right.primitives + right.gradients.dot(face.midpoint() - right.centroid).into();
+                right.primitives + right.gradients.dot(face.centroid() - right.centroid).into();
 
             // Reborrow the particles one at a time as mutable
             {
@@ -386,8 +397,12 @@ impl Space {
         for part in self.parts.iter_mut() {
             if part.is_ending(engine) {
                 // Compute new timestep
-                let mut dt =
-                    part.timestep(engine.cfl_criterion(), &self.eos, &engine.particle_motion, self.dimensionality);
+                let mut dt = part.timestep(
+                    engine.cfl_criterion(),
+                    &self.eos,
+                    &engine.particle_motion,
+                    self.dimensionality,
+                );
                 dt = dt.min(engine.dt_max());
                 assert!(
                     dt > engine.dt_min(),
@@ -539,8 +554,8 @@ impl Space {
             writeln!(f, "#f\ta_x\ta_y\tb_x\t_by")?;
             for face in self.voronoi_faces.iter() {
                 let d = face.normal().cross(DVec3::Z);
-                let a = face.midpoint() + 0.5 * face.area() * d;
-                let b = face.midpoint() - 0.5 * face.area() * d;
+                let a = face.centroid() + 0.5 * face.area() * d;
+                let b = face.centroid() - 0.5 * face.area() * d;
                 writeln!(f, "f\t{}\t{}\t{}\t{}", a.x, a.y, b.x, b.y)?;
             }
         }
@@ -577,8 +592,7 @@ mod test {
 
     const GAMMA: f64 = 5. / 3.;
     const CFG_STR: &'_ str = "boundary: \"reflective\"";
-    const IC_CFG: &'_ str = 
-r###"type: "config"
+    const IC_CFG: &'_ str = r###"type: "config"
 num_part: 4
 box_size: [1., 1., 1.]
 particles:
@@ -609,10 +623,10 @@ particles:
         assert_approx_eq!(f64, space.voronoi_faces[10].area(), 1.);
         assert_approx_eq!(f64, space.voronoi_faces[15].area(), 1.);
         assert_approx_eq!(f64, space.voronoi_faces[16].area(), 1.);
-        assert_approx_eq!(f64, space.voronoi_faces[0].midpoint().x, 0.0);
-        assert_approx_eq!(f64, space.voronoi_faces[5].midpoint().x, 0.45);
-        assert_approx_eq!(f64, space.voronoi_faces[10].midpoint().x, 0.7);
-        assert_approx_eq!(f64, space.voronoi_faces[15].midpoint().x, 0.8);
-        assert_approx_eq!(f64, space.voronoi_faces[16].midpoint().x, 1.);
+        assert_approx_eq!(f64, space.voronoi_faces[0].centroid().x, 0.0);
+        assert_approx_eq!(f64, space.voronoi_faces[5].centroid().x, 0.45);
+        assert_approx_eq!(f64, space.voronoi_faces[10].centroid().x, 0.7);
+        assert_approx_eq!(f64, space.voronoi_faces[15].centroid().x, 0.8);
+        assert_approx_eq!(f64, space.voronoi_faces[16].centroid().x, 1.);
     }
 }
