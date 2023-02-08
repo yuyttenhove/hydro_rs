@@ -399,7 +399,7 @@ impl InitialConditions {
         let mut parts = Vec::with_capacity(num_parts);
         for i in 0..num_parts {
             let x = DVec3::from_slice(&coordinates[3 * i..3 * i + 3]);
-            let velocity = DVec3::from_slice(&coordinates[3 * i..3 * i + 3]);
+            let velocity = DVec3::from_slice(&velocities[3 * i..3 * i + 3]);
             parts.push(Part::from_ic(x, masses[i], velocity, internal_energy[i]));
         }
 

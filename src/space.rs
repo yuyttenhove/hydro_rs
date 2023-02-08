@@ -7,6 +7,7 @@ use glam::{DMat3, DVec3};
 use meshless_voronoi::{Voronoi, VoronoiFace};
 use yaml_rust::Yaml;
 
+use crate::flux::{flux_exchange, flux_exchange_boundary};
 use crate::{
     engine::Engine,
     equation_of_state::EquationOfState,
@@ -81,27 +82,21 @@ impl Space {
     }
 
     fn get_boundary_part(&self, part: &Part, face: &VoronoiFace) -> Part {
-        let mut reflected = part.reflect(face.centroid(), face.normal());
         match self.boundary {
-            Boundary::Reflective => {
-                reflected
-                    .reflect_quantities(face.normal())
-                    .reflect_gradients(face.normal());
-            }
-            Boundary::Open => {
-                reflected.reflect_gradients(face.normal());
-            }
+            Boundary::Reflective => part
+                .reflect(face.centroid(), face.normal())
+                .reflect_quantities(face.normal()),
+            Boundary::Open => part.reflect(face.centroid(), face.normal()),
             Boundary::Vacuum => {
+                let mut reflected = part.reflect(face.centroid(), face.normal());
                 reflected.primitives = Primitives::vacuum();
-                reflected.gradients = StateGradients::zeros();
+                reflected
             }
             _ => panic!(
                 "Trying to create boundary particle with {:?} boundary conditions",
                 self.boundary
             ),
         }
-
-        reflected
     }
 
     /// Do the volume calculation for all the active parts in the space
@@ -121,7 +116,25 @@ impl Space {
             part.set_centroid(voronoi_cell.centroid());
             debug_assert!(part.volume >= 0.);
         }
-        self.voronoi_faces = voronoi.into_faces();
+        self.set_faces(voronoi.into_faces());
+    }
+
+    fn set_faces(&mut self, voronoi_faces: Vec<VoronoiFace>) {
+        match self.dimensionality {
+            HydroDimension::HydroDimension1D => {
+                self.voronoi_faces = voronoi_faces
+                    .into_iter()
+                    .filter(|f| f.normal().y == 0. && f.normal().z == 0.)
+                    .collect();
+            }
+            HydroDimension::HydroDimension2D => {
+                self.voronoi_faces = voronoi_faces
+                    .into_iter()
+                    .filter(|f| f.normal().z == 0.)
+                    .collect()
+            }
+            HydroDimension::HydroDimension3D => self.voronoi_faces = voronoi_faces,
+        };
     }
 
     pub fn convert_conserved_to_primitive(&mut self, engine: &Engine) {
@@ -151,7 +164,7 @@ impl Space {
             part.set_centroid(voronoi_cell.centroid());
             debug_assert!(part.volume >= 0.);
         }
-        self.voronoi_faces = voronoi.into_faces();
+        self.set_faces(voronoi.into_faces());
 
         // Calculate the conserved quantities
         let eos = self.eos;
@@ -164,92 +177,47 @@ impl Space {
     pub fn flux_exchange(&mut self, engine: &Engine) {
         for face in self.voronoi_faces.iter() {
             let left = &self.parts[face.left()];
-            let _reflected;
-            let right = match face.right() {
-                Some(idx) => &self.parts[idx],
+            let left_active = left.is_active_flux(engine);
+            let flux_info = match face.right() {
+                Some(right_idx) => {
+                    let right = &self.parts[right_idx];
+                    // anything to do here?
+                    // Since we do the flux exchange symmetrically, we only want to do it when the particle with the
+                    // smallest timestep is active for the flux exchange. This is important for the half drift case,
+                    // since then the half of the longer timestep might coincide with the full smaller timestep and we
+                    // do not want to do the flux exchange in that case.
+                    let dt = if left.is_active_flux(engine) && left.dt <= right.dt {
+                        left.dt
+                    } else if right.is_active_flux(engine) && right.dt <= left.dt {
+                        right.dt
+                    } else {
+                        continue;
+                    };
+                    flux_exchange(left, right, dt, face, &self.eos, engine)
+                }
                 None => {
-                    _reflected = self.get_boundary_part(left, face);
-                    &_reflected
+                    if !left_active {
+                        continue;
+                    }
+                    flux_exchange_boundary(left, face, self.boundary, &self.eos, engine)
                 }
             };
 
-            // anything to do here?
-            // Since we do the flux exchange symmetrically, we only want to do it when the particle with the
-            // smallest timestep is active for the flux exchange. This is important for the half drift case,
-            // since then the half of the longer timestep might coincide with the full smaller timestep and we
-            // do not want to do the flux exchange in that case.
-            let dt = if left.is_active_flux(engine) && left.dt <= right.dt {
-                left.dt
-            } else if right.is_active_flux(engine) && right.dt <= left.dt {
-                right.dt
-            } else {
-                continue;
-            };
-
-            // The particle with the smallest timestep is active: Update the fluxes of both (symmetrically)
-            // We extrapolate from the centroid of the particles (test).
-            let dx_left = face.centroid() - left.centroid;
-            let dx_right = face.centroid() - right.centroid;
-            let dx = right.centroid - left.centroid;
-
-            // Calculate the maximal signal velocity (used for timestep computation)
-            let mut v_max = 0.;
-            if left.primitives.density() > 0. {
-                v_max += self
-                    .eos
-                    .sound_speed(left.primitives.pressure(), 1. / left.primitives.density());
-            }
-            if right.primitives.density() > 0. {
-                v_max += self
-                    .eos
-                    .sound_speed(right.primitives.pressure(), 1. / right.primitives.density());
-            }
-            v_max -= (right.primitives.velocity() - left.primitives.velocity())
-                .dot(dx)
-                .min(0.);
-
-            // Gradient extrapolation
-            let primitives_left = pairwise_limiter(
-                left.primitives,
-                right.primitives,
-                left.primitives + left.gradients.dot(dx_left).into() + left.extrapolations,
-            );
-            let primitives_right = pairwise_limiter(
-                right.primitives,
-                left.primitives,
-                right.primitives + right.gradients.dot(dx_right).into() + right.extrapolations,
-            );
-
-            // Compute interface velocity (Springel (2010), eq. 33):
-            let midpoint = 0.5 * (left.x + right.x);
-            let fac = (right.v - left.v).dot(face.centroid() - midpoint) / dx.length_squared();
-            let v_face = 0.5 * (left.v + right.v) - fac * dx;
-
-            // Calculate fluxes
-            let fluxes = engine.solver.solve_for_flux(
-                &primitives_left.boost(-v_face),
-                &primitives_right.boost(-v_face),
-                v_face,
-                face.normal(),
-                &self.eos,
-            );
-
-            // Reborrow the particles one at a time as mutable
-            // Update the flux accumulators
+            // Reborrow the particles one at a time as mutable to update the flux accumulators
             {
                 let left = &mut self.parts[face.left()];
-                left.fluxes -= dt * fluxes;
-                left.gravity_mflux -= dx * fluxes.mass();
+                left.fluxes -= flux_info.fluxes;
+                left.gravity_mflux -= flux_info.mflux;
                 if left.is_active_flux(engine) {
-                    left.max_signal_velocity = v_max.max(left.max_signal_velocity);
+                    left.max_signal_velocity = flux_info.v_max.max(left.max_signal_velocity);
                 }
             }
             if let Some(idx) = face.right() {
                 let right = &mut self.parts[idx];
-                right.fluxes += dt * fluxes;
-                right.gravity_mflux -= dx * fluxes.mass();
+                right.fluxes += flux_info.fluxes;
+                right.gravity_mflux -= flux_info.mflux;
                 if right.is_active_flux(engine) {
-                    right.max_signal_velocity = v_max.max(right.max_signal_velocity);
+                    right.max_signal_velocity = flux_info.v_max.max(right.max_signal_velocity);
                 }
             }
         }
@@ -439,14 +407,11 @@ impl Space {
         for face in self.voronoi_faces.iter() {
             // Get the two neighbouring parts of the face
             let left = &self.parts[face.left()];
-            let _reflected;
-            let right = match face.right() {
-                Some(idx) => &self.parts[idx],
-                None => {
-                    _reflected = self.get_boundary_part(left, face);
-                    &_reflected
-                }
+            let Some(right_idx) = face.right() else {
+                // Skip boundary faces
+                continue;
             };
+            let right = &self.parts[right_idx];
 
             let left_is_ending = left.is_ending(engine);
             let right_is_ending = right.is_ending(engine);
@@ -460,13 +425,11 @@ impl Space {
                     .wakeup
                     .min(right_timebin + TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN);
             }
-            if let Some(idx) = face.right() {
-                if left_is_ending {
-                    let right = &mut self.parts[idx];
-                    right.wakeup = right
-                        .wakeup
-                        .min(left_timebin + TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN);
-                }
+            if left_is_ending {
+                let right = &mut self.parts[right_idx];
+                right.wakeup = right
+                    .wakeup
+                    .min(left_timebin + TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN);
             }
         }
 

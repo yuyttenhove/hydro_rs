@@ -352,6 +352,7 @@ impl Part {
 
     pub(crate) fn reset_gradients(&mut self) {
         self.gradients = StateGradients::zeros();
+        self.matrix_wls = DMat3::ZERO;
         self.limiter = LimiterData::default();
         self.extrapolations = Primitives::vacuum();
     }
@@ -430,16 +431,12 @@ impl Part {
         reflected
     }
 
-    pub fn reflect_quantities(&mut self, normal: DVec3) -> &mut Self {
-        // Reflect fluid velocity component along normal
-        let mut v = self.primitives.velocity();
-        v -= 2. * v.dot(normal) * normal;
-        self.primitives = Primitives::new(self.primitives.density(), v, self.primitives.pressure());
-
+    pub fn reflect_quantities(mut self, normal: DVec3) -> Self {
+        self.primitives = self.primitives.reflect(normal);
         self
     }
 
-    pub fn reflect_gradients(&mut self, normal: DVec3) -> &mut Self {
+    pub fn reflect_gradients(mut self, normal: DVec3) -> Self {
         // Reflect gradients along normal
         let mut grad_reflected = self.gradients;
         grad_reflected[0] = grad_reflected[0] - 2. * grad_reflected[0].dot(normal) * normal;

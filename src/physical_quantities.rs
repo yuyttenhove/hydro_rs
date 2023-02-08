@@ -200,6 +200,12 @@ impl Primitives {
         }
     }
 
+    pub fn reflect(&self, normal: DVec3) -> Self {
+        // Reflect fluid velocity component along normal
+        let v = self.velocity() - 2. * self.velocity().dot(normal) * normal;
+        Primitives::new(self.density(), v, self.pressure())
+    }
+
     pub fn pairwise_max(&self, other: &Self) -> Self {
         Self {
             values: self.values.pairwise_max(other.values),

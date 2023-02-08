@@ -47,6 +47,11 @@ def read_face_data(fname: str) -> pd.DataFrame:
     return data
 
 
+def expand_lim(lim):
+    diff = lim[1] - lim[0]
+    return lim[0] - 0.1 * diff, lim[1] + 0.1 * diff
+
+
 def plot_faces(fname: str, lw=0.5, dpi=300, show_ax=True):
     faces = read_face_data(fname)
     faces = [np.stack([row[:2], row[2:]]) for row in faces.values]
@@ -59,8 +64,8 @@ def plot_faces(fname: str, lw=0.5, dpi=300, show_ax=True):
     fig, ax = plt.subplots(figsize=(width, ceil(width * y_diff / x_diff)))
     ax.add_collection(lines)
     ax.set_aspect("equal")
-    ax.set_xlim(*xlim)
-    ax.set_ylim(*ylim)
+    ax.set_xlim(*expand_lim(xlim))
+    ax.set_ylim(*expand_lim(ylim))
     if not show_ax:
         ax.axis("off")
     fig.tight_layout()

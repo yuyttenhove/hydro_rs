@@ -16,6 +16,7 @@ mod cli;
 mod engine;
 mod equation_of_state;
 mod errors;
+mod flux;
 mod initial_conditions;
 mod part;
 mod physical_constants;

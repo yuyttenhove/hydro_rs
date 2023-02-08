@@ -26,7 +26,7 @@ initial_conditions:
   type: "file"
   box_size: [2., 1., 1.]
   num_part: 100
-  filename: "constant_2D.hdf5"
+  filename: "sodshock_2D_low_res.hdf5"
 
 equation_of_state:
   gamma: 1.66666666667

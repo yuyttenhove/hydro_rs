@@ -4,10 +4,10 @@ from utils import plot_quantity, read_particle_data, get_root
 
 if __name__ == "__main__":
     root = get_root()
-    fname = root / "run" / "output" / "sodshock_2D_0005.txt"
+    fname = root / "run" / "output" / "sodshock_2D_0050.txt"
     save_name = root / "run" / "constant_2D.png"
     data = read_particle_data(fname)
-    x_lim = (0, 2)
+    x_lim = (0, 1)
 
     fig, axes = plt.subplots(2, 3, figsize=(9, 6))
     plot_quantity(axes[0][0], data["x"].values, data["v_x"].values, x_lim, "Velocity")

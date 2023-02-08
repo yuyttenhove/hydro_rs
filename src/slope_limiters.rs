@@ -85,9 +85,9 @@ fn pairwise_limiter_single_quantity(q_l: f64, q_r: f64, q_dash: f64) -> f64 {
 }
 
 pub fn pairwise_limiter(
-    primitives_left: Primitives,
-    primitives_right: Primitives,
-    primitives_dash: Primitives,
+    primitives_left: &Primitives,
+    primitives_right: &Primitives,
+    primitives_dash: &Primitives,
 ) -> Primitives {
     let mut limited = Primitives::new(
         pairwise_limiter_single_quantity(
