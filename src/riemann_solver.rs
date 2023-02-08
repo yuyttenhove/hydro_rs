@@ -12,7 +12,7 @@ use crate::{
 pub use exact::ExactRiemannSolver;
 pub use hllc::HLLCRiemannSolver;
 
-pub trait RiemannSolver {
+pub trait RiemannSolver: Sync {
     fn solve_for_flux(
         &self,
         left: &Primitives,

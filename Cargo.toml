@@ -12,6 +12,7 @@ clap = {version = "3.2", features = ["derive"]}
 derive_more = "0.99"
 meshless_voronoi = {version = "0.1.3", features = ["rayon"] }
 hdf5 = "0.8.1"
+rayon = "1.6.1"
 
 [dev-dependencies]
 float-cmp = "0.9"

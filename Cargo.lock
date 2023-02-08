@@ -307,6 +307,7 @@ dependencies = [
  "glam",
  "hdf5",
  "meshless_voronoi",
+ "rayon",
  "yaml-rust",
 ]
 

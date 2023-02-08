@@ -32,17 +32,6 @@ def plot_analytic_solution(axes: List[List[plt.Axes]], gas_gamma: float, rho_L: 
 
 
 def plot_quantity(ax: plt.Axes, xdata: np.ndarray, ydata: np.ndarray, title: str):
-    windowsize = 9
-    y_median = np.array([np.median(ydata[i: i + windowsize]) for i in range(len(ydata) - windowsize + 1)])
-    y_delta = ydata[windowsize // 2: -windowsize // 2 + 1] - y_median
-    y_delta = np.concatenate([[y_delta[0], y_delta[0]], y_delta, [y_delta[-1], y_delta[-1]]])
-    y_delta = 3 * np.array([np.sqrt(np.sum(y_delta[i: i + windowsize] ** 2) / (windowsize * (windowsize - 1))) for i in
-                            range(len(ydata) - windowsize + 1)])
-    y_min = y_median - y_delta
-    y_max = y_median + y_delta
-    x_median = xdata[windowsize // 2: -windowsize // 2 + 1]
-    ax.fill_between(x_median, y_min, y_max, alpha=0.25)
-    ax.plot(x_median, y_median)
     ax.scatter(xdata, ydata, s=4, color="red", zorder=1000, alpha=0.33)
     ax.set_title(title)
     ax.set_xlim(0.5, 1.5)
@@ -84,6 +73,6 @@ if __name__ == "__main__":
         fname = sys.argv[1]
         savename = sys.argv[2]
     except IndexError:
-        fname = "../run/output/sodshock_2D_0002.txt"
+        fname = "../run/output/sodshock_2D_0003.txt"
         savename = "test.png"
     main(fname, savename)

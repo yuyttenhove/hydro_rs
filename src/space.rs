@@ -1,10 +1,11 @@
 use std::{
     fs::File,
-    io::{BufWriter, Error as IoError, Write},
+    io::{BufWriter, Error as IoError, Write}, sync::atomic::{AtomicU64, Ordering},
 };
 
 use glam::{DMat3, DVec3};
 use meshless_voronoi::{Voronoi, VoronoiFace};
+use rayon::prelude::*;
 use yaml_rust::Yaml;
 
 use crate::flux::{flux_exchange, flux_exchange_boundary};
@@ -14,8 +15,7 @@ use crate::{
     errors::ConfigError,
     initial_conditions::InitialConditions,
     part::Part,
-    physical_quantities::{Primitives, StateGradients},
-    slope_limiters::pairwise_limiter,
+    physical_quantities::{Primitives},
     timeline::{
         get_integer_time_end, make_integer_timestep, make_timestep, IntegerTime, MAX_NR_TIMESTEPS,
         NUM_TIME_BINS, TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN,
@@ -108,14 +108,14 @@ impl Space {
             self.box_size,
             self.dimensionality.into(),
         );
-        for (part, voronoi_cell) in self.parts.iter_mut().zip(voronoi.cells().iter()) {
+        self.parts.par_iter_mut().zip(voronoi.cells().par_iter()).for_each(|(part, voronoi_cell)| {
             if !part.is_active_flux(engine) {
-                continue;
+                return;
             }
             part.volume = voronoi_cell.volume();
             part.set_centroid(voronoi_cell.centroid());
             debug_assert!(part.volume >= 0.);
-        }
+        });
         self.set_faces(voronoi.into_faces());
     }
 
@@ -123,13 +123,13 @@ impl Space {
         match self.dimensionality {
             HydroDimension::HydroDimension1D => {
                 self.voronoi_faces = voronoi_faces
-                    .into_iter()
+                    .into_par_iter()
                     .filter(|f| f.normal().y == 0. && f.normal().z == 0.)
                     .collect();
             }
             HydroDimension::HydroDimension2D => {
                 self.voronoi_faces = voronoi_faces
-                    .into_iter()
+                    .into_par_iter()
                     .filter(|f| f.normal().z == 0.)
                     .collect()
             }
@@ -139,14 +139,14 @@ impl Space {
 
     pub fn convert_conserved_to_primitive(&mut self, engine: &Engine) {
         let eos = self.eos;
-        for part in self.parts.iter_mut() {
+        self.parts.par_iter_mut().for_each(|part| {
             if part.is_active_primitive_calculation(engine) {
                 part.convert_conserved_to_primitive(&eos);
 
                 // This also invalidates the extrapolations
                 part.reset_gradients();
             }
-        }
+        });
     }
 
     /// Convert the primitive quantities to conserved quantities. This is only done when creating the space from ic's.
@@ -175,10 +175,10 @@ impl Space {
 
     /// Do flux exchange between neighbouring particles
     pub fn flux_exchange(&mut self, engine: &Engine) {
-        for face in self.voronoi_faces.iter() {
+        let fluxes = self.voronoi_faces.par_iter().map(|face| {
             let left = &self.parts[face.left()];
             let left_active = left.is_active_flux(engine);
-            let flux_info = match face.right() {
+            match face.right() {
                 Some(right_idx) => {
                     let right = &self.parts[right_idx];
                     // anything to do here?
@@ -191,19 +191,24 @@ impl Space {
                     } else if right.is_active_flux(engine) && right.dt <= left.dt {
                         right.dt
                     } else {
-                        continue;
+                        return None;
                     };
-                    flux_exchange(left, right, dt, face, &self.eos, engine)
+                    Some(flux_exchange(left, right, dt, face, &self.eos, engine))
                 }
                 None => {
                     if !left_active {
-                        continue;
+                        return None;
                     }
-                    flux_exchange_boundary(left, face, self.boundary, &self.eos, engine)
+                    Some(flux_exchange_boundary(left, face, self.boundary, &self.eos, engine))
                 }
-            };
+            }
+        }).collect::<Vec<_>>();
 
-            // Reborrow the particles one at a time as mutable to update the flux accumulators
+        // Add fluxes to parts (this cannot be done in parallel)
+        for (face, flux_info) in self.voronoi_faces.iter().zip(fluxes) {
+            let Some(flux_info) = flux_info else {
+                continue;
+            };
             {
                 let left = &mut self.parts[face.left()];
                 left.fluxes -= flux_info.fluxes;
@@ -225,20 +230,20 @@ impl Space {
 
     /// Apply the accumulated fluxes to all active particles
     pub fn apply_flux(&mut self, engine: &Engine) {
-        for part in self.parts.iter_mut() {
+        self.parts.par_iter_mut().for_each(|part| {
             if part.is_active(engine) {
                 part.apply_flux();
             }
-        }
+        });
     }
 
     /// drift all particles foward over the given timestep
     pub fn drift(&mut self, dt_drift: f64, dt_extrapolate: f64) {
         let eos = self.eos;
-        // drift all particles, including boundary particles
-        for part in self.parts.iter_mut() {
+        // drift all particles, including inactive particles
+        self.parts.par_iter_mut().for_each(|part| {
             part.drift(dt_drift, dt_extrapolate, &eos);
-        }
+        });
 
         // Handle particles that left the box.
         let mut to_remove = vec![];
@@ -301,11 +306,11 @@ impl Space {
         }
 
         // Now loop over the parts and finalize the gradient estimation
-        for part in self.parts.iter_mut() {
+        self.parts.par_iter_mut().for_each(|part| {
             if part.is_active_primitive_calculation(engine) {
                 part.gradient_finalize()
             }
-        }
+        });
 
         // Now, loop again over the faces to collect information for the cell wide limiter
         for face in self.voronoi_faces.iter() {
@@ -349,20 +354,20 @@ impl Space {
         }
 
         // Finally, loop once more over the particles to apply the cell wide limiter
-        for part in self.parts.iter_mut() {
+        self.parts.par_iter_mut().for_each(|part| {
             if part.is_active_primitive_calculation(engine) {
                 part.gradient_limit();
             }
-        }
+        });
     }
 
     /// Calculate the next timestep for all active particles
     pub fn timestep(&mut self, engine: &Engine) -> IntegerTime {
         // Some useful variables
         let ti_current = engine.ti_current();
-        let mut ti_end_min = MAX_NR_TIMESTEPS;
+        let ti_end_min = AtomicU64::new(MAX_NR_TIMESTEPS);
 
-        for part in self.parts.iter_mut() {
+        self.parts.par_iter_mut().for_each(|part| {
             if part.is_ending(engine) {
                 // Compute new timestep
                 let mut dt = part.timestep(
@@ -388,12 +393,13 @@ impl Space {
                 part.dt = make_timestep(dti, engine.time_base());
                 part.set_timebin(dti);
 
-                ti_end_min = ti_end_min.min(ti_current + dti);
+                ti_end_min.fetch_min(ti_current + dti, Ordering::Relaxed);
             } else {
-                ti_end_min = ti_end_min.min(get_integer_time_end(ti_current, part.timebin));
+                ti_end_min.fetch_min(get_integer_time_end(ti_current, part.timebin), Ordering::Relaxed);
             }
-        }
+        });
 
+        let ti_end_min = ti_end_min.into_inner();
         debug_assert!(
             ti_end_min > ti_current,
             "Next sync point before current time!"
