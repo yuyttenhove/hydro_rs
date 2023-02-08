@@ -11,7 +11,7 @@ snapshots:
 
 engine:
   t_status: 0.005
-  solver: "Exact"
+  solver: "HLLC"
   particle_motion: "steer"
 #   runner: "DefaultHalfDrift"
   runner: "OptimalOrderHalfDrift"
@@ -26,7 +26,7 @@ initial_conditions:
   type: "file"
   box_size: [2., 1., 1.]
   num_part: 100
-  filename: "sodshock_2D.hdf5"
+  filename: "ICs/sodshock_2D.hdf5"
 
 equation_of_state:
   gamma: 1.66666666667

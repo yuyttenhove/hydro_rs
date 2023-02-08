@@ -1,58 +1,79 @@
 use glam::DVec3;
 
-use crate::physical_quantities::{Primitives, StateGradients};
+use crate::physical_quantities::{Primitives, StateGradients, StateVector};
 
-fn cell_wide_limiter_single_quantity(max: f64, min: f64, e_max: f64, e_min: f64) -> f64 {
-    if e_max == 0. || e_min == 0. {
-        1.
-    } else {
-        (1.0f64).min((max / e_max).min(min / e_min))
+pub struct LimiterData {
+    pub min: Primitives,
+    pub max: Primitives,
+    pub e_min: Primitives,
+    pub e_max: Primitives,
+}
+
+impl Default for LimiterData {
+    fn default() -> Self {
+        Self {
+            min: StateVector::splat(f64::INFINITY).into(),
+            max: StateVector::splat(f64::NEG_INFINITY).into(),
+            e_min: StateVector::splat(f64::INFINITY).into(),
+            e_max: StateVector::splat(f64::NEG_INFINITY).into(),
+        }
     }
 }
 
-pub fn cell_wide_limiter(
-    min: &Primitives,
-    max: &Primitives,
-    e_min: &Primitives,
-    e_max: &Primitives,
-    gradients: &mut StateGradients,
-) {
-    let density_alpha = cell_wide_limiter_single_quantity(
-        max.density(),
-        min.density(),
-        e_max.density(),
-        e_min.density(),
-    );
-    let velocity_alpha_x = cell_wide_limiter_single_quantity(
-        max.velocity().x,
-        min.velocity().x,
-        e_max.velocity().x,
-        e_min.velocity().x,
-    );
-    let velocity_alpha_y = cell_wide_limiter_single_quantity(
-        max.velocity().y,
-        min.velocity().y,
-        e_max.velocity().y,
-        e_min.velocity().y,
-    );
-    let velocity_alpha_z = cell_wide_limiter_single_quantity(
-        max.velocity().z,
-        min.velocity().z,
-        e_max.velocity().z,
-        e_min.velocity().z,
-    );
-    let pressure_alpha = cell_wide_limiter_single_quantity(
-        max.pressure(),
-        min.pressure(),
-        e_max.pressure(),
-        e_min.pressure(),
-    );
+impl LimiterData {
+    pub fn collect(&mut self, primitives: &Primitives, extrapolated: &Primitives) {
+        self.min = self.min.pairwise_min(primitives);
+        self.max = self.max.pairwise_max(primitives);
+        self.e_min = self.min.pairwise_min(extrapolated);
+        self.e_max = self.max.pairwise_max(extrapolated);
+    }
 
-    gradients[0] *= density_alpha;
-    gradients[1] *= velocity_alpha_x;
-    gradients[2] *= velocity_alpha_y;
-    gradients[3] *= velocity_alpha_z;
-    gradients[4] *= pressure_alpha;
+    fn limit_single_quantity(max: f64, min: f64, e_max: f64, e_min: f64) -> f64 {
+        if e_max == 0. || e_min == 0. {
+            1.
+        } else {
+            (1.0f64).min((max / e_max).min(min / e_min))
+        }
+    }
+
+    pub fn limit(&self, gradients: &mut StateGradients) {
+        let density_alpha = Self::limit_single_quantity(
+            self.max.density(),
+            self.min.density(),
+            self.e_max.density(),
+            self.e_min.density(),
+        );
+        let velocity_alpha_x = Self::limit_single_quantity(
+            self.max.velocity().x,
+            self.min.velocity().x,
+            self.e_max.velocity().x,
+            self.e_min.velocity().x,
+        );
+        let velocity_alpha_y = Self::limit_single_quantity(
+            self.max.velocity().y,
+            self.min.velocity().y,
+            self.e_max.velocity().y,
+            self.e_min.velocity().y,
+        );
+        let velocity_alpha_z = Self::limit_single_quantity(
+            self.max.velocity().z,
+            self.min.velocity().z,
+            self.e_max.velocity().z,
+            self.e_min.velocity().z,
+        );
+        let pressure_alpha = Self::limit_single_quantity(
+            self.max.pressure(),
+            self.min.pressure(),
+            self.e_max.pressure(),
+            self.e_min.pressure(),
+        );
+
+        gradients[0] *= density_alpha;
+        gradients[1] *= velocity_alpha_x;
+        gradients[2] *= velocity_alpha_y;
+        gradients[3] *= velocity_alpha_z;
+        gradients[4] *= pressure_alpha;
+    }
 }
 
 fn pairwise_limiter_single_quantity(q_l: f64, q_r: f64, q_dash: f64) -> f64 {

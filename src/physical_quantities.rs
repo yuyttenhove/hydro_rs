@@ -1,6 +1,6 @@
 use std::ops::{Add, AddAssign, Index, IndexMut, Mul, Sub, SubAssign};
 
-use glam::DVec3;
+use glam::{DMat3, DVec3};
 
 use crate::equation_of_state::EquationOfState;
 
@@ -107,6 +107,15 @@ impl StateGradients {
             self.2.dot(dx),
         )
     }
+
+    pub fn finalize(&mut self, matrix_wls: DMat3) {
+        let matrix_wls = matrix_wls.inverse();
+        self.0 = matrix_wls.mul_vec3(self.0);
+        self.1[0] = matrix_wls.mul_vec3(self.1[0]);
+        self.1[1] = matrix_wls.mul_vec3(self.1[1]);
+        self.1[2] = matrix_wls.mul_vec3(self.1[2]);
+        self.2 = matrix_wls.mul_vec3(self.2);
+    }
 }
 
 impl Index<usize> for StateGradients {
@@ -134,6 +143,16 @@ impl IndexMut<usize> for StateGradients {
             4 => &mut self.2,
             _ => panic!("Index out of bounds for StateVector!"),
         }
+    }
+}
+
+impl AddAssign for StateGradients {
+    fn add_assign(&mut self, rhs: Self) {
+        self.0 += rhs.0;
+        self.1[0] += rhs.1[0];
+        self.1[1] += rhs.1[1];
+        self.1[2] += rhs.1[2];
+        self.2 += rhs.2;
     }
 }
 

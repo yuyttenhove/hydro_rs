@@ -1,35 +1,15 @@
-use glam::{DMat3, DVec3};
+use glam::DVec3;
+use meshless_voronoi::VoronoiCell;
 
+use crate::physical_quantities::{Conserved, Primitives, StateGradients};
 use crate::{
     engine::{Engine, ParticleMotion},
     equation_of_state::EquationOfState,
+    flux::FluxInfo,
     time_integration::Runner,
     timeline::*,
     utils::{HydroDimension, HydroDimension::*},
 };
-use crate::{
-    physical_quantities::{Conserved, Primitives, StateGradients, StateVector},
-    slope_limiters::cell_wide_limiter,
-};
-
-#[derive(Debug, Clone, Copy)]
-pub struct LimiterData {
-    pub min: Primitives,
-    pub max: Primitives,
-    pub e_min: Primitives,
-    pub e_max: Primitives,
-}
-
-impl Default for LimiterData {
-    fn default() -> Self {
-        Self {
-            min: StateVector::splat(f64::INFINITY).into(),
-            max: StateVector::splat(f64::NEG_INFINITY).into(),
-            e_min: StateVector::splat(f64::INFINITY).into(),
-            e_max: StateVector::splat(f64::NEG_INFINITY).into(),
-        }
-    }
-}
 
 #[derive(Default, Debug, Clone)]
 pub struct Part {
@@ -40,16 +20,14 @@ pub struct Part {
     pub fluxes: Conserved,
     pub gravity_mflux: DVec3,
 
-    pub limiter: LimiterData,
-    pub matrix_wls: DMat3,
-
     pub volume: f64,
+    pub face_connections_offset: usize,
+    pub face_count: usize,
     pub x: DVec3,
     pub centroid: DVec3,
     pub v: DVec3,
     pub max_signal_velocity: f64,
     pub timebin: Timebin,
-    pub wakeup: Timebin,
     pub dt: f64,
 
     pub a_grav: DVec3,
@@ -148,6 +126,30 @@ impl Part {
         self.primitives.check_physical();
     }
 
+    pub fn apply_volume(&mut self, voronoi_cell: &VoronoiCell) {
+        self.volume = voronoi_cell.volume();
+        self.face_connections_offset = voronoi_cell.face_connections_offset();
+        self.face_count = voronoi_cell.face_count();
+        self.set_centroid(voronoi_cell.centroid());
+        debug_assert!(self.volume >= 0.);
+    }
+
+    pub fn update_fluxes_left(&mut self, flux_info: &FluxInfo, engine: &Engine) {
+        self.fluxes -= flux_info.fluxes;
+        self.gravity_mflux -= flux_info.mflux;
+        if self.is_active_flux(engine) {
+            self.max_signal_velocity = flux_info.v_max.max(self.max_signal_velocity);
+        }
+    }
+
+    pub fn update_fluxes_right(&mut self, flux_info: &FluxInfo, engine: &Engine) {
+        self.fluxes += flux_info.fluxes;
+        self.gravity_mflux -= flux_info.mflux;
+        if self.is_active_flux(engine) {
+            self.max_signal_velocity = flux_info.v_max.max(self.max_signal_velocity);
+        }
+    }
+
     pub fn apply_flux(&mut self) {
         self.conserved += self.fluxes;
 
@@ -226,15 +228,15 @@ impl Part {
         );
     }
 
-    pub fn timestep_limit(&mut self, engine: &Engine) {
+    pub fn timestep_limit(&mut self, wakeup: i8, engine: &Engine) {
         // Anything to do here?
-        if self.wakeup >= self.timebin {
+        if wakeup >= self.timebin {
             return;
         }
 
         if self.is_active(engine) {
             // Particle was active/starting anyway, so just updating the timestep/timebin suffices.
-            self.timebin = self.wakeup;
+            self.timebin = wakeup;
             self.dt = make_timestep(get_integer_timestep(self.timebin), engine.time_base());
         } else {
             // Wake this particle up
@@ -244,7 +246,7 @@ impl Part {
             // Substract the remainder of this particles old timestep from its dt
             self.dt -= make_timestep(ti_end_old - ti_current, engine.time_base());
             // Update the timebin
-            self.timebin = self.wakeup;
+            self.timebin = wakeup;
             let dti_new = get_integer_timestep(self.timebin);
             let ti_end = get_integer_time_end(ti_current, self.timebin);
             // Add the remainder of the new timestep to the particle's dt
@@ -267,105 +269,70 @@ impl Part {
     }
 
     pub fn gradient_estimate(
-        &mut self,
+        &self,
         primitives_other: &Primitives,
         w: f64,
         ds: DVec3,
-        matrix_wls: DMat3,
-    ) {
+    ) -> StateGradients {
         fn gradient_est_single_quantity(q_l: f64, q_r: f64, w: f64, ds: DVec3, grad: &mut DVec3) {
             *grad += w * (q_r - q_l) * ds;
         }
+
+        let mut gradients = StateGradients::zeros();
 
         gradient_est_single_quantity(
             self.density(),
             primitives_other.density(),
             w,
             ds,
-            &mut self.gradients[0],
+            &mut gradients[0],
         );
         gradient_est_single_quantity(
             self.velocity().x,
             primitives_other.velocity().x,
             w,
             ds,
-            &mut self.gradients[1],
+            &mut gradients[1],
         );
         gradient_est_single_quantity(
             self.velocity().y,
             primitives_other.velocity().y,
             w,
             ds,
-            &mut self.gradients[2],
+            &mut gradients[2],
         );
         gradient_est_single_quantity(
             self.velocity().z,
             primitives_other.velocity().z,
             w,
             ds,
-            &mut self.gradients[3],
+            &mut gradients[3],
         );
         gradient_est_single_quantity(
             self.pressure(),
             primitives_other.pressure(),
             w,
             ds,
-            &mut self.gradients[4],
+            &mut gradients[4],
         );
 
-        self.matrix_wls += matrix_wls;
-    }
-
-    pub fn gradient_finalize(&mut self) {
-        fn gradient_finalize_single_quantity(grad: &mut DVec3, mat_wls_inv: &DMat3) {
-            *grad = mat_wls_inv.mul_vec3(*grad);
-        }
-
-        self.matrix_wls = self.matrix_wls.inverse();
-        gradient_finalize_single_quantity(&mut self.gradients[0], &self.matrix_wls);
-        gradient_finalize_single_quantity(&mut self.gradients[1], &self.matrix_wls);
-        gradient_finalize_single_quantity(&mut self.gradients[2], &self.matrix_wls);
-        gradient_finalize_single_quantity(&mut self.gradients[3], &self.matrix_wls);
-        gradient_finalize_single_quantity(&mut self.gradients[4], &self.matrix_wls);
-    }
-
-    pub fn gradient_limiter_collect(
-        &mut self,
-        primitives_other: &Primitives,
-        extrapolations: &Primitives,
-    ) {
-        self.limiter.min = self.limiter.min.pairwise_min(primitives_other);
-        self.limiter.max = self.limiter.max.pairwise_max(primitives_other);
-        self.limiter.e_min = self.limiter.min.pairwise_min(extrapolations);
-        self.limiter.e_max = self.limiter.max.pairwise_max(extrapolations);
-    }
-
-    pub fn gradient_limit(&mut self) {
-        cell_wide_limiter(
-            &self.limiter.min,
-            &self.limiter.max,
-            &self.limiter.e_min,
-            &self.limiter.e_max,
-            &mut self.gradients,
-        );
+        gradients
     }
 
     pub(crate) fn reset_gradients(&mut self) {
         self.gradients = StateGradients::zeros();
-        self.matrix_wls = DMat3::ZERO;
-        self.limiter = LimiterData::default();
         self.extrapolations = Primitives::vacuum();
     }
 
-    fn density(&mut self) -> f64 {
+    fn density(&self) -> f64 {
         self.primitives.density()
     }
 
-    fn velocity(&mut self) -> DVec3 {
+    fn velocity(&self) -> DVec3 {
         self.primitives.velocity()
     }
 
-    fn pressure(&mut self) -> f64 {
+    fn pressure(&self) -> f64 {
         self.primitives.pressure()
     }
 
@@ -415,7 +382,6 @@ impl Part {
 
     pub fn set_timebin(&mut self, new_dti: IntegerTime) {
         self.timebin = get_time_bin(new_dti);
-        self.wakeup = self.timebin;
     }
 
     pub fn volume(&self) -> f64 {

@@ -1,6 +1,7 @@
 use std::{
     fs::File,
-    io::{BufWriter, Error as IoError, Write}, sync::atomic::{AtomicU64, Ordering},
+    io::{BufWriter, Error as IoError, Write},
+    sync::atomic::{AtomicU64, Ordering},
 };
 
 use glam::{DMat3, DVec3};
@@ -8,19 +9,23 @@ use meshless_voronoi::{Voronoi, VoronoiFace};
 use rayon::prelude::*;
 use yaml_rust::Yaml;
 
-use crate::flux::{flux_exchange, flux_exchange_boundary};
 use crate::{
     engine::Engine,
     equation_of_state::EquationOfState,
     errors::ConfigError,
     initial_conditions::InitialConditions,
     part::Part,
-    physical_quantities::{Primitives},
+    physical_quantities::Primitives,
     timeline::{
         get_integer_time_end, make_integer_timestep, make_timestep, IntegerTime, MAX_NR_TIMESTEPS,
         NUM_TIME_BINS, TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN,
     },
     utils::{box_reflect, box_wrap, contains, HydroDimension},
+};
+use crate::{
+    flux::{flux_exchange, flux_exchange_boundary},
+    physical_quantities::StateGradients,
+    slope_limiters::LimiterData,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -31,11 +36,28 @@ pub enum Boundary {
     Vacuum,
 }
 
+macro_rules! get_other {
+    ($part:expr, $idx:expr, $face:expr, $space:expr, $_reflected:expr) => {
+        if $idx == $face.left() {
+            match $face.right() {
+                Some(idx) => &$space.parts[idx],
+                None => {
+                    $_reflected = $space.get_boundary_part($part, $face);
+                    &$_reflected
+                }
+            }
+        } else {
+            &$space.parts[$face.left()]
+        }
+    };
+}
+
 pub struct Space {
     parts: Vec<Part>,
     boundary: Boundary,
     box_size: DVec3,
     voronoi_faces: Vec<VoronoiFace>,
+    voronoi_cell_face_connections: Vec<usize>,
     eos: EquationOfState,
     dimensionality: HydroDimension,
 }
@@ -72,6 +94,7 @@ impl Space {
             dimensionality: initial_conditions.dimensionality(),
             parts: initial_conditions.into_parts(),
             voronoi_faces: vec![],
+            voronoi_cell_face_connections: vec![],
         };
 
         // Set up the conserved quantities
@@ -108,33 +131,19 @@ impl Space {
             self.box_size,
             self.dimensionality.into(),
         );
-        self.parts.par_iter_mut().zip(voronoi.cells().par_iter()).for_each(|(part, voronoi_cell)| {
-            if !part.is_active_flux(engine) {
-                return;
-            }
-            part.volume = voronoi_cell.volume();
-            part.set_centroid(voronoi_cell.centroid());
-            debug_assert!(part.volume >= 0.);
-        });
-        self.set_faces(voronoi.into_faces());
-    }
 
-    fn set_faces(&mut self, voronoi_faces: Vec<VoronoiFace>) {
-        match self.dimensionality {
-            HydroDimension::HydroDimension1D => {
-                self.voronoi_faces = voronoi_faces
-                    .into_par_iter()
-                    .filter(|f| f.normal().y == 0. && f.normal().z == 0.)
-                    .collect();
-            }
-            HydroDimension::HydroDimension2D => {
-                self.voronoi_faces = voronoi_faces
-                    .into_par_iter()
-                    .filter(|f| f.normal().z == 0.)
-                    .collect()
-            }
-            HydroDimension::HydroDimension3D => self.voronoi_faces = voronoi_faces,
-        };
+        self.parts
+            .par_iter_mut()
+            .zip(voronoi.cells().par_iter())
+            .for_each(|(part, voronoi_cell)| {
+                if !part.is_active_flux(engine) {
+                    return;
+                }
+                part.apply_volume(voronoi_cell);
+            });
+
+        self.voronoi_cell_face_connections = voronoi.cell_face_connections().to_vec();
+        self.voronoi_faces = voronoi.into_faces();
     }
 
     pub fn convert_conserved_to_primitive(&mut self, engine: &Engine) {
@@ -159,12 +168,13 @@ impl Space {
             self.box_size,
             self.dimensionality.into(),
         );
+
         for (part, voronoi_cell) in self.parts.iter_mut().zip(voronoi.cells().iter()) {
-            part.volume = voronoi_cell.volume();
-            part.set_centroid(voronoi_cell.centroid());
-            debug_assert!(part.volume >= 0.);
+            part.apply_volume(voronoi_cell);
         }
-        self.set_faces(voronoi.into_faces());
+
+        self.voronoi_cell_face_connections = voronoi.cell_face_connections().to_vec();
+        self.voronoi_faces = voronoi.into_faces();
 
         // Calculate the conserved quantities
         let eos = self.eos;
@@ -175,57 +185,65 @@ impl Space {
 
     /// Do flux exchange between neighbouring particles
     pub fn flux_exchange(&mut self, engine: &Engine) {
-        let fluxes = self.voronoi_faces.par_iter().map(|face| {
-            let left = &self.parts[face.left()];
-            let left_active = left.is_active_flux(engine);
-            match face.right() {
-                Some(right_idx) => {
-                    let right = &self.parts[right_idx];
-                    // anything to do here?
-                    // Since we do the flux exchange symmetrically, we only want to do it when the particle with the
-                    // smallest timestep is active for the flux exchange. This is important for the half drift case,
-                    // since then the half of the longer timestep might coincide with the full smaller timestep and we
-                    // do not want to do the flux exchange in that case.
-                    let dt = if left.is_active_flux(engine) && left.dt <= right.dt {
-                        left.dt
-                    } else if right.is_active_flux(engine) && right.dt <= left.dt {
-                        right.dt
-                    } else {
-                        return None;
-                    };
-                    Some(flux_exchange(left, right, dt, face, &self.eos, engine))
-                }
-                None => {
-                    if !left_active {
-                        return None;
+        // Calculate the fluxes accross each face
+        let fluxes = self
+            .voronoi_faces
+            .par_iter()
+            .map(|face| {
+                let left = &self.parts[face.left()];
+                let left_active = left.is_active_flux(engine);
+                match face.right() {
+                    Some(right_idx) => {
+                        let right = &self.parts[right_idx];
+                        // anything to do here?
+                        // Since we do the flux exchange symmetrically, we only want to do it when the particle with the
+                        // smallest timestep is active for the flux exchange. This is important for the half drift case,
+                        // since then the half of the longer timestep might coincide with the full smaller timestep and we
+                        // do not want to do the flux exchange in that case.
+                        let dt = if left.is_active_flux(engine) && left.dt <= right.dt {
+                            left.dt
+                        } else if right.is_active_flux(engine) && right.dt <= left.dt {
+                            right.dt
+                        } else {
+                            return None;
+                        };
+                        Some(flux_exchange(left, right, dt, face, &self.eos, engine))
                     }
-                    Some(flux_exchange_boundary(left, face, self.boundary, &self.eos, engine))
+                    None => {
+                        if !left_active {
+                            return None;
+                        }
+                        Some(flux_exchange_boundary(
+                            left,
+                            face,
+                            self.boundary,
+                            &self.eos,
+                            engine,
+                        ))
+                    }
                 }
-            }
-        }).collect::<Vec<_>>();
+            })
+            .collect::<Vec<_>>();
 
-        // Add fluxes to parts (this cannot be done in parallel)
-        for (face, flux_info) in self.voronoi_faces.iter().zip(fluxes) {
-            let Some(flux_info) = flux_info else {
-                continue;
-            };
-            {
-                let left = &mut self.parts[face.left()];
-                left.fluxes -= flux_info.fluxes;
-                left.gravity_mflux -= flux_info.mflux;
-                if left.is_active_flux(engine) {
-                    left.max_signal_velocity = flux_info.v_max.max(left.max_signal_velocity);
+        // Add fluxes to parts
+        self.parts
+            .par_iter_mut()
+            .enumerate()
+            .for_each(|(idx, part)| {
+                // Loop over faces and add fluxes if any
+                let offset = part.face_connections_offset;
+                let faces = &self.voronoi_cell_face_connections[offset..offset + part.face_count];
+                for &face_idx in faces {
+                    if let Some(flux_info) = &fluxes[face_idx] {
+                        // Left or right?
+                        if idx == self.voronoi_faces[face_idx].left() {
+                            part.update_fluxes_left(flux_info, engine);
+                        } else {
+                            part.update_fluxes_right(flux_info, engine);
+                        }
+                    }
                 }
-            }
-            if let Some(idx) = face.right() {
-                let right = &mut self.parts[idx];
-                right.fluxes += flux_info.fluxes;
-                right.gravity_mflux -= flux_info.mflux;
-                if right.is_active_flux(engine) {
-                    right.max_signal_velocity = flux_info.v_max.max(right.max_signal_velocity);
-                }
-            }
-        }
+            });
     }
 
     /// Apply the accumulated fluxes to all active particles
@@ -264,101 +282,63 @@ impl Space {
 
     /// Estimate the gradients for all particles
     pub fn gradient_estimate(&mut self, engine: &Engine) {
-        // Loop over the voronoi faces and do the gradient interactions
-        for face in self.voronoi_faces.iter() {
-            let left = &self.parts[face.left()];
-            let _reflected;
-            let right = match face.right() {
-                Some(idx) => &self.parts[idx],
-                None => {
-                    _reflected = self.get_boundary_part(left, face);
-                    &_reflected
+        // First calculate the gradients in parallel
+        let gradients = self
+            .parts
+            .par_iter()
+            .enumerate()
+            .map(|(idx, part)| {
+                if !part.is_active_primitive_calculation(engine) {
+                    return None;
                 }
-            };
 
-            // Anything to do here?
-            if !left.is_active_primitive_calculation(engine)
-                && !right.is_active_primitive_calculation(engine)
-            {
-                continue;
-            }
+                // Get this particles faces
+                let offset = part.face_connections_offset;
+                let faces = &self.voronoi_cell_face_connections[offset..offset + part.face_count];
 
-            // Some common calculations
-            let ds = right.centroid - left.centroid;
-            let w = face.area() / ds.length_squared();
-            let matrix_wls = DMat3::from_cols(w * ds.x * ds, w * ds.y * ds, w * ds.z * ds);
-            let primitives_left = left.primitives;
-            let primitives_right = right.primitives;
+                // Loop over the faces to do the initial gradient calculation
+                let mut gradients = StateGradients::zeros();
+                let mut matrix_wls = DMat3::ZERO;
+                for &face_idx in faces {
+                    let face = &self.voronoi_faces[face_idx];
 
-            // Reborrow the particles one at a time as mutable
-            {
-                let left = &mut self.parts[face.left()];
-                if left.is_active_primitive_calculation(engine) {
-                    left.gradient_estimate(&primitives_right, w, ds, matrix_wls);
+                    let _reflected;
+                    let other = get_other!(part, idx, face, self, _reflected);
+
+                    let ds = other.centroid - part.centroid;
+                    let w = face.area() / ds.length_squared();
+                    matrix_wls += DMat3::from_cols(w * ds.x * ds, w * ds.y * ds, w * ds.z * ds);
+                    gradients += part.gradient_estimate(&other.primitives, w, ds);
                 }
-            }
-            if let Some(idx) = face.right() {
-                let right = &mut self.parts[idx];
-                if right.is_active_primitive_calculation(engine) {
-                    right.gradient_estimate(&primitives_left, w, -ds, matrix_wls);
+                gradients.finalize(matrix_wls);
+
+                // Now loop again over the faces of this cell to collect the limiter info and limit the gradient estimate
+                let mut limiter = LimiterData::default();
+                for &face_idx in faces {
+                    let face = &self.voronoi_faces[face_idx];
+
+                    let _reflected;
+                    let other = get_other!(part, idx, face, self, _reflected);
+
+                    let extrapolated =
+                        part.primitives + gradients.dot(face.centroid() - part.centroid).into();
+                    limiter.collect(&other.primitives, &extrapolated)
                 }
-            }
-        }
+                limiter.limit(&mut gradients);
 
-        // Now loop over the parts and finalize the gradient estimation
-        self.parts.par_iter_mut().for_each(|part| {
-            if part.is_active_primitive_calculation(engine) {
-                part.gradient_finalize()
-            }
-        });
+                Some(gradients)
+            })
+            .collect::<Vec<_>>();
 
-        // Now, loop again over the faces to collect information for the cell wide limiter
-        for face in self.voronoi_faces.iter() {
-            let left = &self.parts[face.left()];
-            let _reflected;
-            let right = match face.right() {
-                Some(idx) => &self.parts[idx],
-                None => {
-                    _reflected = self.get_boundary_part(left, face);
-                    &_reflected
+        // Now apply the gradients to the particles
+        self.parts
+            .par_iter_mut()
+            .zip(gradients.par_iter())
+            .for_each(|(part, gradient)| {
+                if let Some(gradient) = gradient {
+                    part.gradients = *gradient;
                 }
-            };
-
-            // Anything to do here?
-            if !left.is_active_primitive_calculation(engine)
-                && !right.is_active_primitive_calculation(engine)
-            {
-                continue;
-            }
-
-            let primitives_left = left.primitives;
-            let primitives_right = right.primitives;
-            let extrapolated_left =
-                left.primitives + left.gradients.dot(face.centroid() - left.centroid).into();
-            let extrapolated_right =
-                right.primitives + right.gradients.dot(face.centroid() - right.centroid).into();
-
-            // Reborrow the particles one at a time as mutable
-            {
-                let left = &mut self.parts[face.left()];
-                if left.is_active_primitive_calculation(engine) {
-                    left.gradient_limiter_collect(&primitives_right, &extrapolated_left);
-                }
-            }
-            if let Some(idx) = face.right() {
-                let right = &mut self.parts[idx];
-                if right.is_active_primitive_calculation(engine) {
-                    right.gradient_limiter_collect(&primitives_left, &extrapolated_right);
-                }
-            }
-        }
-
-        // Finally, loop once more over the particles to apply the cell wide limiter
-        self.parts.par_iter_mut().for_each(|part| {
-            if part.is_active_primitive_calculation(engine) {
-                part.gradient_limit();
-            }
-        });
+            });
     }
 
     /// Calculate the next timestep for all active particles
@@ -395,7 +375,10 @@ impl Space {
 
                 ti_end_min.fetch_min(ti_current + dti, Ordering::Relaxed);
             } else {
-                ti_end_min.fetch_min(get_integer_time_end(ti_current, part.timebin), Ordering::Relaxed);
+                ti_end_min.fetch_min(
+                    get_integer_time_end(ti_current, part.timebin),
+                    Ordering::Relaxed,
+                );
             }
         });
 
@@ -409,40 +392,33 @@ impl Space {
 
     /// Apply the timestep limiter to the particles
     pub fn timestep_limiter(&mut self, engine: &Engine) {
-        // Loop over all the voronoi faces to collect info about the timesteps of the neighbouring particles
-        for face in self.voronoi_faces.iter() {
-            // Get the two neighbouring parts of the face
-            let left = &self.parts[face.left()];
-            let Some(right_idx) = face.right() else {
-                // Skip boundary faces
-                continue;
-            };
-            let right = &self.parts[right_idx];
+        // Loop over all the particles to compute their wakeup times
+        let wakeups = self.parts.par_iter().enumerate().map(|(idx, part)| {
+            // Get this particles faces
+            let offset = part.face_connections_offset;
+            let faces = &self.voronoi_cell_face_connections[offset..offset + part.face_count];
 
-            let left_is_ending = left.is_ending(engine);
-            let right_is_ending = right.is_ending(engine);
-            let left_timebin = left.timebin;
-            let right_timebin = right.timebin;
+            // Loop over the faces to do the initial gradient calculation
+            let mut wakeup = NUM_TIME_BINS;
+            for &face_idx in faces {
+                let face = &self.voronoi_faces[face_idx];
 
-            // Reborrow the particles one at a time as mutable
-            if right_is_ending {
-                let left = &mut self.parts[face.left()];
-                left.wakeup = left
-                    .wakeup
-                    .min(right_timebin + TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN);
+                let _reflected;
+                let other = get_other!(part, idx, face, self, _reflected);
+                if !other.is_ending(engine) {
+                    continue;
+                }
+
+                wakeup = wakeup.min(other.timebin + TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN);
             }
-            if left_is_ending {
-                let right = &mut self.parts[right_idx];
-                right.wakeup = right
-                    .wakeup
-                    .min(left_timebin + TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN);
-            }
-        }
 
-        // Now apply the limiter
-        for part in self.parts.iter_mut() {
-            part.timestep_limit(engine);
-        }
+            wakeup
+        }).collect::<Vec<_>>();
+
+        // Now apply the timestep limiter
+        self.parts.par_iter_mut().enumerate().for_each(|(idx, part)|{
+            part.timestep_limit(wakeups[idx], engine);
+        });
     }
 
     /// Collect the gravitational accellerations in the particles
