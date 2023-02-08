@@ -1,5 +1,5 @@
 [package]
-name = "hydro_1d_rs"
+name = "hydro_rs"
 version = "0.1.0"
 edition = "2021"
 
