@@ -123,22 +123,20 @@ impl Space {
     }
 
     /// Do the volume calculation for all the active parts in the space
-    pub fn volume_calculation(&mut self, engine: &Engine) {
+    pub fn volume_calculation(&mut self, _engine: &Engine) {
         let generators: Vec<_> = self.parts.iter().map(|p| p.loc()).collect();
         let voronoi = Voronoi::build(
             &generators,
             DVec3::ZERO,
             self.box_size,
             self.dimensionality.into(),
+            self.periodic(),
         );
 
         self.parts
             .par_iter_mut()
             .zip(voronoi.cells().par_iter())
             .for_each(|(part, voronoi_cell)| {
-                if !part.is_active_flux(engine) {
-                    return;
-                }
                 part.apply_volume(voronoi_cell);
             });
 
@@ -167,6 +165,7 @@ impl Space {
             DVec3::ZERO,
             self.box_size,
             self.dimensionality.into(),
+            self.periodic(),
         );
 
         for (part, voronoi_cell) in self.parts.iter_mut().zip(voronoi.cells().iter()) {
@@ -461,6 +460,13 @@ impl Space {
             if part.is_active(engine) {
                 part.reset_fluxes();
             }
+        }
+    }
+
+    fn periodic(&self) -> bool {
+        match self.boundary {
+            Boundary::Periodic => true,
+            _ => false,
         }
     }
 
