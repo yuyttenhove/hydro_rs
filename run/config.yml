@@ -3,14 +3,14 @@ time_integration:
   dt_max: 1e-2
   t_min: 1e-8
   t_end: 0.5
-  cfl_criterion: 0.1
+  cfl_criterion: 0.3
 
 snapshots:
   t_between_snaps: 0.05
   prefix: "sodshock_1D_"
 
 engine:
-  t_status: 0.005
+  t_status: 0.01
   solver: "Exact"
   particle_motion: "fluid"
 #   runner: "DefaultHalfDrift"
@@ -20,12 +20,12 @@ engine:
   with_gravity: false
 
 space:
-  boundary: "reflective"
+  boundary: "periodic"
 
 initial_conditions:
   type: "sodshock"
   box_size: [2., 1., 1.]
-  num_part: 100
+  num_part: 150
   filename: "ICs/sodshock_2D.hdf5"
 
 equation_of_state:

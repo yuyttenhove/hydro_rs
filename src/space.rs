@@ -279,12 +279,28 @@ impl Space {
         }
     }
 
+    fn get_default_matrix_wls(&self) -> DMat3 {
+        match self.dimensionality {
+            HydroDimension::HydroDimension1D => {
+                let mut mat = DMat3::IDENTITY;
+                mat.x_axis.x = 0.;
+                mat
+            }
+            HydroDimension::HydroDimension2D => {
+                let mut mat = DMat3::ZERO;
+                mat.z_axis.z = 1.;
+                mat
+            }
+            HydroDimension::HydroDimension3D => DMat3::ZERO,
+        }
+    }
+
     /// Estimate the gradients for all particles
     pub fn gradient_estimate(&mut self, engine: &Engine) {
         // First calculate the gradients in parallel
         let gradients = self
             .parts
-            .par_iter()
+            .iter()
             .enumerate()
             .map(|(idx, part)| {
                 if !part.is_active_primitive_calculation(engine) {
@@ -297,7 +313,7 @@ impl Space {
 
                 // Loop over the faces to do the initial gradient calculation
                 let mut gradients = StateGradients::zeros();
-                let mut matrix_wls = DMat3::ZERO;
+                let mut matrix_wls = self.get_default_matrix_wls();
                 for &face_idx in faces {
                     let face = &self.voronoi_faces[face_idx];
 
@@ -325,8 +341,12 @@ impl Space {
                     let _reflected;
                     let other = get_other!(part, idx, face, self, _reflected);
 
+                    let shift = match face.right() {
+                        Some(right_idx) if idx == right_idx => face.shift().unwrap_or(DVec3::ZERO),
+                        _ => DVec3::ZERO,
+                    };
                     let extrapolated =
-                        part.primitives + gradients.dot(face.centroid() - part.centroid).into();
+                        part.primitives + gradients.dot(face.centroid() - part.centroid - shift).into();
                     limiter.collect(&other.primitives, &extrapolated)
                 }
                 limiter.limit(&mut gradients);
