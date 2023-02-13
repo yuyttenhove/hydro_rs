@@ -23,9 +23,10 @@ pub fn flux_exchange(
 ) -> FluxInfo {
     // We extrapolate from the centroid of the particles.
     let dx_left = face.centroid() - left.centroid;
-    let dx_right = face.centroid() - right.centroid;
-    let dx_centroid = right.centroid - left.centroid;
-    let dx = right.x - left.x;
+    let shift = face.shift().unwrap_or(DVec3::ZERO);
+    let dx_right = face.centroid() - right.centroid - shift;
+    let dx_centroid = right.centroid + shift - left.centroid;
+    let dx = right.x + shift  - left.x;
 
     // Calculate the maximal signal velocity (used for timestep computation)
     let mut v_max = 0.;

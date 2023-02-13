@@ -197,8 +197,8 @@ impl Space {
                         // anything to do here?
                         // Since we do the flux exchange symmetrically, we only want to do it when the particle with the
                         // smallest timestep is active for the flux exchange. This is important for the half drift case,
-                        // since then the half of the longer timestep might coincide with the full smaller timestep and we
-                        // do not want to do the flux exchange in that case.
+                        // since then the half of the longer timestep might coincide with the full smaller timestep and 
+                        // we do not want to do the flux exchange in that case.
                         let dt = if left.is_active_flux(engine) && left.dt <= right.dt {
                             left.dt
                         } else if right.is_active_flux(engine) && right.dt <= left.dt {
@@ -304,7 +304,13 @@ impl Space {
                     let _reflected;
                     let other = get_other!(part, idx, face, self, _reflected);
 
-                    let ds = other.centroid - part.centroid;
+                    let mut shift = face.shift().unwrap_or(DVec3::ZERO);
+                    if let Some(rigth_idx) = face.right() {
+                        if idx == rigth_idx {
+                            shift = -shift;
+                        }
+                    }
+                    let ds = other.centroid + shift - part.centroid;
                     let w = face.area() / ds.length_squared();
                     matrix_wls += DMat3::from_cols(w * ds.x * ds, w * ds.y * ds, w * ds.z * ds);
                     gradients += part.gradient_estimate(&other.primitives, w, ds);
