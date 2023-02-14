@@ -268,72 +268,9 @@ impl Part {
         }
     }
 
-    pub fn gradient_estimate(
-        &self,
-        primitives_other: &Primitives,
-        w: f64,
-        ds: DVec3,
-    ) -> StateGradients {
-        fn gradient_est_single_quantity(q_l: f64, q_r: f64, w: f64, ds: DVec3, grad: &mut DVec3) {
-            *grad += w * (q_r - q_l) * ds;
-        }
-
-        let mut gradients = StateGradients::zeros();
-
-        gradient_est_single_quantity(
-            self.density(),
-            primitives_other.density(),
-            w,
-            ds,
-            &mut gradients[0],
-        );
-        gradient_est_single_quantity(
-            self.velocity().x,
-            primitives_other.velocity().x,
-            w,
-            ds,
-            &mut gradients[1],
-        );
-        gradient_est_single_quantity(
-            self.velocity().y,
-            primitives_other.velocity().y,
-            w,
-            ds,
-            &mut gradients[2],
-        );
-        gradient_est_single_quantity(
-            self.velocity().z,
-            primitives_other.velocity().z,
-            w,
-            ds,
-            &mut gradients[3],
-        );
-        gradient_est_single_quantity(
-            self.pressure(),
-            primitives_other.pressure(),
-            w,
-            ds,
-            &mut gradients[4],
-        );
-
-        gradients
-    }
-
     pub(crate) fn reset_gradients(&mut self) {
         self.gradients = StateGradients::zeros();
         self.extrapolations = Primitives::vacuum();
-    }
-
-    fn density(&self) -> f64 {
-        self.primitives.density()
-    }
-
-    fn velocity(&self) -> DVec3 {
-        self.primitives.velocity()
-    }
-
-    fn pressure(&self) -> f64 {
-        self.primitives.pressure()
     }
 
     pub fn grav_kick(&mut self) {

@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from typing import List
+from utils import read_particle_data
 
 from riemann_solver import RiemannSolver
 
@@ -81,21 +82,16 @@ def main(fname: str, savename: str):
     P_R = 1e-6  # Pressure right state
 
     # read data
-    data = pd.read_csv(fname, sep="\t")
-    data.columns = ["x", "rho", "v", "P", "a", "u", "S", "dt"]
-    data["x"] = [np.fromstring(l[1:-1], sep=",")[0] for l in data["x"].values]
-    data["v"] = [np.fromstring(l[1:-1], sep=",")[0] for l in data["v"].values]
-    data["a"] = [np.fromstring(l[1:-1], sep=",")[0] for l in data["a"].values]
+    data = read_particle_data(fname)
 
     # Plot
     fig, axes = plt.subplots(2, 3, figsize=(9, 6))
     plot_analytic_solution(axes, gas_gamma, rho_L, v_L, P_L, rho_R, v_R, P_R)
-    plot_quantity(axes[0][0], data["x"].values, data["v"].values, "Velocity")
+    plot_quantity(axes[0][0], data["x"].values, data["v_x"].values, "Velocity")
     plot_quantity(axes[0][1], data["x"].values, data["rho"].values, "Density")
     plot_quantity(axes[0][2], data["x"].values, data["P"].values, "Pressure")
     plot_quantity(axes[1][0], data["x"].values, data["u"].values, "Internal energy")
     plot_quantity(axes[1][1], data["x"].values, data["S"].values, "Entropy")
-    plot_quantity(axes[1][2], data["x"].values, data["a"].values, "Acceleration")
 
     plt.tight_layout()
     plt.savefig(Path(fname).parent.parent / savename, dpi=600)
@@ -107,6 +103,6 @@ if __name__ == "__main__":
         fname = sys.argv[1]
         savename = sys.argv[2]
     except IndexError:
-        fname = "../run/output/noh_0010.txt"
+        fname = "../run/output/noh_1D_0010.txt"
         savename = "test.png"
     main(fname, savename)

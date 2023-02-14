@@ -4,7 +4,7 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
-use glam::{DMat3, DVec3};
+use glam::{DVec3};
 use meshless_voronoi::{Voronoi, VoronoiFace};
 use rayon::prelude::*;
 use yaml_rust::Yaml;
@@ -20,12 +20,11 @@ use crate::{
         get_integer_time_end, make_integer_timestep, make_timestep, IntegerTime, MAX_NR_TIMESTEPS,
         NUM_TIME_BINS, TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN,
     },
-    utils::{box_reflect, box_wrap, contains, HydroDimension},
+    utils::{box_reflect, box_wrap, contains, HydroDimension}, gradients::GradientData,
 };
 use crate::{
     flux::{flux_exchange, flux_exchange_boundary},
-    physical_quantities::StateGradients,
-    slope_limiters::LimiterData,
+    gradients::LimiterData,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -279,28 +278,12 @@ impl Space {
         }
     }
 
-    fn get_default_matrix_wls(&self) -> DMat3 {
-        match self.dimensionality {
-            HydroDimension::HydroDimension1D => {
-                let mut mat = DMat3::IDENTITY;
-                mat.x_axis.x = 0.;
-                mat
-            }
-            HydroDimension::HydroDimension2D => {
-                let mut mat = DMat3::ZERO;
-                mat.z_axis.z = 1.;
-                mat
-            }
-            HydroDimension::HydroDimension3D => DMat3::ZERO,
-        }
-    }
-
     /// Estimate the gradients for all particles
     pub fn gradient_estimate(&mut self, engine: &Engine) {
         // First calculate the gradients in parallel
         let gradients = self
             .parts
-            .iter()
+            .par_iter()
             .enumerate()
             .map(|(idx, part)| {
                 if !part.is_active_primitive_calculation(engine) {
@@ -312,8 +295,7 @@ impl Space {
                 let faces = &self.voronoi_cell_face_connections[offset..offset + part.face_count];
 
                 // Loop over the faces to do the initial gradient calculation
-                let mut gradients = StateGradients::zeros();
-                let mut matrix_wls = self.get_default_matrix_wls();
+                let mut gradient_data = GradientData::init(self.dimensionality);
                 for &face_idx in faces {
                     let face = &self.voronoi_faces[face_idx];
 
@@ -321,17 +303,16 @@ impl Space {
                     let other = get_other!(part, idx, face, self, _reflected);
 
                     let mut shift = face.shift().unwrap_or(DVec3::ZERO);
-                    if let Some(rigth_idx) = face.right() {
-                        if idx == rigth_idx {
+                    if let Some(right_idx) = face.right() {
+                        if idx == right_idx {
                             shift = -shift;
                         }
                     }
                     let ds = other.centroid + shift - part.centroid;
                     let w = face.area() / ds.length_squared();
-                    matrix_wls += DMat3::from_cols(w * ds.x * ds, w * ds.y * ds, w * ds.z * ds);
-                    gradients += part.gradient_estimate(&other.primitives, w, ds);
+                    gradient_data.collect(&part.primitives, &other.primitives, w, ds);
                 }
-                gradients.finalize(matrix_wls);
+                let mut gradients = gradient_data.finalize();
 
                 // Now loop again over the faces of this cell to collect the limiter info and limit the gradient estimate
                 let mut limiter = LimiterData::default();
@@ -345,11 +326,10 @@ impl Space {
                         Some(right_idx) if idx == right_idx => face.shift().unwrap_or(DVec3::ZERO),
                         _ => DVec3::ZERO,
                     };
-                    let extrapolated =
-                        part.primitives + gradients.dot(face.centroid() - part.centroid - shift).into();
+                    let extrapolated = gradients.dot(face.centroid() - part.centroid - shift).into();
                     limiter.collect(&other.primitives, &extrapolated)
                 }
-                limiter.limit(&mut gradients);
+                limiter.limit(&mut gradients, &part.primitives);
 
                 Some(gradients)
             })

@@ -2,7 +2,7 @@ use crate::engine::Engine;
 use crate::equation_of_state::EquationOfState;
 use crate::part::Part;
 use crate::physical_quantities::{Conserved, Primitives};
-use crate::slope_limiters::pairwise_limiter;
+use crate::gradients::pairwise_limiter;
 use crate::space::Boundary;
 use glam::DVec3;
 use meshless_voronoi::VoronoiFace;
@@ -45,11 +45,13 @@ pub fn flux_exchange(
         &left.primitives,
         &right.primitives,
         &(left.primitives + left.gradients.dot(dx_left).into() + left.extrapolations),
+        dx_left.length() / dx_centroid.length(),
     );
     let primitives_right = pairwise_limiter(
         &right.primitives,
         &left.primitives,
         &(right.primitives + right.gradients.dot(dx_right).into() + right.extrapolations),
+        dx_right.length() / dx_centroid.length(),
     );
 
     // Compute interface velocity (Springel (2010), eq. 33):
@@ -58,13 +60,14 @@ pub fn flux_exchange(
     let v_face = 0.5 * (left.v + right.v) - fac * dx;
 
     // Calculate fluxes
-    let fluxes = face.area() * engine.solver.solve_for_flux(
-        &primitives_left.boost(-v_face),
-        &primitives_right.boost(-v_face),
-        v_face,
-        face.normal(),
-        eos,
-    );
+    let fluxes = face.area()
+        * engine.solver.solve_for_flux(
+            &primitives_left.boost(-v_face),
+            &primitives_right.boost(-v_face),
+            v_face,
+            face.normal(),
+            eos,
+        );
 
     FluxInfo {
         fluxes: dt * fluxes,
@@ -102,8 +105,12 @@ pub fn flux_exchange_boundary(
             reflected = reflected.reflect_quantities(face.normal());
 
             // Apply pairwise limiter
-            primitives_dash =
-                pairwise_limiter(&part.primitives, &reflected.primitives, &primitives_dash);
+            primitives_dash = pairwise_limiter(
+                &part.primitives,
+                &reflected.primitives,
+                &primitives_dash,
+                dx_face.length() / dx_centroid.length(),
+            );
             v_max -= (reflected.primitives.velocity() - part.primitives.velocity())
                 .dot(dx_centroid)
                 .min(0.);
@@ -111,17 +118,24 @@ pub fn flux_exchange_boundary(
             primitives_dash.reflect(face.normal())
         }
         Boundary::Open => {
-            primitives_dash =
-                pairwise_limiter(&part.primitives, &part.primitives, &primitives_dash);
+            primitives_dash = pairwise_limiter(
+                &part.primitives,
+                &part.primitives,
+                &primitives_dash,
+                dx_face.length() / dx_centroid.length(),
+            );
 
             primitives_dash
         }
         Boundary::Vacuum => {
             let vacuum = Primitives::vacuum();
-            primitives_dash = pairwise_limiter(&part.primitives, &vacuum, &primitives_dash);
-            v_max += part.primitives.velocity()
-                .dot(dx_centroid)
-                .min(0.);
+            primitives_dash = pairwise_limiter(
+                &part.primitives,
+                &vacuum,
+                &primitives_dash,
+                dx_face.length() / dx_centroid.length(),
+            );
+            v_max += part.primitives.velocity().dot(dx_centroid).min(0.);
 
             vacuum
         }
@@ -131,13 +145,14 @@ pub fn flux_exchange_boundary(
     };
 
     // Solve for flux
-    let fluxes = face.area() * engine.solver.solve_for_flux(
-        &primitives_dash,
-        &primitives_boundary,
-        DVec3::ZERO,
-        face.normal(),
-        eos,
-    );
+    let fluxes = face.area()
+        * engine.solver.solve_for_flux(
+            &primitives_dash,
+            &primitives_boundary,
+            DVec3::ZERO,
+            face.normal(),
+            eos,
+        );
 
     FluxInfo {
         fluxes: part.dt * fluxes,

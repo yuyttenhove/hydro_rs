@@ -34,7 +34,7 @@ def plot_analytic_solution(axes: List[List[plt.Axes]], gas_gamma: float, rho_L: 
 def plot_quantity(ax: plt.Axes, xdata: np.ndarray, ydata: np.ndarray, title: str):
     ax.scatter(xdata, ydata, s=4, color="red", zorder=1000, alpha=0.33)
     ax.set_title(title)
-    ax.set_xlim(0.,2.)
+    ax.set_xlim(0.5, 1.5)
     mask = (xdata <= 1.5) & (xdata >= 0.5)
     ylim = [ydata[mask].min(), ydata[mask].max()]
     y_delta = ylim[1] - ylim[0]

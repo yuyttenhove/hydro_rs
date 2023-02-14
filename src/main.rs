@@ -22,7 +22,7 @@ mod part;
 mod physical_constants;
 mod physical_quantities;
 mod riemann_solver;
-mod slope_limiters;
+mod gradients;
 mod space;
 mod time_integration;
 mod timeline;

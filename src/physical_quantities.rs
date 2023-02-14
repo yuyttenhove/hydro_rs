@@ -1,6 +1,6 @@
 use std::ops::{Add, AddAssign, Index, IndexMut, Mul, Sub, SubAssign};
 
-use glam::{DMat3, DVec3};
+use glam::DVec3;
 
 use crate::equation_of_state::EquationOfState;
 
@@ -106,15 +106,6 @@ impl StateGradients {
             },
             self.2.dot(dx),
         )
-    }
-
-    pub fn finalize(&mut self, matrix_wls: DMat3) {
-        let matrix_wls = matrix_wls.inverse();
-        self.0 = matrix_wls.mul_vec3(self.0);
-        self.1[0] = matrix_wls.mul_vec3(self.1[0]);
-        self.1[1] = matrix_wls.mul_vec3(self.1[1]);
-        self.1[2] = matrix_wls.mul_vec3(self.1[2]);
-        self.2 = matrix_wls.mul_vec3(self.2);
     }
 }
 
