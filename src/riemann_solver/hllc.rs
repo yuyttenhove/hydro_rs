@@ -15,7 +15,6 @@ pub struct HLLCRiemannSolver {
     hgp1dg: f64,
     /* \f$\frac{1}{\gamma{}-1}\f$. */
     odgm1: f64,
-    vacuum_solver: VacuumRiemannSolver,
 }
 
 impl HLLCRiemannSolver {
@@ -24,12 +23,11 @@ impl HLLCRiemannSolver {
             gamma,
             hgp1dg: (gamma + 1.) / gamma,
             odgm1: 1. / (gamma - 1.),
-            vacuum_solver: VacuumRiemannSolver::new(gamma),
         }
     }
 }
 
-impl RiemannSolver for HLLCRiemannSolver {
+impl RiemannFluxSolver for HLLCRiemannSolver {
     /// See Section 10.6 in Toro (2009)
     fn solve_for_flux(
         &self,
@@ -40,7 +38,7 @@ impl RiemannSolver for HLLCRiemannSolver {
         eos: &EquationOfState,
     ) -> Conserved {
         // Consistency check
-        if let EquationOfState::Ideal { gamma } = eos {
+        if let EquationOfState::Ideal { gamma, .. } = eos {
             assert_eq!(*gamma, self.gamma);
         }
 
@@ -56,17 +54,16 @@ impl RiemannSolver for HLLCRiemannSolver {
         let v_r_m_v_l = v_r - v_l;
 
         // handle vacuum
-        if self
-            .vacuum_solver
-            .is_vacuum(left, right, a_l, a_r, v_r_m_v_l)
+        if VacuumRiemannSolver::is_vacuum(left, right, a_l, a_r, v_r_m_v_l, eos)
         {
-            return self.vacuum_solver.solve_for_flux(
+            return VacuumRiemannSolver::solve_for_flux(
                 left,
                 right,
                 a_l,
                 a_r,
                 n_unit,
                 interface_velocity,
+                eos,
             );
         }
 
@@ -168,12 +165,17 @@ mod tests {
     use super::*;
     use float_cmp::assert_approx_eq;
 
+    fn get_eos(gamma: f64) -> EquationOfState {
+        EquationOfState::new(&YamlLoader::load_from_str(&format!("gamma: {:}", gamma)).unwrap()[0])
+            .unwrap()
+    }
+
     #[test]
     fn test_hllc_solver_symmetry() {
         let gamma = 5. / 3.;
         let interface_velocity = -3e-1 * DVec3::X;
         let solver = HLLCRiemannSolver::new(gamma);
-        let eos = EquationOfState::Ideal { gamma };
+        let eos = get_eos(gamma);
         let left = Primitives::new(1., DVec3::ZERO, 1.);
         let left_reversed = Primitives::new(1., DVec3::ZERO, 1.);
         let right = Primitives::new(1., -6e-1 * DVec3::X, 1.);
@@ -206,7 +208,7 @@ mod tests {
         let gamma = 5. / 3.;
         let interface_velocity = -0.2 * DVec3::X;
         let solver = HLLCRiemannSolver::new(gamma);
-        let eos = EquationOfState::Ideal { gamma };
+        let eos = get_eos(gamma);
         let left = Primitives::new(1., 0.2 * DVec3::X, 0.5);
         let right = Primitives::new(0.5, 0.1 * DVec3::X, 0.1);
         let fluxes = solver.solve_for_flux(
@@ -223,7 +225,7 @@ mod tests {
             0.49950013 * DVec3::X - interface_velocity,
             0.28020517,
         );
-        let flux_s = flux_from_half_state(&half_s, interface_velocity, solver.odgm1, DVec3::X);
+        let flux_s = flux_from_half_state(&half_s, interface_velocity, DVec3::X, &eos);
 
         assert_approx_eq!(f64, fluxes.mass(), flux_s.mass());
         assert_approx_eq!(f64, fluxes.momentum().x, flux_s.momentum().x);

@@ -11,7 +11,6 @@ snapshots:
 
 engine:
   t_status: 0.01
-  solver: "HLLC"
   particle_motion: "steer"
 #   runner: "DefaultHalfDrift"
   runner: "OptimalOrderHalfDrift"
@@ -19,13 +18,17 @@ engine:
   # runner: "Default"
   with_gravity: false
 
+solver:
+  kind: "AIRS"
+  threshold: 2.
+
 space:
   boundary: "periodic"
 
 initial_conditions:
   type: "sodshock"
   box_size: [2., 1., 1.]
-  num_part: 250
+  num_part: 400
   filename: "ICs/sodshock_2D.hdf5"
 
 equation_of_state:

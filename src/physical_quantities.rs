@@ -347,6 +347,7 @@ impl Mul<Conserved> for f64 {
 mod test {
     use float_cmp::assert_approx_eq;
     use glam::DVec3;
+    use yaml_rust::YamlLoader;
 
     use super::{Conserved, Primitives};
     use crate::equation_of_state::EquationOfState;
@@ -363,7 +364,8 @@ mod test {
             0.8,
         );
         let volume = 0.1;
-        let eos = EquationOfState::Ideal { gamma: 5. / 3. };
+        let eos = EquationOfState::new(&YamlLoader::load_from_str("gamma: 1.666667").unwrap()[0])
+            .unwrap();
         let conserved = Conserved::from_primitives(&primitives, volume, &eos);
         let primitives_new = Primitives::from_conserved(&conserved, volume, &eos);
 

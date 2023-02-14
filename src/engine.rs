@@ -8,7 +8,7 @@ use yaml_rust::Yaml;
 use crate::{
     equation_of_state::EquationOfState,
     errors::ConfigError,
-    riemann_solver::{get_solver, RiemannSolver},
+    riemann_solver::{get_solver, RiemannFluxSolver},
     space::Space,
     time_integration::Runner,
     timeline::*,
@@ -33,7 +33,7 @@ impl ParticleMotion {
 
 pub struct Engine {
     runner: Runner,
-    pub solver: Box<dyn RiemannSolver>,
+    pub solver: Box<dyn RiemannFluxSolver>,
     t_end: f64,
     t_current: f64,
     ti_old: IntegerTime,
@@ -60,6 +60,7 @@ impl Engine {
         engine_cfg: &Yaml,
         time_integration_cfg: &Yaml,
         snapshots_cfg: &Yaml,
+        solver_cfg: &Yaml,
         eos: &EquationOfState,
     ) -> Result<Self, ConfigError> {
         // Read config
@@ -71,9 +72,6 @@ impl Engine {
             .ok_or(ConfigError::MissingParameter(
                 "time_integration: runner".to_string(),
             ))?;
-        let solver_kind = engine_cfg["solver"]
-            .as_str()
-            .ok_or(ConfigError::MissingParameter("engine:solver".to_string()))?;
         let particle_motion = engine_cfg["particle_motion"].as_str().unwrap_or("fluid");
         let with_gravity = engine_cfg["with_gravity"].as_bool().unwrap_or(false);
         let dt_min =
@@ -113,7 +111,7 @@ impl Engine {
 
         // Setup members
         let runner = Runner::new(runner_kind)?;
-        let solver = get_solver(solver_kind, eos)?;
+        let solver = get_solver(solver_cfg, eos)?;
         let particle_motion = ParticleMotion::new(particle_motion)?;
         let time_base = t_end / MAX_NR_TIMESTEPS as f64;
         let time_base_inv = 1. / time_base;

@@ -105,7 +105,7 @@ impl Part {
         debug_assert!(self.x.is_finite(), "Infinite x after drift!");
 
         // Extrapolate primitives in time
-        if let EquationOfState::Ideal { gamma } = eos {
+        if let EquationOfState::Ideal { gamma, .. } = eos {
             let rho = self.primitives.density();
             if rho > 0. {
                 let rho_inv = 1. / rho;

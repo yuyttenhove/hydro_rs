@@ -4,7 +4,7 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
-use glam::{DVec3};
+use glam::DVec3;
 use meshless_voronoi::{Voronoi, VoronoiFace};
 use rayon::prelude::*;
 use yaml_rust::Yaml;
@@ -13,6 +13,7 @@ use crate::{
     engine::Engine,
     equation_of_state::EquationOfState,
     errors::ConfigError,
+    gradients::GradientData,
     initial_conditions::InitialConditions,
     part::Part,
     physical_quantities::Primitives,
@@ -20,7 +21,7 @@ use crate::{
         get_integer_time_end, make_integer_timestep, make_timestep, IntegerTime, MAX_NR_TIMESTEPS,
         NUM_TIME_BINS, TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN,
     },
-    utils::{box_reflect, box_wrap, contains, HydroDimension}, gradients::GradientData,
+    utils::{box_reflect, box_wrap, contains, HydroDimension},
 };
 use crate::{
     flux::{flux_exchange, flux_exchange_boundary},
@@ -196,7 +197,7 @@ impl Space {
                         // anything to do here?
                         // Since we do the flux exchange symmetrically, we only want to do it when the particle with the
                         // smallest timestep is active for the flux exchange. This is important for the half drift case,
-                        // since then the half of the longer timestep might coincide with the full smaller timestep and 
+                        // since then the half of the longer timestep might coincide with the full smaller timestep and
                         // we do not want to do the flux exchange in that case.
                         let dt = if left.is_active_flux(engine) && left.dt <= right.dt {
                             left.dt
@@ -326,7 +327,9 @@ impl Space {
                         Some(right_idx) if idx == right_idx => face.shift().unwrap_or(DVec3::ZERO),
                         _ => DVec3::ZERO,
                     };
-                    let extrapolated = gradients.dot(face.centroid() - part.centroid - shift).into();
+                    let extrapolated = gradients
+                        .dot(face.centroid() - part.centroid - shift)
+                        .into();
                     limiter.collect(&other.primitives, &extrapolated)
                 }
                 limiter.limit(&mut gradients, &part.primitives);
@@ -398,32 +401,40 @@ impl Space {
     /// Apply the timestep limiter to the particles
     pub fn timestep_limiter(&mut self, engine: &Engine) {
         // Loop over all the particles to compute their wakeup times
-        let wakeups = self.parts.par_iter().enumerate().map(|(idx, part)| {
-            // Get this particles faces
-            let offset = part.face_connections_offset;
-            let faces = &self.voronoi_cell_face_connections[offset..offset + part.face_count];
+        let wakeups = self
+            .parts
+            .par_iter()
+            .enumerate()
+            .map(|(idx, part)| {
+                // Get this particles faces
+                let offset = part.face_connections_offset;
+                let faces = &self.voronoi_cell_face_connections[offset..offset + part.face_count];
 
-            // Loop over the faces to do the initial gradient calculation
-            let mut wakeup = NUM_TIME_BINS;
-            for &face_idx in faces {
-                let face = &self.voronoi_faces[face_idx];
+                // Loop over the faces to do the initial gradient calculation
+                let mut wakeup = NUM_TIME_BINS;
+                for &face_idx in faces {
+                    let face = &self.voronoi_faces[face_idx];
 
-                let _reflected;
-                let other = get_other!(part, idx, face, self, _reflected);
-                if !other.is_ending(engine) {
-                    continue;
+                    let _reflected;
+                    let other = get_other!(part, idx, face, self, _reflected);
+                    if !other.is_ending(engine) {
+                        continue;
+                    }
+
+                    wakeup = wakeup.min(other.timebin + TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN);
                 }
 
-                wakeup = wakeup.min(other.timebin + TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN);
-            }
-
-            wakeup
-        }).collect::<Vec<_>>();
+                wakeup
+            })
+            .collect::<Vec<_>>();
 
         // Now apply the timestep limiter
-        self.parts.par_iter_mut().enumerate().for_each(|(idx, part)|{
-            part.timestep_limit(wakeups[idx], engine);
-        });
+        self.parts
+            .par_iter_mut()
+            .enumerate()
+            .for_each(|(idx, part)| {
+                part.timestep_limit(wakeups[idx], engine);
+            });
     }
 
     /// Collect the gravitational accellerations in the particles
@@ -562,7 +573,8 @@ particles:
     fn test_init_1d() {
         use crate::initial_conditions::InitialConditions;
 
-        let eos = EquationOfState::Ideal { gamma: GAMMA };
+        let eos = EquationOfState::new(&YamlLoader::load_from_str("gamma: 1.666667").unwrap()[0])
+            .unwrap();
         let space_config = &YamlLoader::load_from_str(CFG_STR).unwrap()[0];
         let ic_config = &YamlLoader::load_from_str(IC_CFG).unwrap()[0];
         let ics = InitialConditions::new(ic_config, &eos).unwrap();

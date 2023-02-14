@@ -20,7 +20,7 @@ def main(fname: str, savename: str, time=0.15):
     data = read_particle_data(fname)
 
     # Plot
-    x_lim = [0.5, 1.5]
+    x_lim = [0., 2.]
     fig, axes = plt.subplots(2, 3, figsize=(9, 6))
     plot_analytic_solution(axes, gas_gamma, rho_L, v_L, P_L, rho_R, v_R, P_R, time=time)
     plot_quantity(axes[0][0], data["x"].values, data["v_x"].values, x_lim, "Velocity")

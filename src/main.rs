@@ -42,6 +42,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &config["engine"],
         &config["time_integration"],
         &config["snapshots"],
+        &config["solver"],
         &eos,
     )?;
     let ic = InitialConditions::new(&config["initial_conditions"], &eos)?;

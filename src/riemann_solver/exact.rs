@@ -1,29 +1,21 @@
-use glam::DVec3;
-
 use crate::{
     equation_of_state::EquationOfState,
-    physical_quantities::{Conserved, Primitives},
+    physical_quantities::{Primitives},
 };
 
-use super::{flux_from_half_state, RiemannSolver, VacuumRiemannSolver};
+use super::{RiemannStarSolver, RiemannStarValues};
 
 pub struct ExactRiemannSolver {
     // Adiabatic index gamma.
     gamma: f64,
-    // (gamma + 1) / (gamma)
-    gp1dg: f64,
     // (gamma - 1) / (2 gamma)
     gm1d2g: f64,
     // (gamma - 1) / (gamma + 1)
     gm1dgp1: f64,
-    // 1 / (gamma - 1)
-    odgm1: f64,
     // 2 / (gamma - 1)
     tdgm1: f64,
     // 2 / (gamma + 1)
     tdgp1: f64,
-
-    vacuum_solver: VacuumRiemannSolver,
 }
 
 impl ExactRiemannSolver {
@@ -32,11 +24,8 @@ impl ExactRiemannSolver {
             gamma,
             gm1dgp1: (gamma - 1.) / (gamma + 1.),
             gm1d2g: (gamma - 1.) / (2. * gamma),
-            odgm1: 1. / (gamma - 1.),
             tdgm1: 2. / (gamma - 1.),
             tdgp1: 2. / (gamma + 1.),
-            gp1dg: (gamma + 1.) / gamma,
-            vacuum_solver: VacuumRiemannSolver::new(gamma),
         }
     }
 
@@ -213,153 +202,51 @@ impl ExactRiemannSolver {
         b
     }
 
-    fn shock_speed(&self, v: f64, a: f64, pdps: f64) -> f64 {
-        v - a * (0.5 * self.gp1dg * pdps + self.gm1d2g).sqrt()
-    }
-
-    fn sample_shock_middle_state(
+    fn shock_middle_density(
         &self,
-        p: f64,
-        u: f64,
         pdps: f64,
         state: &Primitives,
-        v: f64,
-        n_unit: DVec3,
-    ) -> Primitives {
-        Primitives::new(
-            state.density() * (pdps + self.gm1dgp1) / (self.gm1dgp1 * pdps + 1.),
-            state.velocity() + (u - v) * n_unit,
-            p,
-        )
+        eos: &EquationOfState,
+    ) -> f64 {
+        state.density() * (pdps + eos.gm1dgp1()) / (eos.gm1dgp1() * pdps + 1.)
     }
 
-    fn sample_left_shock_wave(
+    fn rarefaction_middle_density(
         &self,
-        p: f64,
-        u: f64,
-        left: &Primitives,
-        v: f64,
-        a: f64,
-        n_unit: DVec3,
-    ) -> Primitives {
-        let pdps = p / left.pressure();
-        if self.shock_speed(v, a, pdps) < 0. {
-            self.sample_shock_middle_state(p, u, pdps, left, v, n_unit)
-        } else {
-            *left
-        }
-    }
-
-    fn sample_right_shock_wave(
-        &self,
-        p: f64,
-        u: f64,
-        right: &Primitives,
-        v: f64,
-        a: f64,
-        n_unit: DVec3,
-    ) -> Primitives {
-        let pdps = p / right.pressure();
-        if self.shock_speed(v, -a, pdps) > 0. {
-            self.sample_shock_middle_state(p, u, pdps, right, v, n_unit)
-        } else {
-            *right
-        }
-    }
-
-    fn rarefaction_head_speed(&self, v: f64, a: f64) -> f64 {
-        v - a
-    }
-
-    fn rarefaction_tail_speed(&self, u: f64, a: f64, pdps: f64) -> f64 {
-        u - a * pdps.powf(self.gm1d2g)
-    }
-
-    fn sample_rarefaction_fan(
-        &self,
+        pdps: f64,
         state: &Primitives,
-        a: f64,
-        v: f64,
-        n_unit: DVec3,
-    ) -> Primitives {
-        let v_half = self.tdgp1 * (a + 0.5 * (self.gamma - 1.) * v);
-        let base = self.tdgp1 + self.gm1dgp1 / a * v;
-        Primitives::new(
-            state.density() * base.powf(self.tdgm1),
-            state.velocity() + (v_half - v) * n_unit,
-            state.pressure() * base.powf(self.gamma * self.tdgm1),
-        )
+        eos: &EquationOfState,
+    ) -> f64 {
+        state.density() * (pdps).powf(1. / eos.gamma())
     }
 
-    fn sample_rarefaction_middle_state(
-        &self,
+    fn middle_density(
+        &self, 
         p: f64,
-        u: f64,
-        state: &Primitives,
-        v: f64,
-        n_unit: DVec3,
-    ) -> Primitives {
-        Primitives::new(
-            state.density() * (p / state.pressure()).powf(1. / self.gamma),
-            state.velocity() + (u - v) * n_unit,
-            p,
-        )
-    }
-
-    fn sample_left_rarefaction_wave(
-        &self,
-        p: f64,
-        u: f64,
-        left: &Primitives,
-        v: f64,
-        a: f64,
-        n_unit: DVec3,
-    ) -> Primitives {
-        if self.rarefaction_head_speed(v, a) < 0. {
-            if self.rarefaction_tail_speed(u, a, p / left.pressure()) > 0. {
-                self.sample_rarefaction_fan(left, a, v, n_unit)
-            } else {
-                self.sample_rarefaction_middle_state(p, u, left, v, n_unit)
-            }
+        state: &Primitives, 
+        eos: &EquationOfState,
+    ) -> f64 {
+        let pdps = p / state.pressure();
+        if pdps > 1. {
+            self.shock_middle_density(pdps, state, eos)
         } else {
-            *left
+            self.rarefaction_middle_density(pdps, state, eos)
         }
     }
+}
 
-    fn sample_right_rarefaction_wave(
-        &self,
-        p: f64,
-        u: f64,
-        right: &Primitives,
-        v: f64,
-        a: f64,
-        n_unit: DVec3,
-    ) -> Primitives {
-        if self.rarefaction_head_speed(v, -a) > 0. {
-            if self.rarefaction_tail_speed(u, -a, p / right.pressure()) < 0. {
-                self.sample_rarefaction_fan(right, -a, v, n_unit)
-            } else {
-                self.sample_rarefaction_middle_state(p, u, right, v, n_unit)
-            }
-        } else {
-            *right
-        }
-    }
-
-    /// Solve the Riemann problem between the given left and right state and
-    /// along the given interface normal for the half state.
-    ///
-    /// Based on chapter 4 in Toro
-    fn solve(
-        &self,
-        left: &Primitives,
-        right: &Primitives,
-        v_l: f64,
-        v_r: f64,
-        a_l: f64,
-        a_r: f64,
-        n_unit: DVec3,
-    ) -> Primitives {
+impl RiemannStarSolver for ExactRiemannSolver {
+    fn solve_for_star_state(
+            &self,
+            left: &Primitives,
+            right: &Primitives,
+            v_l: f64,
+            v_r: f64,
+            a_l: f64,
+            a_r: f64,
+            eos: &EquationOfState,
+        ) -> RiemannStarValues {
+       
         /* We normally use a Newton-Raphson iteration to find the zeropoint
         of riemann_f(p), but if pstar is close to 0, we risk negative p values.
         Since riemann_f(p) is undefined for negative pressures, we don't
@@ -400,69 +287,30 @@ impl ExactRiemannSolver {
         // calculate the velocity in the intermediate state
         let u = 0.5 * (v_l + v_r) + 0.5 * (self.fb(p, right, a_r) - self.fb(p, left, a_l));
 
-        // Sample the solution.
-        // This corresponds to the flow chart in Fig. 4.14 in Toro
-        if u < 0. {
-            if p > right.pressure() {
-                self.sample_right_shock_wave(p, u, right, v_r, a_r, n_unit)
-            } else {
-                self.sample_right_rarefaction_wave(p, u, right, v_r, a_r, n_unit)
-            }
-        } else {
-            if p > left.pressure() {
-                self.sample_left_shock_wave(p, u, left, v_l, a_l, n_unit)
-            } else {
-                self.sample_left_rarefaction_wave(p, u, left, v_l, a_l, n_unit)
-            }
-        }
-    }
-}
+        // calculate the left and right intermediate densities
+        let rho_l = self.middle_density(p, left, eos);
+        let rho_r = self.middle_density(p, right, eos);
 
-impl RiemannSolver for ExactRiemannSolver {
-    fn solve_for_flux(
-        &self,
-        left: &Primitives,
-        right: &Primitives,
-        interface_velocity: glam::DVec3,
-        n_unit: DVec3,
-        eos: &EquationOfState,
-    ) -> Conserved {
-        let v_l = left.velocity().dot(n_unit);
-        let v_r = right.velocity().dot(n_unit);
-        let a_l = eos.sound_speed(left.pressure(), 1. / left.density());
-        let a_r = eos.sound_speed(right.pressure(), 1. / right.density());
-
-        // velocity difference
-        let v_r_m_v_l = v_r - v_l;
-
-        // handle vacuum
-        if self
-            .vacuum_solver
-            .is_vacuum(left, right, a_l, a_r, v_r_m_v_l)
-        {
-            return self.vacuum_solver.solve_for_flux(
-                left,
-                right,
-                a_l,
-                a_r,
-                n_unit,
-                interface_velocity,
-            );
-        }
-
-        let half = self.solve(left, right, v_l, v_r, a_l, a_r, n_unit);
-        flux_from_half_state(&half, interface_velocity, self.odgm1, n_unit)
+        RiemannStarValues {rho_l, rho_r, u, p}
     }
 }
 
 #[cfg(test)]
 mod test {
+    use crate::riemann_solver::RiemannFluxSolver;
+
     use super::*;
 
     use float_cmp::assert_approx_eq;
+    use glam::DVec3;
+    use yaml_rust::YamlLoader;
 
     const GAMMA: f64 = 5. / 3.;
-    const EOS: EquationOfState = EquationOfState::Ideal { gamma: GAMMA };
+
+    fn get_eos(gamma: f64) -> EquationOfState {
+        EquationOfState::new(&YamlLoader::load_from_str(&format!("gamma: {:}", gamma)).unwrap()[0])
+            .unwrap()
+    }
 
     #[test]
     fn test_symmetry() {
@@ -472,20 +320,21 @@ mod test {
         let left_reversed = Primitives::new(1., DVec3::ZERO, 1.);
         let right = Primitives::new(1., -6e-1 * DVec3::X, 1.);
         let right_reversed = Primitives::new(1., 6e-1 * DVec3::X, 1.);
+        let eos = get_eos(GAMMA);
 
         let fluxes = solver.solve_for_flux(
             &left.boost(-interface_velocity),
             &right.boost(-interface_velocity),
             interface_velocity,
             DVec3::X,
-            &EOS,
+            &eos,
         );
         let fluxes_reversed = solver.solve_for_flux(
             &right_reversed.boost(interface_velocity),
             &left_reversed.boost(interface_velocity),
             -interface_velocity,
             DVec3::X,
-            &EOS,
+            &eos,
         );
 
         assert_approx_eq!(f64, fluxes.mass(), -fluxes_reversed.mass());
@@ -510,10 +359,12 @@ mod test {
         ) -> Primitives {
             let left = Primitives::new(rho_l, v_l * DVec3::X, p_l);
             let right = Primitives::new(rho_r, v_r * DVec3::X, p_r);
-            let a_l = EOS.sound_speed(left.pressure(), 1. / left.density());
-            let a_r = EOS.sound_speed(right.pressure(), 1. / right.density());
+            let eos = get_eos(GAMMA);
+            let a_l = eos.sound_speed(left.pressure(), 1. / left.density());
+            let a_r = eos.sound_speed(right.pressure(), 1. / right.density());
 
-            solver.solve(&left, &right, v_l, v_r, a_l, a_r, DVec3::X)
+            let star = solver.solve_for_star_state(&left, &right, v_l, v_r, a_l, a_r, &eos);
+            solver.sample(&star, &left, &right, v_l, v_r, a_l, a_r, DVec3::X, &eos)
         }
 
         // Left shock
