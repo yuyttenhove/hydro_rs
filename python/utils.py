@@ -6,7 +6,9 @@ import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
 import h5py
 
-from typing import Tuple
+from riemann_solver import RiemannSolver
+
+from typing import List, Tuple
 
 
 def get_start_count(fname, header, name):
@@ -70,6 +72,26 @@ def plot_faces(fname: str, lw=0.5, dpi=300, show_ax=True):
         ax.axis("off")
     fig.tight_layout()
     fig.savefig("voronoi.png", dpi=dpi)
+
+def plot_analytic_solution(axes: List[List[plt.Axes]], gas_gamma: float, rho_L: float, v_L: float, P_L: float,
+                           rho_R: float, v_R: float, P_R: float, time: float = 0.25,
+                           x_min: float = 0.5, x_max: float = 1.5, N: int = 1000):
+    solver = RiemannSolver(gas_gamma)
+
+    delta_x = (x_max - x_min) / N
+    x_s = np.arange(x_min, x_max, delta_x) - 1
+    rho_s, v_s, P_s, _ = solver.solve(rho_L, v_L, P_L, rho_R, v_R, P_R, x_s / time)
+    x_s += 1
+
+    # Additional arrays
+    u_s = P_s / (rho_s * (gas_gamma - 1.0))  # internal energy
+    s_s = P_s / rho_s ** gas_gamma  # entropic function
+
+    axes[0][0].plot(x_s, v_s, ls="--", c="black", lw=1, zorder=-1)
+    axes[0][1].plot(x_s, rho_s, ls="--", c="black", lw=1, zorder=-1)
+    axes[0][2].plot(x_s, P_s, ls="--", c="black", lw=1, zorder=-1)
+    axes[1][0].plot(x_s, u_s, ls="--", c="black", lw=1, zorder=-1)
+    axes[1][1].plot(x_s, s_s, ls="--", c="black", lw=1, zorder=-1)
 
 def plot_quantity(ax: plt.Axes, xdata: np.ndarray, ydata: np.ndarray, xlim: Tuple[float, float], title: str, logx=False, logy=False):
     windowsize = 9

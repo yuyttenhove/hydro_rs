@@ -7,11 +7,11 @@ time_integration:
 
 snapshots:
   t_between_snaps: 0.05
-  prefix: "noh_1D_"
+  prefix: "sodshock_1D_"
 
 engine:
   t_status: 0.01
-  solver: "Exact"
+  solver: "HLLC"
   particle_motion: "steer"
 #   runner: "DefaultHalfDrift"
   runner: "OptimalOrderHalfDrift"
@@ -23,7 +23,7 @@ space:
   boundary: "periodic"
 
 initial_conditions:
-  type: "noh"
+  type: "sodshock"
   box_size: [2., 1., 1.]
   num_part: 250
   filename: "ICs/sodshock_2D.hdf5"

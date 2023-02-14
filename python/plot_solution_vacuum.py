@@ -4,54 +4,9 @@ import pandas as pd
 import sys
 from pathlib import Path
 
-from typing import List
+from utils import plot_analytic_solution, plot_quantity, read_particle_data
 
-from riemann_solver import RiemannSolver
-
-
-def plot_analytic_solution(axes: List[List[plt.Axes]], gas_gamma: float, rho_L: float, v_L: float, P_L: float,
-                           rho_R: float, v_R: float, P_R: float, time: float = 0.05,
-                           x_min: float = 0.5, x_max: float = 1.5, N: int = 1000):
-    solver = RiemannSolver(gas_gamma)
-
-    delta_x = (x_max - x_min) / N
-    x_s = np.arange(x_min, x_max, delta_x) - 1
-    rho_s, v_s, P_s, _ = solver.solve(rho_L, v_L, P_L, rho_R, v_R, P_R, x_s / time)
-    x_s += 1
-
-    # Additional arrays
-    u_s = P_s / (rho_s * (gas_gamma - 1.0))  # internal energy
-    s_s = P_s / rho_s ** gas_gamma  # entropic function
-
-    axes[0][0].plot(x_s, v_s, ls="--", c="black", lw=1, zorder=-1)
-    axes[0][1].plot(x_s, rho_s, ls="--", c="black", lw=1, zorder=-1)
-    axes[0][2].plot(x_s, P_s, ls="--", c="black", lw=1, zorder=-1)
-    axes[1][0].plot(x_s, u_s, ls="--", c="black", lw=1, zorder=-1)
-    axes[1][1].plot(x_s, s_s, ls="--", c="black", lw=1, zorder=-1)
-
-
-def plot_quantity(ax: plt.Axes, xdata: np.ndarray, ydata: np.ndarray, title: str):
-    windowsize = 9
-    y_median = np.array([np.median(ydata[i: i + windowsize]) for i in range(len(ydata) - windowsize + 1)])
-    y_delta = ydata[windowsize // 2: -windowsize // 2 + 1] - y_median
-    y_delta = np.concatenate([[y_delta[0], y_delta[0]], y_delta, [y_delta[-1], y_delta[-1]]])
-    y_delta = 3 * np.array([np.sqrt(np.sum(y_delta[i: i + windowsize] ** 2) / (windowsize * (windowsize - 1))) for i in
-                            range(len(ydata) - windowsize + 1)])
-    y_min = y_median - y_delta
-    y_max = y_median + y_delta
-    x_median = xdata[windowsize // 2: -windowsize // 2 + 1]
-    ax.fill_between(x_median, y_min, y_max, alpha=0.25)
-    ax.plot(x_median, y_median)
-    ax.scatter(xdata, ydata, s=4, color="red", zorder=1000, alpha=0.33)
-    ax.set_title(title)
-    ax.set_xlim(0.0, 2)
-    mask = (xdata <= 1.5) & (xdata >= 0.5)
-    ylim = [ydata[mask].min(), ydata[mask].max()]
-    y_delta = ylim[1] - ylim[0]
-    ax.set_ylim(ylim[0] - 0.1 * y_delta, ylim[1] + 0.1 * y_delta)
-
-
-def main(fname: str, savename: str):
+def main(fname: str, savename: str, time=0.1):
     # Parameters
     gas_gamma = 5.0 / 3.0  # Polytropic index
     rho_L = 1.0  # Density left state
@@ -62,18 +17,17 @@ def main(fname: str, savename: str):
     P_R = 0.0  # Pressure right state
 
     # read data
-    data = pd.read_csv(fname, sep="\t")
-    data.columns = ["x", "rho", "v", "P", "a", "u", "S"]
+    data = read_particle_data(fname)
 
     # Plot
+    x_lim = [0.5, 1.5]
     fig, axes = plt.subplots(2, 3, figsize=(9, 6))
-    plot_analytic_solution(axes, gas_gamma, rho_L, v_L, P_L, rho_R, v_R, P_R)
-    plot_quantity(axes[0][0], data["x"].values, data["v"].values, "Velocity")
-    plot_quantity(axes[0][1], data["x"].values, data["rho"].values, "Density")
-    plot_quantity(axes[0][2], data["x"].values, data["P"].values, "Pressure")
-    plot_quantity(axes[1][0], data["x"].values, data["u"].values, "Internal energy")
-    plot_quantity(axes[1][1], data["x"].values, data["S"].values, "Entropy")
-    plot_quantity(axes[1][2], data["x"].values, data["a"].values, "Acceleration")
+    plot_analytic_solution(axes, gas_gamma, rho_L, v_L, P_L, rho_R, v_R, P_R, time=time, x_min=x_lim[0], x_max=x_lim[1])
+    plot_quantity(axes[0][0], data["x"].values, data["v_x"].values, x_lim, "Velocity")
+    plot_quantity(axes[0][1], data["x"].values, data["rho"].values, x_lim, "Density")
+    plot_quantity(axes[0][2], data["x"].values, data["P"].values, x_lim, "Pressure")
+    plot_quantity(axes[1][0], data["x"].values, data["u"].values, x_lim, "Internal energy")
+    plot_quantity(axes[1][1], data["x"].values, data["S"].values, x_lim, "Entropy")
 
     plt.tight_layout()
     plt.savefig(Path(fname).parent.parent / savename, dpi=600)
