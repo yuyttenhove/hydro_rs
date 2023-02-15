@@ -33,17 +33,7 @@ impl RiemannFluxSolver for HLLCRiemannSolver {
 
         // handle vacuum
         if VacuumRiemannSolver::is_vacuum(left, right, a_l, a_r, v_r_m_v_l, eos) {
-            let w_half = VacuumRiemannSolver::sample(
-                &RiemannStarValues::default(),
-                left,
-                right,
-                v_l,
-                v_r,
-                a_l,
-                a_r,
-                n_unit,
-                eos,
-            );
+            let w_half = VacuumRiemannSolver.sample(left, right, v_l, v_r, a_l, a_r, n_unit, eos);
             return flux_from_half_state(&w_half, interface_velocity, n_unit, eos);
         }
 

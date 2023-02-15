@@ -219,7 +219,7 @@ trait RiemannStarSolver: Sync {
 
     /// Sample the solution at x/t = 0
     fn sample(
-        star: &RiemannStarValues,
+        &self,
         left: &Primitives,
         right: &Primitives,
         v_l: f64,
@@ -229,6 +229,7 @@ trait RiemannStarSolver: Sync {
         n_unit: DVec3,
         eos: &EquationOfState,
     ) -> Primitives {
+        let star = self.solve_for_star_state(left, right, v_l, v_r, a_l, a_r, eos);
         if star.u < 0. {
             if star.p > right.pressure() {
                 Self::sample_right_shock_wave(
@@ -272,22 +273,11 @@ impl<T: RiemannStarSolver> RiemannFluxSolver for T {
 
         // handle vacuum
         let w_half = if VacuumRiemannSolver::is_vacuum(left, right, a_l, a_r, v_r_m_v_l, eos) {
-            VacuumRiemannSolver::sample(
-                &RiemannStarValues::default(),
-                left,
-                right,
-                v_l,
-                v_r,
-                a_l,
-                a_r,
-                n_unit,
-                eos,
-            )
+            VacuumRiemannSolver.sample(left, right, v_l, v_r, a_l, a_r, n_unit, eos)
         } else {
-            let star = self.solve_for_star_state(left, right, v_l, v_r, a_l, a_r, eos);
             // Sample the solution.
             // This corresponds to the flow chart in Fig. 4.14 in Toro
-            T::sample(&star, left, right, v_l, v_r, a_l, a_r, n_unit, eos)
+            self.sample(left, right, v_l, v_r, a_l, a_r, n_unit, eos)
         };
 
         flux_from_half_state(&w_half, interface_velocity, n_unit, eos)

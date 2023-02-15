@@ -131,7 +131,7 @@ impl RiemannStarSolver for VacuumRiemannSolver {
     }
 
     fn sample(
-        _star: &RiemannStarValues,
+        &self,
         left: &Primitives,
         right: &Primitives,
         v_l: f64,
@@ -157,8 +157,8 @@ impl RiemannStarSolver for VacuumRiemannSolver {
 mod tests {
     use crate::riemann_solver::flux_from_half_state;
 
-    use super::*;
     use super::super::RiemannFluxSolver;
+    use super::*;
     use float_cmp::assert_approx_eq;
     use yaml_rust::YamlLoader;
 

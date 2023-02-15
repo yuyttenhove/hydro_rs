@@ -323,9 +323,7 @@ mod test {
             let a_l = eos.sound_speed(left.pressure(), 1. / left.density());
             let a_r = eos.sound_speed(right.pressure(), 1. / right.density());
 
-            let star =
-                ExactRiemannSolver.solve_for_star_state(&left, &right, v_l, v_r, a_l, a_r, &eos);
-            ExactRiemannSolver::sample(&star, &left, &right, v_l, v_r, a_l, a_r, DVec3::X, &eos)
+            ExactRiemannSolver.sample(&left, &right, v_l, v_r, a_l, a_r, DVec3::X, &eos)
         }
 
         // Left shock
