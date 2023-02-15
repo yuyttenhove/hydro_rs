@@ -45,7 +45,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &config["snapshots"],
         &config["hydrodynamics"],
         &config["gravity"],
-        &eos,
     )?;
     let ic = InitialConditions::new(&config["initial_conditions"], &eos)?;
     let mut space = Space::from_ic(ic, &config["space"], eos)?;

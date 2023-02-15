@@ -2,9 +2,11 @@ from math import ceil
 from pathlib import Path
 import pandas as pd
 import numpy as np
+from scipy.interpolate import griddata
 import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
 import h5py
+import math
 
 from riemann_solver import RiemannSolver
 
@@ -37,7 +39,8 @@ def read_particle_data(fname: str) -> pd.DataFrame:
     start, count = get_start_count(fname, "## Particles:", "particle")
     data = pd.read_csv(fname, sep="\t", skiprows=start, nrows=count)
     data = data.iloc[:, 1:]
-    data.columns = ["x", "y", "z", "rho", "v_x", "v_y", "v_z", "P", "u", "S", "t"]
+    data.columns = ["x", "y", "z", "rho",
+                    "v_x", "v_y", "v_z", "P", "u", "S", "t"]
     return data
 
 
@@ -58,8 +61,10 @@ def plot_faces(fname: str, lw=0.5, dpi=300, show_ax=True):
     faces = read_face_data(fname)
     faces = [np.stack([row[:2], row[2:]]) for row in faces.values]
     lines = LineCollection(faces, color="r", lw=lw)
-    xlim = (min([f[:, 0].min() for f in faces]), max([f[:, 0].max() for f in faces]))
-    ylim = (min([f[:, 1].min() for f in faces]), max([f[:, 1].max() for f in faces]))
+    xlim = (min([f[:, 0].min() for f in faces]),
+            max([f[:, 0].max() for f in faces]))
+    ylim = (min([f[:, 1].min() for f in faces]),
+            max([f[:, 1].max() for f in faces]))
     x_diff = xlim[1] - xlim[0]
     y_diff = ylim[1] - ylim[0]
     width = 9
@@ -73,6 +78,7 @@ def plot_faces(fname: str, lw=0.5, dpi=300, show_ax=True):
     fig.tight_layout()
     fig.savefig("voronoi.png", dpi=dpi)
 
+
 def plot_analytic_solution(axes: List[List[plt.Axes]], gas_gamma: float, rho_L: float, v_L: float, P_L: float,
                            rho_R: float, v_R: float, P_R: float, time: float = 0.25,
                            x_min: float = 0.5, x_max: float = 1.5, N: int = 1000):
@@ -80,7 +86,8 @@ def plot_analytic_solution(axes: List[List[plt.Axes]], gas_gamma: float, rho_L: 
 
     delta_x = (x_max - x_min) / N
     x_s = np.arange(x_min, x_max, delta_x) - 1
-    rho_s, v_s, P_s, _ = solver.solve(rho_L, v_L, P_L, rho_R, v_R, P_R, x_s / time)
+    rho_s, v_s, P_s, _ = solver.solve(
+        rho_L, v_L, P_L, rho_R, v_R, P_R, x_s / time)
     x_s += 1
 
     # Additional arrays
@@ -93,11 +100,14 @@ def plot_analytic_solution(axes: List[List[plt.Axes]], gas_gamma: float, rho_L: 
     axes[1][0].plot(x_s, u_s, ls="--", c="black", lw=1, zorder=-1)
     axes[1][1].plot(x_s, s_s, ls="--", c="black", lw=1, zorder=-1)
 
+
 def plot_quantity(ax: plt.Axes, xdata: np.ndarray, ydata: np.ndarray, xlim: Tuple[float, float], title: str, logx=False, logy=False):
     windowsize = 9
-    y_median = np.array([np.median(ydata[i: i + windowsize]) for i in range(len(ydata) - windowsize + 1)])
+    y_median = np.array([np.median(ydata[i: i + windowsize])
+                        for i in range(len(ydata) - windowsize + 1)])
     y_delta = ydata[windowsize // 2: -windowsize // 2 + 1] - y_median
-    y_delta = np.concatenate([[y_delta[0], y_delta[0]], y_delta, [y_delta[-1], y_delta[-1]]])
+    y_delta = np.concatenate(
+        [[y_delta[0], y_delta[0]], y_delta, [y_delta[-1], y_delta[-1]]])
     y_delta = 3 * np.array([np.sqrt(np.sum(y_delta[i: i + windowsize] ** 2) / (windowsize * (windowsize - 1))) for i in
                             range(len(ydata) - windowsize + 1)])
     y_min = y_median - y_delta
@@ -121,6 +131,7 @@ def plot_quantity(ax: plt.Axes, xdata: np.ndarray, ydata: np.ndarray, xlim: Tupl
             ax.loglog()
         else:
             ax.semilogx()
+
 
 def write_file(fname, box_size, num_part, coords, m, v, u, dimension):
     with h5py.File(fname, 'w') as file:
@@ -155,14 +166,16 @@ def write_file(fname, box_size, num_part, coords, m, v, u, dimension):
         grp.create_dataset('ParticleIDs', data=ids, dtype='L')
 
 
-def get_plane(width, height, nx, ny, pert = 0):
+def get_plane(width, height, nx, ny, pert=0):
     coords = np.zeros((nx * ny, 2))
     for i in range(nx):
         for j in range(ny):
             coords[i * ny + j, 0] = (i + 0.5) / nx * width
             coords[i * ny + j, 1] = (j + 0.5) / ny * height
-    coords += pert * np.array([width / nx, height / ny]) * np.random.random((nx * ny, 2))
+    coords += pert * np.array([width / nx, height / ny]) * \
+        np.random.random((nx * ny, 2))
     return np.concatenate([coords, np.zeros((len(coords), 1))], axis=1)
+
 
 def internal_energy_ideal_gas(P, rho, gamma):
     return P / ((gamma - 1.) * rho)
@@ -172,5 +185,16 @@ def get_root():
     return Path(__file__).parent.parent
 
 
-if __name__ == "__main__":
-   plot_faces(Path(__file__).parent / "../run/output/sodshock_2D_0000.txt")
+def interpolate_nn(data, coordinates_from, coordinates_to):
+    return griddata(coordinates_from, data, coordinates_to, method="nearest")
+
+
+def get_slice(data, coordinates, x_lim, y_lim, res=1000, z=0):
+    x = np.linspace(x_lim[0], x_lim[1], res) + 0.5 * (x_lim[1] - x_lim[0]) / res
+    y_res = math.floor((y_lim[1] - y_lim[0]) / (x_lim[1] - x_lim[0]) * res)
+    y = np.linspace(y_lim[0], y_lim[1], y_res) + 0.5 * (y_lim[1] - y_lim[0]) / y_res
+    z = np.array([z])
+    x, y, z = np.meshgrid(x, y, z)
+    coords_to = np.column_stack([x.ravel(), y.ravel(), z.ravel()])
+    return interpolate_nn(data, coordinates, coords_to).reshape((y_res, res))[::-1, :]
+

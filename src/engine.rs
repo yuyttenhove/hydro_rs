@@ -6,7 +6,6 @@ use std::{
 use yaml_rust::Yaml;
 
 use crate::{
-    equation_of_state::EquationOfState,
     errors::ConfigError,
     gravity::GravitySolver,
     riemann_solver::{get_solver, RiemannFluxSolver},
@@ -63,7 +62,6 @@ impl Engine {
         snapshots_cfg: &Yaml,
         hydro_solver_cfg: &Yaml,
         gravity_solver_cfg: &Yaml,
-        eos: &EquationOfState,
     ) -> Result<Self, ConfigError> {
         // Read config
         let t_status = engine_cfg["t_status"]
@@ -112,7 +110,7 @@ impl Engine {
 
         // Setup members
         let runner = Runner::new(runner_kind)?;
-        let hydro_solver = get_solver(hydro_solver_cfg, eos)?;
+        let hydro_solver = get_solver(hydro_solver_cfg)?;
         let gravity_solver = GravitySolver::init(gravity_solver_cfg)?;
         let particle_motion = ParticleMotion::new(particle_motion)?;
         let time_base = t_end / MAX_NR_TIMESTEPS as f64;
