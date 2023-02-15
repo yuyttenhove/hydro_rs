@@ -1,7 +1,4 @@
-use crate::{
-    equation_of_state::EquationOfState,
-    physical_quantities::{Primitives},
-};
+use crate::{equation_of_state::EquationOfState, physical_quantities::Primitives};
 
 use super::{RiemannStarSolver, RiemannStarValues};
 
@@ -202,12 +199,7 @@ impl ExactRiemannSolver {
         b
     }
 
-    fn shock_middle_density(
-        &self,
-        pdps: f64,
-        state: &Primitives,
-        eos: &EquationOfState,
-    ) -> f64 {
+    fn shock_middle_density(&self, pdps: f64, state: &Primitives, eos: &EquationOfState) -> f64 {
         state.density() * (pdps + eos.gm1dgp1()) / (eos.gm1dgp1() * pdps + 1.)
     }
 
@@ -220,12 +212,7 @@ impl ExactRiemannSolver {
         state.density() * (pdps).powf(1. / eos.gamma())
     }
 
-    fn middle_density(
-        &self, 
-        p: f64,
-        state: &Primitives, 
-        eos: &EquationOfState,
-    ) -> f64 {
+    fn middle_density(&self, p: f64, state: &Primitives, eos: &EquationOfState) -> f64 {
         let pdps = p / state.pressure();
         if pdps > 1. {
             self.shock_middle_density(pdps, state, eos)
@@ -237,16 +224,15 @@ impl ExactRiemannSolver {
 
 impl RiemannStarSolver for ExactRiemannSolver {
     fn solve_for_star_state(
-            &self,
-            left: &Primitives,
-            right: &Primitives,
-            v_l: f64,
-            v_r: f64,
-            a_l: f64,
-            a_r: f64,
-            eos: &EquationOfState,
-        ) -> RiemannStarValues {
-       
+        &self,
+        left: &Primitives,
+        right: &Primitives,
+        v_l: f64,
+        v_r: f64,
+        a_l: f64,
+        a_r: f64,
+        eos: &EquationOfState,
+    ) -> RiemannStarValues {
         /* We normally use a Newton-Raphson iteration to find the zeropoint
         of riemann_f(p), but if pstar is close to 0, we risk negative p values.
         Since riemann_f(p) is undefined for negative pressures, we don't
@@ -291,7 +277,7 @@ impl RiemannStarSolver for ExactRiemannSolver {
         let rho_l = self.middle_density(p, left, eos);
         let rho_r = self.middle_density(p, right, eos);
 
-        RiemannStarValues {rho_l, rho_r, u, p}
+        RiemannStarValues { rho_l, rho_r, u, p }
     }
 }
 

@@ -17,12 +17,13 @@ mod engine;
 mod equation_of_state;
 mod errors;
 mod flux;
+mod gradients;
+mod gravity;
 mod initial_conditions;
 mod part;
 mod physical_constants;
 mod physical_quantities;
 mod riemann_solver;
-mod gradients;
 mod space;
 mod time_integration;
 mod timeline;
@@ -43,6 +44,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &config["time_integration"],
         &config["snapshots"],
         &config["solver"],
+        &config["gravity"],
         &eos,
     )?;
     let ic = InitialConditions::new(&config["initial_conditions"], &eos)?;

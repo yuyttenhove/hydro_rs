@@ -438,37 +438,41 @@ impl Space {
     }
 
     /// Collect the gravitational accellerations in the particles
-    pub fn self_gravity(&mut self, engine: &Engine) {
-        if !engine.with_gravity {
-            return;
-        }
+    pub fn gravity(&mut self, engine: &Engine) {
+        let Some(solver) = &engine.gravity_solver else { return; };
 
-        unimplemented!()
+        let accelerations = solver.accelerations(&self.parts);
+        self.parts
+            .par_iter_mut()
+            .zip(accelerations.par_iter())
+            .for_each(|(p, a)| {
+                p.a_grav = *a;
+            });
     }
 
     /// Apply the first half kick (gravity) to the particles
     pub fn kick1(&mut self, engine: &Engine) {
-        if !engine.with_gravity {
+        if !engine.with_gravity() {
             return;
         }
-        for part in self.parts.iter_mut() {
+        self.parts.par_iter_mut().for_each(|part| {
             if part.is_active(engine) {
                 part.grav_kick();
             }
-        }
+        })
     }
 
     /// Apply the second half kick (gravity) to the particles
     pub fn kick2(&mut self, engine: &Engine) {
-        if !engine.with_gravity {
+        if !engine.with_gravity() {
             return;
         }
-        for part in self.parts.iter_mut() {
+        self.parts.par_iter_mut().for_each(|part| {
             if part.is_active(engine) {
                 part.grav_kick();
                 part.reset_fluxes();
             }
-        }
+        })
     }
 
     /// Prepare the particles for the next timestep
@@ -573,8 +577,10 @@ particles:
     fn test_init_1d() {
         use crate::initial_conditions::InitialConditions;
 
-        let eos = EquationOfState::new(&YamlLoader::load_from_str("gamma: 1.666667").unwrap()[0])
-            .unwrap();
+        let eos = EquationOfState::new(
+            &YamlLoader::load_from_str(&format!("gamma: {:}", GAMMA)).unwrap()[0],
+        )
+        .unwrap();
         let space_config = &YamlLoader::load_from_str(CFG_STR).unwrap()[0];
         let ic_config = &YamlLoader::load_from_str(IC_CFG).unwrap()[0];
         let ics = InitialConditions::new(ic_config, &eos).unwrap();

@@ -1,8 +1,8 @@
 use crate::engine::Engine;
 use crate::equation_of_state::EquationOfState;
+use crate::gradients::pairwise_limiter;
 use crate::part::Part;
 use crate::physical_quantities::{Conserved, Primitives};
-use crate::gradients::pairwise_limiter;
 use crate::space::Boundary;
 use glam::DVec3;
 use meshless_voronoi::VoronoiFace;
@@ -61,7 +61,7 @@ pub fn flux_exchange(
 
     // Calculate fluxes
     let fluxes = face.area()
-        * engine.solver.solve_for_flux(
+        * engine.hydro_solver.solve_for_flux(
             &primitives_left.boost(-v_face),
             &primitives_right.boost(-v_face),
             v_face,
@@ -146,7 +146,7 @@ pub fn flux_exchange_boundary(
 
     // Solve for flux
     let fluxes = face.area()
-        * engine.solver.solve_for_flux(
+        * engine.hydro_solver.solve_for_flux(
             &primitives_dash,
             &primitives_boundary,
             DVec3::ZERO,

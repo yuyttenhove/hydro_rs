@@ -8,6 +8,7 @@ use yaml_rust::Yaml;
 use crate::{
     equation_of_state::EquationOfState,
     errors::ConfigError,
+    gravity::GravitySolver,
     riemann_solver::{get_solver, RiemannFluxSolver},
     space::Space,
     time_integration::Runner,
@@ -33,7 +34,8 @@ impl ParticleMotion {
 
 pub struct Engine {
     runner: Runner,
-    pub solver: Box<dyn RiemannFluxSolver>,
+    pub hydro_solver: Box<dyn RiemannFluxSolver>,
+    pub gravity_solver: Option<GravitySolver>,
     t_end: f64,
     t_current: f64,
     ti_old: IntegerTime,
@@ -51,7 +53,6 @@ pub struct Engine {
     snap: u16,
     snapshot_prefix: String,
     pub particle_motion: ParticleMotion,
-    pub with_gravity: bool,
 }
 
 impl Engine {
@@ -60,7 +61,8 @@ impl Engine {
         engine_cfg: &Yaml,
         time_integration_cfg: &Yaml,
         snapshots_cfg: &Yaml,
-        solver_cfg: &Yaml,
+        hydro_solver_cfg: &Yaml,
+        gravity_solver_cfg: &Yaml,
         eos: &EquationOfState,
     ) -> Result<Self, ConfigError> {
         // Read config
@@ -73,7 +75,7 @@ impl Engine {
                 "time_integration: runner".to_string(),
             ))?;
         let particle_motion = engine_cfg["particle_motion"].as_str().unwrap_or("fluid");
-        let with_gravity = engine_cfg["with_gravity"].as_bool().unwrap_or(false);
+        let gravity_solver = GravitySolver::init(gravity_solver_cfg)?;
         let dt_min =
             time_integration_cfg["dt_min"]
                 .as_f64()
@@ -111,13 +113,14 @@ impl Engine {
 
         // Setup members
         let runner = Runner::new(runner_kind)?;
-        let solver = get_solver(solver_cfg, eos)?;
+        let hydro_solver = get_solver(hydro_solver_cfg, eos)?;
         let particle_motion = ParticleMotion::new(particle_motion)?;
         let time_base = t_end / MAX_NR_TIMESTEPS as f64;
         let time_base_inv = 1. / time_base;
         Ok(Self {
             runner,
-            solver,
+            hydro_solver,
+            gravity_solver,
             t_end,
             t_current: 0.0,
             ti_old: 0,
@@ -135,7 +138,6 @@ impl Engine {
             snap: 0,
             snapshot_prefix: prefix.to_string(),
             particle_motion,
-            with_gravity,
         })
     }
 
@@ -245,5 +247,9 @@ impl Engine {
 
     pub fn dt_max(&self) -> f64 {
         self.dt_max
+    }
+
+    pub fn with_gravity(&self) -> bool {
+        self.gravity_solver.is_some()
     }
 }

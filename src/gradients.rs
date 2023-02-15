@@ -1,6 +1,9 @@
-use glam::{DVec3, DMat3};
+use glam::{DMat3, DVec3};
 
-use crate::{physical_quantities::{Primitives, StateGradients, StateVector}, utils::HydroDimension};
+use crate::{
+    physical_quantities::{Primitives, StateGradients, StateVector},
+    utils::HydroDimension,
+};
 
 pub struct GradientData {
     gradients: StateGradients,
@@ -23,10 +26,19 @@ impl GradientData {
             HydroDimension::HydroDimension3D => DMat3::ZERO,
         };
 
-        Self { gradients: StateGradients::zeros(), matrix_wls }
+        Self {
+            gradients: StateGradients::zeros(),
+            matrix_wls,
+        }
     }
 
-    pub fn collect(&mut self, primitives_left: &Primitives, primitives_right: &Primitives, w: f64, ds: DVec3) {
+    pub fn collect(
+        &mut self,
+        primitives_left: &Primitives,
+        primitives_right: &Primitives,
+        w: f64,
+        ds: DVec3,
+    ) {
         fn gradient_est_single_quantity(q_l: f64, q_r: f64, w: f64, ds: DVec3, grad: &mut DVec3) {
             *grad += w * (q_r - q_l) * ds;
         }

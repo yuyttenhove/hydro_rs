@@ -54,8 +54,7 @@ impl RiemannFluxSolver for HLLCRiemannSolver {
         let v_r_m_v_l = v_r - v_l;
 
         // handle vacuum
-        if VacuumRiemannSolver::is_vacuum(left, right, a_l, a_r, v_r_m_v_l, eos)
-        {
+        if VacuumRiemannSolver::is_vacuum(left, right, a_l, a_r, v_r_m_v_l, eos) {
             return VacuumRiemannSolver::solve_for_flux(
                 left,
                 right,

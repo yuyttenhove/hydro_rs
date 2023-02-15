@@ -43,7 +43,7 @@ impl Runner {
                 space.apply_flux(engine);
                 space.convert_conserved_to_primitive(engine);
                 space.gradient_estimate(engine);
-                space.self_gravity(engine);
+                space.gravity(engine);
                 space.kick2(engine);
                 ti_next = space.timestep(engine);
                 space.timestep_limiter(engine); // Note: this can never decrease ti_next

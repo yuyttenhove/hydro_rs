@@ -11,11 +11,12 @@ pub enum ConfigError {
     UnknownRunner(String),
     UnknownICs(String),
     UnknownRiemannSolver(String),
+    UnknownGravity(String),
     UnknownParticleMotion(String),
     UnknownBoundaryConditions(String),
     IllegalBoxSize(String),
     InvalidArrayFormat(Yaml),
-    InvalidArrayLenght(usize, usize),
+    InvalidArrayLength(usize, usize),
 }
 
 impl Display for ConfigError {
@@ -29,6 +30,9 @@ impl Display for ConfigError {
             }
             ConfigError::UnknownRiemannSolver(name) => {
                 write!(f, "Unknown type of runner configured: {name}")
+            }
+            ConfigError::UnknownGravity(name) => {
+                write!(f, "Unknown type of gravity configured: {name}")
             }
             ConfigError::UnknownICs(name) => {
                 write!(f, "Unknown type of initial conditions configured: {}", name)
@@ -45,7 +49,7 @@ impl Display for ConfigError {
             ConfigError::InvalidArrayFormat(value) => {
                 write!(f, "Expected array but found: {:?}", value)
             }
-            ConfigError::InvalidArrayLenght(a, b) => {
+            ConfigError::InvalidArrayLength(a, b) => {
                 write!(f, "Expected array of lenght {}, but found {}", a, b)
             }
         }

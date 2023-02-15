@@ -261,7 +261,7 @@ impl Part {
             // TODO this might still not be correct for particles that have a longer timestep then this particles new timestep, but shorter than this particles old timestep
         }
 
-        if engine.with_gravity {
+        if engine.with_gravity() {
             todo!()
             // TODO: Rewind kick1 if necessary
             // TODO: Reapply kick1 if necessary

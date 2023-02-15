@@ -41,7 +41,7 @@ macro_rules! cfg_ics2vec {
                     _ => Err(ConfigError::InvalidArrayFormat($yaml[$prop].clone())),
                 })
                 .collect::<Result<Vec<_>, _>>(),
-            Some(arr) => Err(ConfigError::InvalidArrayLenght($count, arr.len())),
+            Some(arr) => Err(ConfigError::InvalidArrayLength($count, arr.len())),
             None => Err(ConfigError::MissingParameter(format!(
                 "initial_conditions:particles:{}",
                 $prop
