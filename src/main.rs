@@ -43,7 +43,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &config["engine"],
         &config["time_integration"],
         &config["snapshots"],
-        &config["solver"],
+        &config["hydrodynamics"],
         &config["gravity"],
         &eos,
     )?;

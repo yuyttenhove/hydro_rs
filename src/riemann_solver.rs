@@ -24,7 +24,7 @@ pub fn get_solver(
     let &EquationOfState::Ideal { gamma, .. } = eos else {
         panic!("Only Ideal gasses are supported right now!");
     };
-    let kind = cfg["kind"]
+    let kind = cfg["solver"]
         .as_str()
         .ok_or(ConfigError::MissingParameter("solver:kind".to_string()))?;
     match kind {

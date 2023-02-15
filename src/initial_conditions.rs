@@ -362,7 +362,11 @@ impl InitialConditions {
         let dimension = header.attr("Dimension")?.read_raw::<usize>()?[0];
         let mut box_size = header.attr("BoxSize")?.read_raw::<f64>()?;
         for i in dimension..3 {
-            box_size[i] = 1.;
+            if box_size.len() < i + 1 {
+                box_size.push(1.)
+            } else {
+                box_size[i] = 1.;
+            }
         }
         let box_size = DVec3::from_slice(&box_size);
 

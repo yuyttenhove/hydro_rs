@@ -75,7 +75,6 @@ impl Engine {
                 "time_integration: runner".to_string(),
             ))?;
         let particle_motion = engine_cfg["particle_motion"].as_str().unwrap_or("fluid");
-        let gravity_solver = GravitySolver::init(gravity_solver_cfg)?;
         let dt_min =
             time_integration_cfg["dt_min"]
                 .as_f64()
@@ -114,6 +113,7 @@ impl Engine {
         // Setup members
         let runner = Runner::new(runner_kind)?;
         let hydro_solver = get_solver(hydro_solver_cfg, eos)?;
+        let gravity_solver = GravitySolver::init(gravity_solver_cfg)?;
         let particle_motion = ParticleMotion::new(particle_motion)?;
         let time_base = t_end / MAX_NR_TIMESTEPS as f64;
         let time_base_inv = 1. / time_base;
