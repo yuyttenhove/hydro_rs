@@ -91,12 +91,10 @@ impl Potential {
             "constant" => Ok(Self::Constant {
                 acceleration: parse_dvec3!(&cfg["acceleration"], "gravity:potential:acceleration")?,
             }),
-            "keplerian" => Ok(
-                Self::Keplerian(KeplerianPotential::new(
-                    parse_dvec3!(&cfg["position"], "gravity:potential:position")?,
-                    cfg["softening-length"].as_f64().unwrap_or(0.)
-                ))
-            ),
+            "keplerian" => Ok(Self::Keplerian(KeplerianPotential::new(
+                parse_dvec3!(&cfg["position"], "gravity:potential:position")?,
+                cfg["softening-length"].as_f64().unwrap_or(0.),
+            ))),
             _ => Err(ConfigError::UnknownGravity(format!(
                 "gravity:external:kind:{:}",
                 kind
@@ -112,13 +110,19 @@ pub struct KeplerianPotential {
 
 impl KeplerianPotential {
     fn new(position: DVec3, softening_length: f64) -> Self {
-        Self { position, softening_length }
+        Self {
+            position,
+            softening_length,
+        }
     }
 
     fn accelerations(&self, particles: &[Particle]) -> Vec<DVec3> {
-        particles.iter().map(|part| {
-            let r = part.x - self.position;
-            -r * (r.length_squared() + self.softening_length * self.softening_length).powf(-1.5)
-        }).collect()
+        particles
+            .iter()
+            .map(|part| {
+                let r = part.x - self.position;
+                -r * (r.length_squared() + self.softening_length * self.softening_length).powf(-1.5)
+            })
+            .collect()
     }
 }
