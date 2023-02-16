@@ -18,7 +18,11 @@ engine:
   # runner: "Default"
 
 gravity:
-  kind: "none"
+  kind: "external"
+  potential:
+    kind: "keplerian"
+    position: [0., 0., 0.]
+    softening-length: 1e-6
   acceleration: [0., -1., 0.]
 
 hydrodynamics:

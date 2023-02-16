@@ -2,9 +2,9 @@ use glam::DVec3;
 use rayon::prelude::*;
 use yaml_rust::Yaml;
 
-use crate::{errors::ConfigError, part::Part};
+use crate::{errors::ConfigError, part::Particle};
 
-fn compute_self_gravity(particles: &[Part], softening_length: f64) -> Vec<DVec3> {
+fn compute_self_gravity(particles: &[Particle], softening_length: f64) -> Vec<DVec3> {
     let num_particles = particles.len();
 
     (0..num_particles)
@@ -25,7 +25,7 @@ fn compute_self_gravity(particles: &[Part], softening_length: f64) -> Vec<DVec3>
 }
 
 pub enum GravitySolver {
-    ConstantAcceleration(DVec3),
+    External(Potential),
     SelfGravity { softening_length: f64 },
 }
 
@@ -34,21 +34,9 @@ impl GravitySolver {
         let kind = cfg["kind"].as_str().unwrap_or("none");
         match kind {
             "none" => Ok(None),
-            "constant" => {
-                let acceleration = &cfg["acceleration"];
-                let acceleration = match acceleration {
-                    Yaml::Array(v) => Ok(DVec3 {
-                        x: v[0].as_f64().unwrap(),
-                        y: v[1].as_f64().unwrap(),
-                        z: v[2].as_f64().unwrap(),
-                    }),
-                    Yaml::BadValue => Err(ConfigError::MissingParameter(format!(
-                        "gravity: acceleration"
-                    ))),
-                    _ => Err(ConfigError::InvalidArrayFormat(acceleration.clone())),
-                }?;
-                Ok(Some(GravitySolver::ConstantAcceleration(acceleration)))
-            }
+            "external" => Ok(Some(GravitySolver::External(Potential::init(
+                &cfg["potential"],
+            )?))),
             "self-gravity" => {
                 let softening_length = cfg["softening-length"].as_f64().unwrap_or(0.);
                 Ok(Some(GravitySolver::SelfGravity { softening_length }))
@@ -57,12 +45,80 @@ impl GravitySolver {
         }
     }
 
-    pub fn accelerations(&self, particles: &[Part]) -> Vec<DVec3> {
+    pub fn accelerations(&self, particles: &[Particle]) -> Vec<DVec3> {
         match self {
-            GravitySolver::ConstantAcceleration(a) => vec![*a; particles.len()],
+            Self::External(potential) => potential.accelerations(particles),
             Self::SelfGravity { softening_length } => {
                 compute_self_gravity(particles, *softening_length)
             }
         }
+    }
+}
+
+pub enum Potential {
+    Constant { acceleration: DVec3 },
+    Keplerian(KeplerianPotential),
+}
+
+macro_rules! parse_dvec3 {
+    ($acceleration:expr, $key:expr) => {
+        match $acceleration {
+            Yaml::Array(v) => Ok(DVec3 {
+                x: v[0].as_f64().unwrap(),
+                y: v[1].as_f64().unwrap(),
+                z: v[2].as_f64().unwrap(),
+            }),
+            Yaml::BadValue => Err(ConfigError::MissingParameter(format!($key))),
+            _ => Err(ConfigError::InvalidArrayFormat($acceleration.clone())),
+        }
+    };
+}
+
+impl Potential {
+    fn accelerations(&self, particles: &[Particle]) -> Vec<DVec3> {
+        match self {
+            Self::Constant { acceleration } => vec![*acceleration; particles.len()],
+            Self::Keplerian(potential) => potential.accelerations(particles),
+        }
+    }
+
+    fn init(cfg: &Yaml) -> Result<Self, ConfigError> {
+        let kind = cfg["kind"].as_str().ok_or(ConfigError::MissingParameter(
+            "gravity:potential:kind".to_string(),
+        ))?;
+
+        match kind {
+            "constant" => Ok(Self::Constant {
+                acceleration: parse_dvec3!(&cfg["acceleration"], "gravity:potential:acceleration")?,
+            }),
+            "keplerian" => Ok(
+                Self::Keplerian(KeplerianPotential::new(
+                    parse_dvec3!(&cfg["position"], "gravity:potential:position")?,
+                    cfg["softening-length"].as_f64().unwrap_or(0.)
+                ))
+            ),
+            _ => Err(ConfigError::UnknownGravity(format!(
+                "gravity:external:kind:{:}",
+                kind
+            ))),
+        }
+    }
+}
+
+pub struct KeplerianPotential {
+    position: DVec3,
+    softening_length: f64,
+}
+
+impl KeplerianPotential {
+    fn new(position: DVec3, softening_length: f64) -> Self {
+        Self { position, softening_length }
+    }
+
+    fn accelerations(&self, particles: &[Particle]) -> Vec<DVec3> {
+        particles.iter().map(|part| {
+            let r = part.x - self.position;
+            -r * (r.length_squared() + self.softening_length * self.softening_length).powf(-1.5)
+        }).collect()
     }
 }

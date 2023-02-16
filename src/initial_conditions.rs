@@ -6,14 +6,14 @@ use yaml_rust::Yaml;
 use crate::{
     equation_of_state::EquationOfState,
     errors::ConfigError,
-    part::Part,
+    part::Particle,
     physical_quantities::Conserved,
     utils::{HydroDimension, HydroDimension::*},
 };
 
 macro_rules! conv1d {
     ($x:expr, $density:expr, $velocity:expr, $pressure:expr, $box_size:expr, $num_part_inv: expr, $eos:expr) => {
-        Part::from_ic(
+        Particle::from_ic(
             DVec3 {
                 x: $x,
                 y: 0.,
@@ -50,8 +50,8 @@ macro_rules! cfg_ics2vec {
     };
 }
 
-fn sod_shock(num_part: usize, box_size: DVec3, eos: &EquationOfState) -> Vec<Part> {
-    let mut ic = Vec::<Part>::with_capacity(num_part);
+fn sod_shock(num_part: usize, box_size: DVec3, eos: &EquationOfState) -> Vec<Particle> {
+    let mut ic = Vec::<Particle>::with_capacity(num_part);
     let num_part_inv = 1. / (num_part as f64);
 
     for idx in 0..num_part {
@@ -74,8 +74,8 @@ fn sod_shock(num_part: usize, box_size: DVec3, eos: &EquationOfState) -> Vec<Par
     ic
 }
 
-fn noh(num_part: usize, box_size: DVec3, eos: &EquationOfState) -> Vec<Part> {
-    let mut ic = Vec::<Part>::with_capacity(num_part);
+fn noh(num_part: usize, box_size: DVec3, eos: &EquationOfState) -> Vec<Particle> {
+    let mut ic = Vec::<Particle>::with_capacity(num_part);
     let num_part_inv = 1. / (num_part as f64);
 
     for idx in 0..num_part {
@@ -97,8 +97,8 @@ fn noh(num_part: usize, box_size: DVec3, eos: &EquationOfState) -> Vec<Part> {
     ic
 }
 
-fn toro(num_part: usize, box_size: DVec3, eos: &EquationOfState) -> Vec<Part> {
-    let mut ic = Vec::<Part>::with_capacity(num_part);
+fn toro(num_part: usize, box_size: DVec3, eos: &EquationOfState) -> Vec<Particle> {
+    let mut ic = Vec::<Particle>::with_capacity(num_part);
     let num_part_inv = 1. / (num_part as f64);
 
     for idx in 0..num_part {
@@ -120,8 +120,8 @@ fn toro(num_part: usize, box_size: DVec3, eos: &EquationOfState) -> Vec<Part> {
     ic
 }
 
-fn vacuum(num_part: usize, box_size: DVec3, eos: &EquationOfState) -> Vec<Part> {
-    let mut ic = Vec::<Part>::with_capacity(num_part);
+fn vacuum(num_part: usize, box_size: DVec3, eos: &EquationOfState) -> Vec<Particle> {
+    let mut ic = Vec::<Particle>::with_capacity(num_part);
     let num_part_inv = 1. / (num_part as f64);
 
     for idx in 0..num_part {
@@ -144,8 +144,8 @@ fn vacuum(num_part: usize, box_size: DVec3, eos: &EquationOfState) -> Vec<Part> 
 }
 
 /// Generates a spherically symmetric 1/r density profile
-fn evrard(num_part: usize, box_size: DVec3, eos: &EquationOfState) -> Vec<Part> {
-    let mut ic = Vec::<Part>::with_capacity(num_part);
+fn evrard(num_part: usize, box_size: DVec3, eos: &EquationOfState) -> Vec<Particle> {
+    let mut ic = Vec::<Particle>::with_capacity(num_part);
     let num_part_inv = 1. / (num_part as f64);
 
     let u0 = 0.05;
@@ -181,8 +181,8 @@ fn evrard(num_part: usize, box_size: DVec3, eos: &EquationOfState) -> Vec<Part> 
     ic
 }
 
-fn constant(num_part: usize, box_size: DVec3, eos: &EquationOfState) -> Vec<Part> {
-    let mut ic = Vec::<Part>::with_capacity(num_part);
+fn constant(num_part: usize, box_size: DVec3, eos: &EquationOfState) -> Vec<Particle> {
+    let mut ic = Vec::<Particle>::with_capacity(num_part);
     let num_part_inv = 1. / (num_part as f64);
 
     for idx in 0..num_part {
@@ -204,8 +204,8 @@ fn constant(num_part: usize, box_size: DVec3, eos: &EquationOfState) -> Vec<Part
     ic
 }
 
-fn square(num_part: usize, box_size: DVec3, eos: &EquationOfState) -> Vec<Part> {
-    let mut ic = Vec::<Part>::with_capacity(num_part);
+fn square(num_part: usize, box_size: DVec3, eos: &EquationOfState) -> Vec<Particle> {
+    let mut ic = Vec::<Particle>::with_capacity(num_part);
     let num_part_left = (0.8 * num_part as f64) as usize;
     let num_part_right = num_part - num_part_left;
 
@@ -268,7 +268,7 @@ fn square(num_part: usize, box_size: DVec3, eos: &EquationOfState) -> Vec<Part> 
     ic
 }
 
-fn read_parts_from_cfg(ic_cfg: &Yaml, num_part: usize) -> Result<Vec<Part>, ConfigError> {
+fn read_parts_from_cfg(ic_cfg: &Yaml, num_part: usize) -> Result<Vec<Particle>, ConfigError> {
     let positions = cfg_ics2vec!(ic_cfg, "x", num_part)?;
     let masses = cfg_ics2vec!(ic_cfg, "mass", num_part)?;
     let velocities = cfg_ics2vec!(ic_cfg, "velocity", num_part)?;
@@ -276,7 +276,7 @@ fn read_parts_from_cfg(ic_cfg: &Yaml, num_part: usize) -> Result<Vec<Part>, Conf
 
     let mut ic = Vec::with_capacity(num_part);
     for i in 0..num_part {
-        ic.push(Part::from_ic(
+        ic.push(Particle::from_ic(
             DVec3 {
                 x: positions[i],
                 y: 0.,
@@ -291,7 +291,7 @@ fn read_parts_from_cfg(ic_cfg: &Yaml, num_part: usize) -> Result<Vec<Part>, Conf
 }
 
 pub struct InitialConditions {
-    parts: Vec<Part>,
+    parts: Vec<Particle>,
     box_size: DVec3,
     dimensionality: HydroDimension,
 }
@@ -404,7 +404,7 @@ impl InitialConditions {
         for i in 0..num_parts {
             let x = DVec3::from_slice(&coordinates[3 * i..3 * i + 3]);
             let velocity = DVec3::from_slice(&velocities[3 * i..3 * i + 3]);
-            parts.push(Part::from_ic(x, masses[i], velocity, internal_energy[i]));
+            parts.push(Particle::from_ic(x, masses[i], velocity, internal_energy[i]));
         }
 
         Ok(Self {
@@ -418,7 +418,7 @@ impl InitialConditions {
         self.box_size
     }
 
-    pub fn into_parts(self) -> Vec<Part> {
+    pub fn into_parts(self) -> Vec<Particle> {
         self.parts
     }
 

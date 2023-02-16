@@ -1,6 +1,6 @@
 use glam::DVec3;
 
-use crate::part::Part;
+use crate::part::Particle;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum HydroDimension {
@@ -61,7 +61,7 @@ pub fn box_wrap(box_size: DVec3, pos: &mut DVec3) {
     }
 }
 
-pub fn box_reflect(box_size: DVec3, part: &mut Part) {
+pub fn box_reflect(box_size: DVec3, part: &mut Particle) {
     let x_old = part.x;
     for i in 0..3 {
         if part.x[i] < 0. {

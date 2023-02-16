@@ -12,7 +12,7 @@ use crate::{
 };
 
 #[derive(Default, Debug, Clone)]
-pub struct Part {
+pub struct Particle {
     pub primitives: Primitives,
     pub gradients: StateGradients,
     pub extrapolations: Primitives,
@@ -33,7 +33,7 @@ pub struct Part {
     pub a_grav: DVec3,
 }
 
-impl Part {
+impl Particle {
     pub fn timestep(
         &mut self,
         cfl_criterion: f64,

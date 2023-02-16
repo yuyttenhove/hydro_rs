@@ -15,7 +15,7 @@ use crate::{
     errors::ConfigError,
     gradients::GradientData,
     initial_conditions::InitialConditions,
-    part::Part,
+    part::Particle,
     physical_quantities::Primitives,
     timeline::{
         get_integer_time_end, make_integer_timestep, make_timestep, IntegerTime, MAX_NR_TIMESTEPS,
@@ -53,7 +53,7 @@ macro_rules! get_other {
 }
 
 pub struct Space {
-    parts: Vec<Part>,
+    parts: Vec<Particle>,
     boundary: Boundary,
     box_size: DVec3,
     voronoi_faces: Vec<VoronoiFace>,
@@ -104,7 +104,7 @@ impl Space {
         Ok(space)
     }
 
-    fn get_boundary_part(&self, part: &Part, face: &VoronoiFace) -> Part {
+    fn get_boundary_part(&self, part: &Particle, face: &VoronoiFace) -> Particle {
         match self.boundary {
             Boundary::Reflective => part
                 .reflect(face.centroid(), face.normal())

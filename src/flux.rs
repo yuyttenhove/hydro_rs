@@ -1,7 +1,7 @@
 use crate::engine::Engine;
 use crate::equation_of_state::EquationOfState;
 use crate::gradients::pairwise_limiter;
-use crate::part::Part;
+use crate::part::Particle;
 use crate::physical_quantities::{Conserved, Primitives};
 use crate::space::Boundary;
 use glam::DVec3;
@@ -14,8 +14,8 @@ pub struct FluxInfo {
 }
 
 pub fn flux_exchange(
-    left: &Part,
-    right: &Part,
+    left: &Particle,
+    right: &Particle,
     dt: f64,
     face: &VoronoiFace,
     eos: &EquationOfState,
@@ -77,7 +77,7 @@ pub fn flux_exchange(
 }
 
 pub fn flux_exchange_boundary(
-    part: &Part,
+    part: &Particle,
     face: &VoronoiFace,
     boundary: Boundary,
     eos: &EquationOfState,
