@@ -3,36 +3,36 @@ time_integration:
   dt_max: 1e-2
   t_min: 1e-8
   t_end: 0.5
-  cfl_criterion: 0.3
+  cfl_criterion: 0.1
 
 snapshots:
   t_between_snaps: 0.05
-  prefix: "toro_1D_"
+  prefix: "vacuum_1D_"
 
 engine:
   t_status: 0.01
-  particle_motion: "steer"
+  particle_motion: "fluid"
 #   runner: "DefaultHalfDrift"
   # runner: "OptimalOrderHalfDrift"
   runner: "OptimalOrder"
   # runner: "Default"
 
 gravity:
-  kind: "external"
+  kind: "none"
   potential:
     kind: "keplerian"
     position: [0., 0., 0.]
     softening-length: 1e-3
 
 hydrodynamics:
-  solver: "AIRS"
+  solver: "Exact"
   threshold: 2.
 
 space:
   boundary: "reflective"
 
 initial_conditions:
-  type: "file"
+  type: "vacuum"
   box_size: [2., 1., 1.]
   num_part: 200
   filename: "ICs/keplerian_ring_128.hdf5"

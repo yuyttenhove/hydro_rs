@@ -152,6 +152,9 @@ impl Particle {
 
     pub fn apply_flux(&mut self) {
         self.conserved += self.fluxes;
+        debug_assert!(self.conserved.mass().is_finite());
+        debug_assert!(self.conserved.momentum().is_finite());
+        debug_assert!(self.conserved.energy().is_finite());
 
         if self.conserved.mass() < 0. {
             eprintln!("Negative mass after applying fluxes");
@@ -170,6 +173,9 @@ impl Particle {
 
     pub fn first_init(&mut self, eos: &EquationOfState) {
         self.primitives = Primitives::from_conserved(&self.conserved, self.volume(), eos);
+        debug_assert!(self.primitives.density().is_finite());
+        debug_assert!(self.primitives.velocity().is_finite());
+        debug_assert!(self.primitives.pressure().is_finite());
     }
 
     pub fn from_ic(x: DVec3, mass: f64, velocity: DVec3, internal_energy: f64) -> Self {

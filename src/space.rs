@@ -431,9 +431,9 @@ impl Space {
         // Now apply the timestep limiter
         self.parts
             .par_iter_mut()
-            .enumerate()
-            .for_each(|(idx, part)| {
-                part.timestep_limit(wakeups[idx], engine);
+            .zip(wakeups.par_iter())
+            .for_each(|(part, &wakeup)| {
+                part.timestep_limit(wakeup, engine);
             });
     }
 

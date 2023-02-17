@@ -39,6 +39,6 @@ if __name__ == "__main__":
         fname = sys.argv[1]
         savename = sys.argv[2]
     except IndexError:
-        fname = "../run/output/vacuum_0001.txt"
+        fname = "../run/output/vacuum_1D_0001.txt"
         savename = "test.png"
     main(fname, savename)
