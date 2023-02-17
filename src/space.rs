@@ -592,16 +592,16 @@ particles:
         assert_approx_eq!(f64, space.parts[2].volume, 0.1);
         assert_approx_eq!(f64, space.parts[3].volume, 0.2);
         // Check faces
-        assert_eq!(space.voronoi_faces.len(), 21);
+        assert_eq!(space.voronoi_faces.len(), 5);
         assert_approx_eq!(f64, space.voronoi_faces[0].area(), 1.);
-        assert_approx_eq!(f64, space.voronoi_faces[5].area(), 1.);
-        assert_approx_eq!(f64, space.voronoi_faces[10].area(), 1.);
-        assert_approx_eq!(f64, space.voronoi_faces[15].area(), 1.);
-        assert_approx_eq!(f64, space.voronoi_faces[16].area(), 1.);
+        assert_approx_eq!(f64, space.voronoi_faces[1].area(), 1.);
+        assert_approx_eq!(f64, space.voronoi_faces[2].area(), 1.);
+        assert_approx_eq!(f64, space.voronoi_faces[3].area(), 1.);
+        assert_approx_eq!(f64, space.voronoi_faces[4].area(), 1.);
         assert_approx_eq!(f64, space.voronoi_faces[0].centroid().x, 0.0);
-        assert_approx_eq!(f64, space.voronoi_faces[5].centroid().x, 0.45);
-        assert_approx_eq!(f64, space.voronoi_faces[10].centroid().x, 0.7);
-        assert_approx_eq!(f64, space.voronoi_faces[15].centroid().x, 0.8);
-        assert_approx_eq!(f64, space.voronoi_faces[16].centroid().x, 1.);
+        assert_approx_eq!(f64, space.voronoi_faces[1].centroid().x, 0.45);
+        assert_approx_eq!(f64, space.voronoi_faces[2].centroid().x, 0.7);
+        assert_approx_eq!(f64, space.voronoi_faces[3].centroid().x, 0.8);
+        assert_approx_eq!(f64, space.voronoi_faces[4].centroid().x, 1.);
     }
 }

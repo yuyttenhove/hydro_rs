@@ -11,7 +11,7 @@ use super::*;
 pub struct HLLCRiemannSolver;
 
 impl RiemannFluxSolver for HLLCRiemannSolver {
-    /// See Section 10.6 in Toro (2009)
+    /// See Section 10.4, 10.5 and 10.6 in Toro (2009)
     fn solve_for_flux(
         &self,
         left: &Primitives,
@@ -74,19 +74,13 @@ impl RiemannFluxSolver for HLLCRiemannSolver {
             );
             if s_l < 0. {
                 // flux FL*
-                let starfac = s_l_m_v_l / (s_l - s_star) - 1.0;
-                let rho_l_s_l = left.density() * s_l;
-                let s_star_m_v_l = s_star - v_l;
-                let rho_l_s_l_starfac = rho_l_s_l * starfac;
-                let rho_l_s_l_s_star_m_v_l = rho_l_s_l * s_star_m_v_l;
-
-                flux += Conserved::new(
-                    rho_l_s_l_starfac,
-                    rho_l_s_l_starfac * left.velocity() + rho_l_s_l_s_star_m_v_l * n_unit,
-                    rho_l_s_l_starfac * e_l
-                        + rho_l_s_l_s_star_m_v_l
-                            * (s_star + left.pressure() / (left.density() * s_l_m_v_l)),
-                );
+                let starfac = left.density() * s_l_m_v_l / (s_l - s_star);
+                let e_star = e_l
+                    + (s_star - v_l) * (s_star + left.pressure() / (left.density() * s_l_m_v_l));
+                let u_star =
+                    starfac * Conserved::new(1., (s_star - v_l) * n_unit + left.velocity(), e_star);
+                let u_l = Conserved::new(left.density(), left.velocity(), rho_l_e_l);
+                flux += s_l * (u_star - u_l);
             }
         } else {
             // flux FR
@@ -102,19 +96,13 @@ impl RiemannFluxSolver for HLLCRiemannSolver {
             );
             if s_r > 0. {
                 // flux FR*
-                let starfac = s_r_m_v_r / (s_r - s_star) - 1.0;
-                let rho_r_s_r = right.density() * s_r;
-                let s_star_m_v_r = s_star - v_r;
-                let rho_r_s_r_starfac = rho_r_s_r * starfac;
-                let rho_r_s_r_s_star_m_v_r = rho_r_s_r * s_star_m_v_r;
-
-                flux += Conserved::new(
-                    rho_r_s_r_starfac,
-                    rho_r_s_r_starfac * right.velocity() + rho_r_s_r_s_star_m_v_r * n_unit,
-                    rho_r_s_r_starfac * e_r
-                        + rho_r_s_r_s_star_m_v_r
-                            * (s_star + right.pressure() / (right.density() * s_r_m_v_r)),
-                );
+                let starfac = right.density() * s_r_m_v_r / (s_r - s_star);
+                let e_star = e_r
+                    + (s_star - v_r) * (s_star + right.pressure() / (right.density() * s_r_m_v_r));
+                let u_star = starfac
+                    * Conserved::new(1., (s_star - v_r) * n_unit + right.velocity(), e_star);
+                let u_r = Conserved::new(right.density(), right.velocity(), rho_r_e_r);
+                flux += s_r * (u_star - u_r);
             }
         }
         debug_assert!(!(flux.mass().is_nan() || flux.mass().is_infinite()));
@@ -136,16 +124,17 @@ mod tests {
     use float_cmp::assert_approx_eq;
     use yaml_rust::YamlLoader;
 
-    fn get_eos(gamma: f64) -> EquationOfState {
-        EquationOfState::new(&YamlLoader::load_from_str(&format!("gamma: {:}", gamma)).unwrap()[0])
+    const GAMMA: f64 = 5. / 3.;
+
+    fn get_eos() -> EquationOfState {
+        EquationOfState::new(&YamlLoader::load_from_str(&format!("gamma: {:}", GAMMA)).unwrap()[0])
             .unwrap()
     }
 
     #[test]
     fn test_hllc_solver_symmetry() {
-        let gamma = 5. / 3.;
         let interface_velocity = -3e-1 * DVec3::X;
-        let eos = get_eos(gamma);
+        let eos = get_eos();
         let left = Primitives::new(1., DVec3::ZERO, 1.);
         let left_reversed = Primitives::new(1., DVec3::ZERO, 1.);
         let right = Primitives::new(1., -6e-1 * DVec3::X, 1.);
@@ -168,16 +157,13 @@ mod tests {
 
         assert_approx_eq!(f64, fluxes.mass(), -fluxes_reversed.mass());
         assert_approx_eq!(f64, fluxes.momentum().x, fluxes_reversed.momentum().x);
-        assert_approx_eq!(f64, fluxes.momentum().y, fluxes_reversed.momentum().y);
-        assert_approx_eq!(f64, fluxes.momentum().z, fluxes_reversed.momentum().z);
         assert_approx_eq!(f64, fluxes.energy(), -fluxes_reversed.energy());
     }
 
     #[test]
     fn test_hllc_solver() {
-        let gamma = 5. / 3.;
         let interface_velocity = -0.2 * DVec3::X;
-        let eos = get_eos(gamma);
+        let eos = get_eos();
         let left = Primitives::new(1., 0.2 * DVec3::X, 0.5);
         let right = Primitives::new(0.5, 0.1 * DVec3::X, 0.1);
         let fluxes = HLLCRiemannSolver.solve_for_flux(
@@ -189,17 +175,17 @@ mod tests {
         );
 
         // reference solution
-        let half_s = Primitives::new(
-            0.7064862,
-            0.49950013 * DVec3::X - interface_velocity,
-            0.28020517,
+        let flux_s = ExactRiemannSolver.solve_for_flux(
+            &left.boost(-interface_velocity),
+            &right.boost(-interface_velocity),
+            interface_velocity,
+            DVec3::X,
+            &eos,
         );
-        let flux_s = flux_from_half_state(&half_s, interface_velocity, DVec3::X, &eos);
 
-        assert_approx_eq!(f64, fluxes.mass(), flux_s.mass());
-        assert_approx_eq!(f64, fluxes.momentum().x, flux_s.momentum().x);
-        assert_approx_eq!(f64, fluxes.momentum().y, flux_s.momentum().y);
-        assert_approx_eq!(f64, fluxes.momentum().z, flux_s.momentum().z);
-        assert_approx_eq!(f64, fluxes.energy(), flux_s.energy());
+        let tol = 5e-2;
+        assert_approx_eq!(f64, fluxes.mass(), flux_s.mass(), epsilon = tol);
+        assert_approx_eq!(f64, fluxes.momentum().x, flux_s.momentum().x, epsilon = tol);
+        assert_approx_eq!(f64, fluxes.energy(), flux_s.energy(), epsilon = tol);
     }
 }

@@ -30,38 +30,26 @@ impl VacuumRiemannSolver {
         }
     }
 
-    fn sample_half_vacuum(
-        non_vacuum: &Primitives,
-        v: f64,
-        a: f64,
-        n_unit: DVec3,
-        eos: &EquationOfState,
-    ) -> Primitives {
-        let base = eos.tdgp1() + eos.gm1dgp1() * v / a;
-        let v_half = eos.tdgp1() * (a + v / eos.tdgm1()) - v;
-        Primitives::new(
-            non_vacuum.density() * base.powf(eos.tdgm1()),
-            non_vacuum.velocity() + n_unit * v_half,
-            non_vacuum.pressure() * base.powf(eos.gamma() * eos.tdgm1()),
-        )
+    fn sample_vacuum() -> Primitives {
+        Primitives::vacuum()
     }
 
     fn sample_right_vacuum(
         left: &Primitives,
         v_l: f64,
         a_l: f64,
+        s_l: f64,
         n_unit: DVec3,
         eos: &EquationOfState,
     ) -> Primitives {
-        if v_l < a_l {
-            let s_l = v_l + eos.tdgm1() * a_l;
-            if s_l > 0. {
-                Self::sample_half_vacuum(left, v_l, a_l, n_unit, eos)
-            } else {
-                Primitives::vacuum()
-            }
-        } else {
+        if 0. <= v_l - a_l {
             *left
+        } else if 0. < s_l {
+            // v_l - a_l < 0. < s_l
+            Self::sample_rarefaction_fan(left, a_l, v_l, n_unit, eos)
+        } else {
+            // s_l <= 0.
+            Self::sample_vacuum()
         }
     }
 
@@ -69,17 +57,17 @@ impl VacuumRiemannSolver {
         right: &Primitives,
         v_r: f64,
         a_r: f64,
+        s_r: f64,
         n_unit: DVec3,
         eos: &EquationOfState,
     ) -> Primitives {
-        if v_r > -a_r {
-            let s_r = v_r - eos.tdgm1() * a_r;
-            if s_r < 0. {
-                Self::sample_half_vacuum(right, v_r, -a_r, n_unit, eos)
-            } else {
-                Primitives::vacuum()
-            }
+        if 0. <= s_r {
+            Self::sample_vacuum()
+        } else if 0. < v_r + a_r {
+            // s_r < 0. < v_r + a_r
+            Self::sample_rarefaction_fan(right, -a_r, v_r, n_unit, eos)
         } else {
+            // v_r + a_r <= 0.
             *right
         }
     }
@@ -94,24 +82,16 @@ impl VacuumRiemannSolver {
         n_unit: DVec3,
         eos: &EquationOfState,
     ) -> Primitives {
-        let s_l = v_l - eos.tdgm1() * a_l;
+        let s_l = v_l + eos.tdgm1() * a_l;
         let s_r = v_r - eos.tdgm1() * a_r;
-
-        if s_l >= 0. {
-            if a_l > v_l {
-                Self::sample_half_vacuum(left, v_l, a_l, n_unit, eos)
-            } else {
-                *left
-            }
-        } else if s_r <= 0. {
-            if -a_r < v_r {
-                Self::sample_half_vacuum(right, v_r, -a_r, n_unit, eos)
-            } else {
-                *right
-            }
+        if 0. <= s_l {
+            Self::sample_right_vacuum(left, v_l, a_l, s_l, n_unit, eos)
+        } else if 0. < s_r {
+            // s_l < 0. < s_r
+            Self::sample_vacuum()
         } else {
-            debug_assert!(s_r > 0. && s_l < 0.);
-            Primitives::vacuum()
+            // s_r <= 0.
+            Self::sample_left_vacuum(right, v_r, a_r, s_r, n_unit, eos)
         }
     }
 }
@@ -144,9 +124,11 @@ impl RiemannStarSolver for VacuumRiemannSolver {
         debug_assert!(Self::is_vacuum(left, right, a_l, a_r, v_r - v_l, eos));
 
         if right.density() == 0. {
-            Self::sample_right_vacuum(left, v_l, a_l, n_unit, eos)
+            let s_l = v_l + eos.tdgm1() * a_l;
+            Self::sample_right_vacuum(left, v_l, a_l, s_l, n_unit, eos)
         } else if left.density() == 0. {
-            Self::sample_left_vacuum(right, v_r, a_r, n_unit, eos)
+            let s_r = v_r - eos.tdgm1() * a_r;
+            Self::sample_left_vacuum(right, v_r, a_r, s_r, n_unit, eos)
         } else {
             Self::sample_vacuum_creation(left, right, v_l, v_r, a_l, a_r, n_unit, eos)
         }
@@ -155,18 +137,22 @@ impl RiemannStarSolver for VacuumRiemannSolver {
 
 #[cfg(test)]
 mod tests {
-    use crate::riemann_solver::flux_from_half_state;
+    use crate::physical_quantities::Conserved;
 
     use super::super::RiemannFluxSolver;
     use super::*;
     use float_cmp::assert_approx_eq;
     use yaml_rust::YamlLoader;
 
+    const GAMMA: f64 = 5. / 3.;
+
     #[test]
     fn test_vacuum_solver_symmetry() {
         let interface_velocity = 0.15 * DVec3::X;
-        let eos = EquationOfState::new(&YamlLoader::load_from_str("gamma: 1.666667").unwrap()[0])
-            .unwrap();
+        let eos = EquationOfState::new(
+            &YamlLoader::load_from_str(&format!("gamma: {:}", GAMMA)).unwrap()[0],
+        )
+        .unwrap();
         let vel_l = DVec3 {
             x: 0.3,
             y: 0.,
@@ -198,32 +184,85 @@ mod tests {
     }
 
     #[test]
-    fn test_vacuum_solver() {
+    fn test_vacuum_solver_half_state() {
         let interface_velocity = 0.15 * DVec3::X;
-        let eos = EquationOfState::new(&YamlLoader::load_from_str("gamma: 1.666667").unwrap()[0])
-            .unwrap();
-        let left = Primitives::new(1., 0.3 * DVec3::X, 0.5);
-        let right = Primitives::new(0., DVec3::ZERO, 0.);
-        let fluxes = VacuumRiemannSolver.solve_for_flux(
+        let eos = EquationOfState::new(
+            &YamlLoader::load_from_str(&format!("gamma: {:}", GAMMA)).unwrap()[0],
+        )
+        .unwrap();
+        let rho_l = 1.;
+        let v_l = 0.3;
+        let p_l = 0.5;
+        let a_l = eos.sound_speed(p_l, 1. / rho_l);
+        let rho_r = 0.;
+        let v_r = 0.;
+        let p_r = 0.;
+        let a_r = 0.;
+        let left = Primitives::new(rho_l, v_l * DVec3::X, p_l);
+        let right = Primitives::new(rho_r, v_r * DVec3::X, p_r);
+        let w_half = VacuumRiemannSolver.sample(
+            &left.boost(-interface_velocity),
+            &right,
+            v_l - interface_velocity.x,
+            v_r,
+            a_l,
+            a_r,
+            DVec3::X,
+            &eos,
+        );
+
+        // Reference solution
+        let half_s = Primitives::new(
+            0.4950623323204316,
+            0.7221531968814576 * DVec3::X,
+            0.15490656018956153,
+        );
+
+        assert_approx_eq!(f64, w_half.density(), half_s.density());
+        assert_approx_eq!(f64, w_half.velocity().x, half_s.velocity().x);
+        assert_approx_eq!(f64, w_half.pressure(), half_s.pressure());
+    }
+
+    #[test]
+    fn test_vacuum_solver_invariance() {
+        let eos = EquationOfState::new(
+            &YamlLoader::load_from_str(&format!("gamma: {:}", GAMMA)).unwrap()[0],
+        )
+        .unwrap();
+
+        let left = Primitives::new(1.5, -0.2 * DVec3::X, 1.2);
+        let right = Primitives::vacuum();
+
+        let interface_velocity = 0.3 * DVec3::X;
+
+        let w_half_lab = VacuumRiemannSolver.sample(
+            &left,
+            &right,
+            left.velocity().x,
+            0.,
+            eos.sound_speed(left.pressure(), 1. / left.density()),
+            0.,
+            DVec3::X,
+            &eos,
+        );
+        let roe = w_half_lab.pressure() * eos.odgm1()
+            + 0.5 * w_half_lab.density() * w_half_lab.velocity().length_squared();
+        let fluxes_lab =
+            VacuumRiemannSolver.solve_for_flux(&left, &right, DVec3::ZERO, DVec3::X, &eos)
+                - Conserved::new(
+                    w_half_lab.density() * interface_velocity.x,
+                    w_half_lab.density() * w_half_lab.velocity() * interface_velocity,
+                    roe * interface_velocity.x,
+                );
+        let fluxes_face = VacuumRiemannSolver.solve_for_flux(
             &left.boost(-interface_velocity),
             &right,
             interface_velocity,
             DVec3::X,
             &eos,
         );
-
-        // Reference solution calculated in lab frame
-        let half_s = Primitives::new(
-            0.57625934,
-            0.7596532 * DVec3::X - interface_velocity,
-            0.19952622,
-        );
-        let flux_s = flux_from_half_state(&half_s, interface_velocity, DVec3::X, &eos);
-
-        assert_approx_eq!(f64, fluxes.mass(), flux_s.mass());
-        assert_approx_eq!(f64, fluxes.momentum().x, flux_s.momentum().x);
-        assert_approx_eq!(f64, fluxes.momentum().y, flux_s.momentum().y);
-        assert_approx_eq!(f64, fluxes.momentum().z, flux_s.momentum().z);
-        assert_approx_eq!(f64, fluxes.energy(), flux_s.energy());
+        assert_approx_eq!(f64, fluxes_lab.mass(), fluxes_face.mass());
+        assert_approx_eq!(f64, fluxes_lab.momentum().x, fluxes_face.momentum().x);
+        assert_approx_eq!(f64, fluxes_lab.energy(), fluxes_face.energy());
     }
 }

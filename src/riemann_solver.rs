@@ -90,7 +90,7 @@ struct RiemannStarValues {
     u: f64,
     p: f64,
 }
-trait RiemannStarSolver: Sync {
+trait RiemannStarSolver: RiemannFluxSolver {
     fn solve_for_star_state(
         &self,
         left: &Primitives,
