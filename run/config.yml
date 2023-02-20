@@ -2,16 +2,16 @@ time_integration:
   dt_min: 1e-11
   dt_max: 1e-2
   t_min: 1e-8
-  t_end: 0.5
-  cfl_criterion: 0.1
+  t_end: 5.0
+  cfl_criterion: 0.3
 
 snapshots:
   t_between_snaps: 0.05
-  prefix: "vacuum_1D_"
+  prefix: "KelvinHelmholtz_2D_"
 
 engine:
-  t_status: 0.01
-  particle_motion: "fluid"
+  t_status: 0.005
+  particle_motion: "steer"
 #   runner: "DefaultHalfDrift"
   # runner: "OptimalOrderHalfDrift"
   runner: "OptimalOrder"
@@ -25,17 +25,17 @@ gravity:
     softening-length: 1e-3
 
 hydrodynamics:
-  solver: "Exact"
+  solver: "AIRS"
   threshold: 2.
 
 space:
   boundary: "reflective"
 
 initial_conditions:
-  type: "vacuum"
+  type: "file"
   box_size: [2., 1., 1.]
   num_part: 200
-  filename: "ICs/keplerian_ring_128.hdf5"
+  filename: "ICs/KelvinHelmholtz_2D.hdf5"
 
 equation_of_state:
   gamma: 1.66666666667
