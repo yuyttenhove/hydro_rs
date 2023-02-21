@@ -367,6 +367,9 @@ impl Space {
                     &engine.particle_motion,
                     self.dimensionality,
                 );
+                if let Some(solver) = &engine.gravity_solver {
+                    dt = dt.min(solver.get_timestep(part));
+                }
                 dt = dt.min(engine.dt_max());
                 assert!(
                     dt > engine.dt_min(),

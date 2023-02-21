@@ -2,7 +2,7 @@ use glam::DVec3;
 use rayon::prelude::*;
 use yaml_rust::Yaml;
 
-use crate::{errors::ConfigError, part::Particle};
+use crate::{errors::ConfigError, part::{Particle, self}};
 
 fn compute_self_gravity(particles: &[Particle], softening_length: f64) -> Vec<DVec3> {
     let num_particles = particles.len();
@@ -50,6 +50,19 @@ impl GravitySolver {
             Self::External(potential) => potential.accelerations(particles),
             Self::SelfGravity { softening_length } => {
                 compute_self_gravity(particles, *softening_length)
+            }
+        }
+    }
+
+    pub fn get_timestep(&self, particle: &Particle) -> f64 {
+        match self {
+            Self::External(potential) => potential.get_timestep(particle),
+            Self::SelfGravity { softening_length } => {
+                let a2 = particle.a_grav.length_squared();
+                if a2 == 0. {
+                    return std::f64::INFINITY;
+                }
+                (softening_length / a2.sqrt()).sqrt()
             }
         }
     }
@@ -101,6 +114,13 @@ impl Potential {
             ))),
         }
     }
+
+    fn get_timestep(&self, particle: &Particle) -> f64 {
+        match self {
+            Potential::Constant { acceleration: _ } => std::f64::INFINITY,
+            Potential::Keplerian(potential) => potential.get_timestep(particle),
+        }
+    }
 }
 
 pub struct KeplerianPotential {
@@ -124,5 +144,11 @@ impl KeplerianPotential {
                 -r * (r.length_squared() + self.softening_length * self.softening_length).powf(-1.5)
             })
             .collect()
+    }
+
+    fn get_timestep(&self, particle: &Particle) -> f64 {
+        let dx = particle.x - self.position;
+        let eta = 0.1 * (dx.length_squared() + self.softening_length.powi(2)).sqrt();
+        (eta / particle.a_grav.length()).sqrt()
     }
 }
