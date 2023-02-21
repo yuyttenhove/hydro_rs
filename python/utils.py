@@ -76,7 +76,7 @@ def plot_faces(fname: str, lw=0.5, dpi=300, show_ax=True):
     if not show_ax:
         ax.axis("off")
     fig.tight_layout()
-    fig.savefig("voronoi.png", dpi=dpi)
+    fig.savefig(Path(fname).parent.parent / "voronoi.png", dpi=dpi)
 
 
 def plot_analytic_solution(axes: List[List[plt.Axes]], gas_gamma: float, rho_L: float, v_L: float, P_L: float,
