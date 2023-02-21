@@ -79,7 +79,7 @@ impl GradientData {
             &mut self.gradients[4],
         );
 
-        self.matrix_wls += DMat3::from_cols(w * ds.x * ds, w * ds.y * ds, w * ds.z * ds);
+        self.matrix_wls += w * DMat3::from_cols(ds.x * ds, ds.y * ds, ds.z * ds);
     }
 
     pub fn finalize(mut self) -> StateGradients {
@@ -100,18 +100,16 @@ pub struct LimiterData {
     pub e_max: Primitives,
 }
 
-impl Default for LimiterData {
-    fn default() -> Self {
+impl LimiterData {
+    pub fn init(primitives: &Primitives) -> Self {
         Self {
-            min: StateVector::splat(f64::INFINITY).into(),
-            max: StateVector::splat(f64::NEG_INFINITY).into(),
+            min: *primitives,
+            max: *primitives,
             e_min: StateVector::splat(f64::INFINITY).into(),
             e_max: StateVector::splat(f64::NEG_INFINITY).into(),
         }
     }
-}
 
-impl LimiterData {
     pub fn collect(&mut self, primitives: &Primitives, extrapolated: &Primitives) {
         self.min = self.min.pairwise_min(primitives);
         self.max = self.max.pairwise_max(primitives);

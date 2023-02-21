@@ -291,7 +291,7 @@ fn read_parts_from_cfg(ic_cfg: &Yaml, num_part: usize) -> Result<Vec<Particle>, 
 }
 
 pub struct InitialConditions {
-    parts: Vec<Particle>,
+    particles: Vec<Particle>,
     box_size: DVec3,
     dimensionality: HydroDimension,
 }
@@ -345,7 +345,7 @@ impl InitialConditions {
                 }?;
 
                 Ok(Self {
-                    parts,
+                    particles: parts,
                     box_size,
                     dimensionality: HydroDimension1D,
                 })
@@ -413,10 +413,74 @@ impl InitialConditions {
         }
 
         Ok(Self {
-            parts,
+            particles: parts,
             box_size,
             dimensionality: dimension.into(),
         })
+    }
+
+    /// Create an initial condition from a mapper that maps a particle's `position` to its `(density, velocity, pressure)`.
+    pub fn from_fn<F>(
+        mut box_size: DVec3,
+        num_part: usize,
+        dimensionality: usize,
+        eos: &EquationOfState,
+        mut mapper: F,
+    ) -> Self
+    where
+        F: FnMut(DVec3) -> (f64, DVec3, f64),
+    {
+        if dimensionality < 2 {
+            box_size.y = 1.;
+        }
+        if dimensionality < 3 {
+            box_size.z = 1.;
+        }
+
+        let volume = box_size.x * box_size.y * box_size.z;
+        let num_part_per_unit_length = (num_part as f64 * volume).powf(1. / dimensionality as f64);
+        let num_part_x = (box_size.x * num_part_per_unit_length) as usize;
+        let num_part_y = if dimensionality > 1 {
+            (box_size.y * num_part_per_unit_length) as usize
+        } else {
+            1
+        };
+        let num_part_z = if dimensionality > 2 {
+            (box_size.z * num_part_per_unit_length) as usize
+        } else {
+            1
+        };
+        let num_part = num_part_x * num_part_y * num_part_z;
+        let volume_per_part = volume / num_part as f64;
+
+        let particles = (0..num_part)
+            .map(|n| {
+                let i = n / (num_part_y * num_part_z);
+                let j = (n - i * num_part_y * num_part_z) / num_part_z;
+                let k = n - i * num_part_y * num_part_z - j * num_part_z;
+
+                let position = DVec3 {
+                    x: (i as f64 + 0.5) / num_part_x as f64 * box_size.x,
+                    y: (j as f64 + 0.5) / num_part_y as f64 * box_size.y,
+                    z: (k as f64 + 0.5) / num_part_z as f64 * box_size.z,
+                };
+
+                let (density, velocity, pressure) = mapper(position);
+
+                Particle::from_ic(
+                    position,
+                    density * volume_per_part,
+                    velocity,
+                    eos.gas_internal_energy_from_pressure(pressure, density),
+                )
+            })
+            .collect();
+
+        Self {
+            particles,
+            box_size,
+            dimensionality: dimensionality.into(),
+        }
     }
 
     pub fn box_size(&self) -> DVec3 {
@@ -424,7 +488,7 @@ impl InitialConditions {
     }
 
     pub fn into_parts(self) -> Vec<Particle> {
-        self.parts
+        self.particles
     }
 
     pub fn dimensionality(&self) -> HydroDimension {

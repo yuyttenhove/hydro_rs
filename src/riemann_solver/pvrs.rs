@@ -31,7 +31,11 @@ mod test {
     use glam::DVec3;
     use yaml_rust::YamlLoader;
 
-    use crate::{equation_of_state::EquationOfState, physical_quantities::{Primitives, Conserved}, riemann_solver::RiemannFluxSolver};
+    use crate::{
+        equation_of_state::EquationOfState,
+        physical_quantities::{Conserved, Primitives},
+        riemann_solver::RiemannFluxSolver,
+    };
 
     use super::*;
 
@@ -61,13 +65,12 @@ mod test {
         );
         let roe = w_half_lab.pressure() * eos.odgm1()
             + 0.5 * w_half_lab.density() * w_half_lab.velocity().length_squared();
-        let fluxes_lab =
-            PVRiemannSolver.solve_for_flux(&left, &right, DVec3::ZERO, DVec3::X, &eos)
-                - Conserved::new(
-                    w_half_lab.density() * interface_velocity.x,
-                    w_half_lab.density() * w_half_lab.velocity() * interface_velocity,
-                    roe * interface_velocity.x,
-                );
+        let fluxes_lab = PVRiemannSolver.solve_for_flux(&left, &right, DVec3::ZERO, DVec3::X, &eos)
+            - Conserved::new(
+                w_half_lab.density() * interface_velocity.x,
+                w_half_lab.density() * w_half_lab.velocity() * interface_velocity,
+                roe * interface_velocity.x,
+            );
         let fluxes_face = PVRiemannSolver.solve_for_flux(
             &left.boost(-interface_velocity),
             &right.boost(-interface_velocity),

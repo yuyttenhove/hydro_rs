@@ -69,6 +69,10 @@ pub fn flux_exchange(
             eos,
         );
 
+    debug_assert!(fluxes.mass().is_finite());
+    debug_assert!(fluxes.momentum().is_finite());
+    debug_assert!(fluxes.energy().is_finite());
+
     FluxInfo {
         fluxes: dt * fluxes,
         mflux: dx * fluxes.mass(),
@@ -153,6 +157,10 @@ pub fn flux_exchange_boundary(
             face.normal(),
             eos,
         );
+
+    debug_assert!(fluxes.mass().is_finite());
+    debug_assert!(fluxes.momentum().is_finite());
+    debug_assert!(fluxes.energy().is_finite());
 
     FluxInfo {
         fluxes: part.dt * fluxes,

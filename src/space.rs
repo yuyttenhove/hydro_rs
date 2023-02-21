@@ -37,7 +37,7 @@ pub enum Boundary {
 }
 
 macro_rules! get_other {
-    ($part:expr, $idx:expr, $face:expr, $space:expr, $_reflected:expr) => {
+    ($space:expr, $part:expr, $idx:expr, $face:expr, $_reflected:expr) => {
         if $idx == $face.left() {
             match $face.right() {
                 Some(idx) => &$space.parts[idx],
@@ -254,7 +254,7 @@ impl Space {
         });
     }
 
-    /// drift all particles foward over the given timestep
+    /// drift all particles forward over the given timestep
     pub fn drift(&mut self, dt_drift: f64, dt_extrapolate: f64) {
         let eos = self.eos;
         // drift all particles, including inactive particles
@@ -269,7 +269,9 @@ impl Space {
                 match self.boundary {
                     Boundary::Reflective => box_reflect(self.box_size, part),
                     Boundary::Open | Boundary::Vacuum => to_remove.push(idx),
-                    Boundary::Periodic => box_wrap(self.box_size, &mut part.x),
+                    Boundary::Periodic => {
+                        box_wrap(self.box_size, &mut part.x, self.dimensionality.into())
+                    }
                 }
             }
         }
@@ -301,7 +303,7 @@ impl Space {
                     let face = &self.voronoi_faces[face_idx];
 
                     let _reflected;
-                    let other = get_other!(part, idx, face, self, _reflected);
+                    let other = get_other!(self, part, idx, face, _reflected);
 
                     let mut shift = face.shift().unwrap_or(DVec3::ZERO);
                     if let Some(right_idx) = face.right() {
@@ -316,12 +318,12 @@ impl Space {
                 let mut gradients = gradient_data.finalize();
 
                 // Now loop again over the faces of this cell to collect the limiter info and limit the gradient estimate
-                let mut limiter = LimiterData::default();
+                let mut limiter = LimiterData::init(&part.primitives);
                 for &face_idx in faces {
                     let face = &self.voronoi_faces[face_idx];
 
                     let _reflected;
-                    let other = get_other!(part, idx, face, self, _reflected);
+                    let other = get_other!(self, part, idx, face, _reflected);
 
                     let shift = match face.right() {
                         Some(right_idx) if idx == right_idx => face.shift().unwrap_or(DVec3::ZERO),
@@ -345,6 +347,7 @@ impl Space {
             .for_each(|(part, gradient)| {
                 if let Some(gradient) = gradient {
                     part.gradients = *gradient;
+                    debug_assert!(part.is_active_primitive_calculation(engine));
                 }
             });
     }
@@ -416,7 +419,7 @@ impl Space {
                     let face = &self.voronoi_faces[face_idx];
 
                     let _reflected;
-                    let other = get_other!(part, idx, face, self, _reflected);
+                    let other = get_other!(self, part, idx, face, _reflected);
                     if !other.is_ending(engine) {
                         continue;
                     }
@@ -550,6 +553,10 @@ impl Space {
             debug_assert!(part.conserved.mass() >= 0.);
             debug_assert!(part.conserved.energy() >= 0.);
         }
+    }
+
+    pub fn parts(&self) -> &[Particle] {
+        self.parts.as_ref()
     }
 }
 

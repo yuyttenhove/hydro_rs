@@ -37,12 +37,14 @@ impl EquationOfState {
     }
     pub fn gas_internal_energy_from_pressure(&self, pressure: f64, density: f64) -> f64 {
         match self {
-            EquationOfState::Ideal { gamma, .. } => if density > 0. {
-                pressure / density / (gamma - 1.)
-            } else {
-                assert_eq!(density, 0.);
-                0.
-            },
+            EquationOfState::Ideal { gamma, .. } => {
+                if density > 0. {
+                    pressure / density / (gamma - 1.)
+                } else {
+                    assert_eq!(density, 0.);
+                    0.
+                }
+            }
             _ => todo!(),
         }
     }

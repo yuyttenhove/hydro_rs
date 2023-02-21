@@ -55,7 +55,9 @@ impl Particle {
             - 0.5 * self.conserved.momentum().dot(self.primitives.velocity()))
             * m_inv;
 
-        let fluid_v = self.conserved.momentum() * m_inv;
+        let d_v = Primitives::from(self.gradients.dot(self.centroid - self.x)).velocity();
+        // Fluid velocity at generator (instead of centroid)
+        let fluid_v = self.conserved.momentum() * m_inv + d_v;
         let sound_speed = eos.sound_speed(
             eos.gas_pressure_from_internal_energy(internal_energy, self.primitives.density()),
             self.volume() * m_inv,
@@ -88,6 +90,7 @@ impl Particle {
         // determine the size of this particle's next timestep
         let v_rel = (self.v - fluid_v).length();
         let v_max = self.max_signal_velocity.max(v_rel + sound_speed);
+        self.max_signal_velocity = 0.;
 
         if v_max > 0. {
             cfl_criterion * radius / v_max
@@ -109,7 +112,8 @@ impl Particle {
             let rho = self.primitives.density();
             if rho > 0. {
                 let rho_inv = 1. / rho;
-                let v = self.primitives.velocity();
+                // Use fluid velocity in comoving frame!
+                let v = self.primitives.velocity() - self.v;
                 let p = self.primitives.pressure();
                 let div_v = self.gradients[1].x + self.gradients[2].y + self.gradients[3].z;
                 self.extrapolations -= dt_extrapolate

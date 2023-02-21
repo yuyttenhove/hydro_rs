@@ -4,8 +4,8 @@ import numpy as np
 
 
 if __name__ == "__main__":
-    nx = 3
-    ny = 3
+    nx = 5
+    ny = 5
     box_size = np.array([1, 1, 1])
     volume = box_size.prod()
     num_part = nx * ny
@@ -21,5 +21,5 @@ if __name__ == "__main__":
     v[:, 0] = velocity
     u = internal_energy_ideal_gas(P, rho, gamma) * np.ones_like(m)
 
-    fname = Path(__file__).parent.parent / "run/constant_2D.hdf5"
+    fname = Path(__file__).parent.parent / "run/ICs/constant_2D.hdf5"
     write_file(fname, box_size, num_part, coords, m, v, u, dimension)

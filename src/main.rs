@@ -1,33 +1,11 @@
-extern crate yaml_rust;
-#[macro_use]
-extern crate derive_more;
-
 use std::fs;
 
 use clap::Parser;
 use cli::Cli;
-use engine::Engine;
-use space::Space;
+use hydro_rs::{Engine, EquationOfState, InitialConditions, Space};
 use yaml_rust::YamlLoader;
 
-use crate::{equation_of_state::EquationOfState, initial_conditions::InitialConditions};
-
 mod cli;
-mod engine;
-mod equation_of_state;
-mod errors;
-mod flux;
-mod gradients;
-mod gravity;
-mod initial_conditions;
-mod part;
-mod physical_constants;
-mod physical_quantities;
-mod riemann_solver;
-mod space;
-mod time_integration;
-mod timeline;
-mod utils;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // parse command line parameters

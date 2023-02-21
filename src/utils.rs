@@ -50,8 +50,8 @@ pub fn contains(box_size: DVec3, pos: DVec3) -> bool {
         && pos.z < box_size.z
 }
 
-pub fn box_wrap(box_size: DVec3, pos: &mut DVec3) {
-    for i in 0..3 {
+pub fn box_wrap(box_size: DVec3, pos: &mut DVec3, dimension: usize) {
+    for i in 0..dimension {
         while pos[i] < 0. {
             pos[i] += box_size[i];
         }
