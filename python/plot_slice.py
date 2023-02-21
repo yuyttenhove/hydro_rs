@@ -4,7 +4,7 @@ if __name__ == "__main__":
 
     from utils import get_slice, read_particle_data, get_root
 
-    data = read_particle_data(get_root() / "run" / "output" / "sedov_2D_0005.txt")
+    data = read_particle_data(get_root() / "run" / "output" / "KelvinHelmholtz_boosted_2D_0002.txt")
     coords = np.column_stack([data["x"].values, data["y"].values, data["z"].values])
     values = data["rho"]
     x_lim = [0., 1.]
