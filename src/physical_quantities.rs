@@ -310,7 +310,7 @@ impl Conserved {
         let energy = 0.5 * momentum.dot(primitives.velocity())
             + mass
                 * eos
-                    .gas_internal_energy_from_pressure(primitives.pressure(), primitives.density());
+                    .gas_internal_energy_from_pressure(primitives.pressure(), 1. / primitives.density());
         Self {
             values: StateVector(mass, momentum, energy),
         }

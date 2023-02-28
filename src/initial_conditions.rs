@@ -471,7 +471,7 @@ impl InitialConditions {
                     position,
                     density * volume_per_part,
                     velocity,
-                    eos.gas_internal_energy_from_pressure(pressure, density),
+                    eos.gas_internal_energy_from_pressure(pressure, 1. / density),
                 )
             })
             .collect();
