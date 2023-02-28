@@ -93,6 +93,7 @@ impl RiemannFluxSolver for HLLCRiemannSolver {
 }
 
 impl HLLCRiemannSolver {
+    /// See (10.5) in Toro.
     fn flux(state: &Primitives, v: f64, e: f64, n_unit: DVec3) -> Conserved {
         let rho_v = state.density() * v;
         Conserved::new(
@@ -102,6 +103,7 @@ impl HLLCRiemannSolver {
         )
     }
 
+    /// See (10.38), (10.39) in Toro 2009.
     fn flux_star(
         state: &Primitives,
         v: f64,

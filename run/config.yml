@@ -7,14 +7,14 @@ time_integration:
 
 snapshots:
   t_between_snaps: 0.05
-  prefix: "KelvinHelmholtz_HLLC_boosted_2D_"
+  prefix: "sodshock_1D_"
 
 engine:
   t_status: 0.005
   particle_motion: "steer"
 #   runner: "DefaultHalfDrift"
-  runner: "OptimalOrderHalfDrift"
-  # runner: "OptimalOrder"
+  # runner: "OptimalOrderHalfDrift"
+  runner: "OptimalOrder"
   # runner: "Default"
 
 gravity:
@@ -25,14 +25,14 @@ gravity:
     softening-length: 1e-3
 
 hydrodynamics:
-  solver: "HLLC"
+  solver: "Exact"
   threshold: 2.
 
 space:
-  boundary: "reflective"
+  boundary: "periodic"
 
 initial_conditions:
-  type: "file"
+  type: "sodshock"
   box_size: [2., 1., 1.]
   num_part: 200
   filename: "ICs/KelvinHelmholtz_boosted_2D.hdf5"
