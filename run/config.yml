@@ -2,16 +2,16 @@ time_integration:
   dt_min: 1e-11
   dt_max: 1e-2
   t_min: 1e-8
-  t_end: 0.5
+  t_end: 10.
   cfl_criterion: 0.3
 
 snapshots:
   t_between_snaps: 0.05
-  prefix: "KelvinHelmholtz_boosted_2D_"
+  prefix: "KelvinHelmholtz_HLLC_boosted_2D_"
 
 engine:
   t_status: 0.005
-  particle_motion: "fluid"
+  particle_motion: "steer"
 #   runner: "DefaultHalfDrift"
   # runner: "OptimalOrderHalfDrift"
   runner: "OptimalOrder"
@@ -20,12 +20,11 @@ engine:
 gravity:
   kind: "none"
   potential:
-    kind: "keplerian"
-    position: [0., 0., 0.]
-    softening-length: 1e-3
+    kind: "constant"
+    acceleration: [0., -1., 0.]
 
 hydrodynamics:
-  solver: "AIRS"
+  solver: "HLLC"
   threshold: 2.
 
 space:
