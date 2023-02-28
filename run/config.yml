@@ -31,7 +31,7 @@ space:
   boundary: "periodic"
 
 initial_conditions:
-  type: "sodshock"
+  type: "file"
   box_size: [2., 1., 1.]
   num_part: 200
   filename: "ICs/KelvinHelmholtz_boosted_2D.hdf5"
