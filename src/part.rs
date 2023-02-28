@@ -212,10 +212,10 @@ impl Particle {
             Primitives::from_conserved(&self.conserved, self.volume(), eos)
         };
 
-        // if self.primitives.density() < 1e-6 {
+        // if self.primitives.density() < 1e-10 {
         //     self.primitives = Primitives::new(
         //         self.primitives.density(),
-        //         self.primitives.velocity() * self.primitives.density() * 1e6,
+        //         self.primitives.velocity() * self.primitives.density() * 1e10,
         //         self.primitives.pressure(),
         //     );
         //     self.conserved = Conserved::from_primitives(&self.primitives, self.volume, eos);

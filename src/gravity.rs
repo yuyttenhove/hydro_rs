@@ -2,7 +2,7 @@ use glam::DVec3;
 use rayon::prelude::*;
 use yaml_rust::Yaml;
 
-use crate::{errors::ConfigError, part::{Particle, self}};
+use crate::{errors::ConfigError, part::Particle};
 
 fn compute_self_gravity(particles: &[Particle], softening_length: f64) -> Vec<DVec3> {
     let num_particles = particles.len();
