@@ -63,46 +63,20 @@ impl RiemannFluxSolver for HLLCRiemannSolver {
         if s_star >= 0. {
             // flux FL
             let v_l2 = left.velocity().length_squared();
-            let rho_l_v_l = left.density() * v_l;
-            let e_l = eos.odgm1() * left.pressure() * rho_l_inv + 0.5 * v_l2;
-            let rho_l_e_l = left.density() * e_l;
+            let e_l = eos.gas_internal_energy_from_pressure(left.pressure(), rho_l_inv) + 0.5 * v_l2;
+            flux = Self::flux(left, v_l, e_l, n_unit);
             let s_l = s_l_m_v_l + v_l;
-            flux = Conserved::new(
-                rho_l_v_l,
-                rho_l_v_l * left.velocity() + left.pressure() * n_unit,
-                (rho_l_e_l + left.pressure()) * v_l,
-            );
             if s_l < 0. {
-                // flux FL*
-                let starfac = left.density() * s_l_m_v_l / (s_l - s_star);
-                let e_star = e_l
-                    + (s_star - v_l) * (s_star + left.pressure() / (left.density() * s_l_m_v_l));
-                let u_star =
-                    starfac * Conserved::new(1., (s_star - v_l) * n_unit + left.velocity(), e_star);
-                let u_l = Conserved::new(left.density(), left.velocity(), rho_l_e_l);
-                flux += s_l * (u_star - u_l);
+                flux += Self::flux_star(left, v_l, e_l, s_l, s_star, n_unit);
             }
         } else {
             // flux FR
             let v_r2 = right.velocity().length_squared();
-            let rho_r_v_r = right.density() * v_r;
-            let e_r = eos.odgm1() * right.pressure() * rho_r_inv + 0.5 * v_r2;
-            let rho_r_e_r = right.density() * e_r;
+            let e_r = eos.gas_internal_energy_from_pressure(right.pressure(), rho_r_inv) + 0.5 * v_r2;
+            flux = Self::flux(right, v_r, e_r, n_unit);
             let s_r = s_r_m_v_r + v_r;
-            flux = Conserved::new(
-                rho_r_v_r,
-                rho_r_v_r * right.velocity() + right.pressure() * n_unit,
-                (rho_r_e_r + right.pressure()) * v_r,
-            );
             if s_r > 0. {
-                // flux FR*
-                let starfac = right.density() * s_r_m_v_r / (s_r - s_star);
-                let e_star = e_r
-                    + (s_star - v_r) * (s_star + right.pressure() / (right.density() * s_r_m_v_r));
-                let u_star = starfac
-                    * Conserved::new(1., (s_star - v_r) * n_unit + right.velocity(), e_star);
-                let u_r = Conserved::new(right.density(), right.velocity(), rho_r_e_r);
-                flux += s_r * (u_star - u_r);
+                flux += Self::flux_star(right, v_r, e_r, s_r, s_star, n_unit);
             }
         }
         debug_assert!(!(flux.mass().is_nan() || flux.mass().is_infinite()));
@@ -115,6 +89,35 @@ impl RiemannFluxSolver for HLLCRiemannSolver {
                 + 0.5 * interface_velocity.length_squared() * flux.mass(),
         );
         flux
+    }
+}
+
+impl HLLCRiemannSolver {
+    fn flux(state: &Primitives, v: f64, e: f64, n_unit: DVec3) -> Conserved {
+        let rho_v = state.density() * v;
+        Conserved::new(
+            rho_v,
+            rho_v * state.velocity() + state.pressure() * n_unit,
+            ((state.density() * e) + state.pressure()) * v,
+        )
+    }
+
+    fn flux_star(
+        state: &Primitives,
+        v: f64,
+        e: f64,
+        s: f64,
+        s_star: f64,
+        n_unit: DVec3,
+    ) -> Conserved {
+        let s_m_v = s - v;
+        let rho = state.density();
+        let starfac = rho * s_m_v / (s - s_star);
+        let v_star = (s_star - v) * n_unit + state.velocity();
+        let e_star = e + (s_star - v) * (s_star + state.pressure() / (rho * s_m_v));
+        let u_star = starfac * Conserved::new(1., v_star, e_star);
+        let u_l = Conserved::new(rho, rho * state.velocity(), rho * e);
+        s * (u_star - u_l)
     }
 }
 
@@ -162,7 +165,7 @@ mod tests {
 
     #[test]
     fn test_hllc_solver() {
-        let interface_velocity = -0.2 * DVec3::X;
+        let interface_velocity = 0.15 * DVec3::X;
         let eos = get_eos();
         let left = Primitives::new(1., 0.2 * DVec3::X, 0.5);
         let right = Primitives::new(0.5, 0.1 * DVec3::X, 0.1);
