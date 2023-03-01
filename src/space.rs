@@ -123,10 +123,12 @@ impl Space {
     }
 
     /// Do the volume calculation for all the active parts in the space
-    pub fn volume_calculation(&mut self, _engine: &Engine) {
-        let generators: Vec<_> = self.parts.iter().map(|p| p.loc()).collect();
-        let voronoi = Voronoi::build(
+    pub fn volume_calculation(&mut self, engine: &Engine) {
+        let generators = self.parts.iter().map(|p| p.loc()).collect::<Vec<_>>();
+        let mask = self.parts.iter().map(|p| p.is_active(engine)).collect::<Vec<_>>();
+        let voronoi = Voronoi::build_partial(
             &generators,
+            &mask,
             DVec3::ZERO,
             self.box_size,
             self.dimensionality.into(),
@@ -137,7 +139,13 @@ impl Space {
             .par_iter_mut()
             .zip(voronoi.cells().par_iter())
             .for_each(|(part, voronoi_cell)| {
-                part.apply_volume(voronoi_cell);
+                if part.is_active(engine) {
+                    part.apply_volume(voronoi_cell);
+                } else {
+                    // just update the face offset and counts for inactive particles
+                    part.face_connections_offset = voronoi_cell.face_connections_offset();
+                    part.face_count = voronoi_cell.face_count();
+                }
             });
 
         self.voronoi_cell_face_connections = voronoi.cell_face_connections().to_vec();
@@ -336,6 +344,7 @@ impl Space {
                 }
                 limiter.limit(&mut gradients, &part.primitives);
 
+                debug_assert!(gradients.is_finite());
                 Some(gradients)
             })
             .collect::<Vec<_>>();

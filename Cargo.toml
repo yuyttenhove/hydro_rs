@@ -10,7 +10,7 @@ glam = "0.22"
 yaml-rust = "0.4"
 clap = {version = "3.2", features = ["derive"]}
 derive_more = "0.99"
-meshless_voronoi = {version = "^0.2.0", features = ["rayon"] }
+meshless_voronoi = {version = "0.3.1", features = ["rayon"] }
 hdf5 = "0.8.1"
 rayon = "1.6.1"
 

@@ -107,6 +107,14 @@ impl StateGradients {
             self.2.dot(dx),
         )
     }
+
+    pub fn is_finite(&self) -> bool {
+        self.0.is_finite()
+            && self.1[0].is_finite()
+            && self.1[1].is_finite()
+            && self.1[2].is_finite()
+            && self.2.is_finite()
+    }
 }
 
 impl Index<usize> for StateGradients {
@@ -309,8 +317,10 @@ impl Conserved {
         let momentum = mass * primitives.velocity();
         let energy = 0.5 * momentum.dot(primitives.velocity())
             + mass
-                * eos
-                    .gas_internal_energy_from_pressure(primitives.pressure(), 1. / primitives.density());
+                * eos.gas_internal_energy_from_pressure(
+                    primitives.pressure(),
+                    1. / primitives.density(),
+                );
         Self {
             values: StateVector(mass, momentum, energy),
         }
