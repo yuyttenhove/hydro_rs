@@ -33,10 +33,11 @@ def main(fname: str, savename: str, time=0.25):
 
 
 if __name__ == "__main__":
+    root = Path(__file__).parent.parent
     try:
         fname = sys.argv[1]
         savename = sys.argv[2]
     except IndexError:
-        fname = "../run/output/sodshock_2D_0005.txt"
+        fname = root / "run/output/sodshock_1D_0005.txt"
         savename = "test.png"
     main(fname, savename)

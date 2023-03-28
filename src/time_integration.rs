@@ -4,6 +4,7 @@ use crate::{engine::Engine, errors::ConfigError, space::Space, timeline::Integer
 pub enum Runner {
     Default,
     OptimalOrder,
+    TwoGradient,
     OptimalOrderHalfDrift,
     DefaultHalfDrift,
 }
@@ -13,6 +14,7 @@ impl Runner {
         match kind {
             "Default" => Ok(Runner::Default),
             "OptimalOrder" => Ok(Runner::OptimalOrder),
+            "TwoGradient" => Ok(Runner::TwoGradient),
             "OptimalOrderHalfDrift" => Ok(Runner::OptimalOrderHalfDrift),
             "DefaultHalfDrift" => Ok(Runner::DefaultHalfDrift),
             _ => Err(ConfigError::UnknownRunner(kind.to_string())),
@@ -49,6 +51,21 @@ impl Runner {
                 space.timestep_limiter(engine); // Note: this can never decrease ti_next
                 space.kick1(engine);
             }
+            Runner::TwoGradient => {
+                let dt = engine.dt();
+                space.drift(dt, 0.5 * dt);
+                space.volume_calculation(engine);
+                space.gradient_estimate(engine);
+                space.flux_exchange(engine);
+                space.apply_flux(engine);
+                space.convert_conserved_to_primitive(engine);
+                space.gradient_estimate(engine);
+                space.gravity(engine);
+                space.kick2(engine);
+                ti_next = space.timestep(engine);
+                space.timestep_limiter(engine); // Note: this can never decrease ti_next
+                space.kick1(engine);
+            }
             Runner::OptimalOrderHalfDrift | Runner::DefaultHalfDrift => {
                 panic!("{self:?} should not be run with full steps!")
             }
@@ -60,7 +77,7 @@ impl Runner {
 
     pub fn half_step1(&self, engine: &Engine, space: &mut Space) {
         match self {
-            Runner::Default | Runner::OptimalOrder => {
+            Runner::Default | Runner::OptimalOrder | Runner::TwoGradient => {
                 panic!("{self:?} should not be run with half steps!")
             }
             Runner::OptimalOrderHalfDrift => {
@@ -83,7 +100,7 @@ impl Runner {
     pub fn half_step2(&self, engine: &Engine, space: &mut Space) -> IntegerTime {
         let ti_next;
         match self {
-            Runner::Default | Runner::OptimalOrder => {
+            Runner::Default | Runner::OptimalOrder | Runner::TwoGradient => {
                 panic!("{self:?} should not be run with half steps!")
             }
             Runner::OptimalOrderHalfDrift => {
