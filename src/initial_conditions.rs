@@ -25,7 +25,7 @@ macro_rules! conv1d {
                 y: 0.,
                 z: 0.,
             },
-            $eos.gas_internal_energy_from_pressure($pressure, $density),
+            $eos.gas_internal_energy_from_pressure($pressure, 1. / $density),
         )
     };
 }
