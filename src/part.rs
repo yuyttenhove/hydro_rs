@@ -2,11 +2,11 @@ use glam::DVec3;
 use meshless_voronoi::VoronoiCell;
 
 use crate::physical_quantities::{Conserved, Primitives, StateGradients};
+use crate::time_integration::Iact;
 use crate::{
     engine::{Engine, ParticleMotion},
     equation_of_state::EquationOfState,
     flux::FluxInfo,
-    time_integration::Runner,
     timeline::*,
     utils::{HydroDimension, HydroDimension::*},
 };
@@ -141,7 +141,7 @@ impl Particle {
     pub fn update_fluxes_left(&mut self, flux_info: &FluxInfo, engine: &Engine) {
         self.fluxes -= flux_info.fluxes;
         self.gravity_mflux -= flux_info.mflux;
-        if self.is_active_flux(engine) {
+        if engine.part_is_active(self, Iact::Flux) {
             self.max_signal_velocity = flux_info.v_max.max(self.max_signal_velocity);
         }
     }
@@ -149,7 +149,7 @@ impl Particle {
     pub fn update_fluxes_right(&mut self, flux_info: &FluxInfo, engine: &Engine) {
         self.fluxes += flux_info.fluxes;
         self.gravity_mflux -= flux_info.mflux;
-        if self.is_active_flux(engine) {
+        if engine.part_is_active(self, Iact::Flux) {
             self.max_signal_velocity = flux_info.v_max.max(self.max_signal_velocity);
         }
     }
@@ -244,7 +244,7 @@ impl Particle {
             return;
         }
 
-        if self.is_active(engine) {
+        if self.is_starting(engine) {
             // Particle was active/starting anyway, so just updating the timestep/timebin suffices.
             self.timebin = wakeup;
             self.dt = make_timestep(get_integer_timestep(self.timebin), engine.time_base());
@@ -303,28 +303,14 @@ impl Particle {
         return self.timebin <= get_max_active_bin(engine.ti_current());
     }
 
-    fn is_halfway(&self, engine: &Engine) -> bool {
+    pub fn is_halfway(&self, engine: &Engine) -> bool {
         let dti = engine.ti_current() - engine.ti_old();
         return !self.is_ending(engine)
             && self.timebin <= get_max_active_bin(engine.ti_old() + 2 * dti);
     }
 
-    pub fn is_active_flux(&self, engine: &Engine) -> bool {
-        match engine.runner() {
-            Runner::OptimalOrderHalfDrift | Runner::DefaultHalfDrift => self.is_halfway(engine),
-            _ => self.is_ending(engine),
-        }
-    }
-
-    pub fn is_active_primitive_calculation(&self, engine: &Engine) -> bool {
-        match engine.runner() {
-            Runner::DefaultHalfDrift => self.is_halfway(engine),
-            _ => self.is_ending(engine),
-        }
-    }
-
-    pub fn is_active(&self, engine: &Engine) -> bool {
-        self.is_ending(engine)
+    pub fn is_starting(&self, engine: &Engine) -> bool {
+        return self.timebin <= get_max_active_bin(engine.ti_current());
     }
 
     pub fn set_timebin(&mut self, new_dti: IntegerTime) {

@@ -10,8 +10,8 @@ use crate::{
     gravity::GravitySolver,
     riemann_solver::{get_solver, RiemannFluxSolver},
     space::Space,
-    time_integration::Runner,
-    timeline::*,
+    time_integration::{Runner, Iact},
+    timeline::*, part::Particle,
 };
 
 pub enum ParticleMotion {
@@ -209,6 +209,10 @@ impl Engine {
         self.snap += 1;
 
         Ok(())
+    }
+
+    pub fn part_is_active(&self, part: &Particle, iact: Iact) -> bool {
+        self.runner.part_is_active(part, iact, self)
     }
 
     pub fn ti_current(&self) -> IntegerTime {

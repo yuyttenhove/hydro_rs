@@ -17,6 +17,7 @@ use crate::{
     initial_conditions::InitialConditions,
     part::Particle,
     physical_quantities::Primitives,
+    time_integration::Iact,
     timeline::{
         get_integer_time_end, make_integer_timestep, make_timestep, IntegerTime, MAX_NR_TIMESTEPS,
         NUM_TIME_BINS, TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN,
@@ -125,7 +126,11 @@ impl Space {
     /// Do the volume calculation for all the active parts in the space
     pub fn volume_calculation(&mut self, engine: &Engine) {
         let generators = self.parts.iter().map(|p| p.loc()).collect::<Vec<_>>();
-        let mask = self.parts.iter().map(|p| p.is_active(engine)).collect::<Vec<_>>();
+        let mask = self
+            .parts
+            .iter()
+            .map(|p| engine.part_is_active(p, Iact::Volume))
+            .collect::<Vec<_>>();
         let voronoi = Voronoi::build_partial(
             &generators,
             &mask,
@@ -138,8 +143,9 @@ impl Space {
         self.parts
             .par_iter_mut()
             .zip(voronoi.cells().par_iter())
-            .for_each(|(part, voronoi_cell)| {
-                if part.is_active(engine) {
+            .zip(mask.par_iter())
+            .for_each(|((part, voronoi_cell), is_active)| {
+                if *is_active {
                     part.apply_volume(voronoi_cell);
                 } else {
                     // just update the face offset and counts for inactive particles
@@ -155,7 +161,7 @@ impl Space {
     pub fn convert_conserved_to_primitive(&mut self, engine: &Engine) {
         let eos = self.eos;
         self.parts.par_iter_mut().for_each(|part| {
-            if part.is_active_primitive_calculation(engine) {
+            if engine.part_is_active(part, Iact::Primitive) {
                 part.convert_conserved_to_primitive(&eos);
 
                 // This also invalidates the extrapolations
@@ -198,7 +204,7 @@ impl Space {
             .par_iter()
             .map(|face| {
                 let left = &self.parts[face.left()];
-                let left_active = left.is_active_flux(engine);
+                let left_active = engine.part_is_active(left, Iact::Flux);
                 match face.right() {
                     Some(right_idx) => {
                         let right = &self.parts[right_idx];
@@ -207,9 +213,9 @@ impl Space {
                         // smallest timestep is active for the flux exchange. This is important for the half drift case,
                         // since then the half of the longer timestep might coincide with the full smaller timestep and
                         // we do not want to do the flux exchange in that case.
-                        let dt = if left.is_active_flux(engine) && left.dt <= right.dt {
+                        let dt = if left_active && left.dt <= right.dt {
                             left.dt
-                        } else if right.is_active_flux(engine) && right.dt <= left.dt {
+                        } else if engine.part_is_active(right, Iact::Flux) && right.dt <= left.dt {
                             right.dt
                         } else {
                             return None;
@@ -253,10 +259,10 @@ impl Space {
             });
     }
 
-    /// Apply the accumulated fluxes to all active particles
+    /// Apply the accumulated fluxes to all active particles before calculating the primitives
     pub fn apply_flux(&mut self, engine: &Engine) {
         self.parts.par_iter_mut().for_each(|part| {
-            if part.is_active(engine) {
+            if engine.part_is_active(part, Iact::ApplyFlux) {
                 part.apply_flux();
             }
         });
@@ -297,7 +303,7 @@ impl Space {
             .par_iter()
             .enumerate()
             .map(|(idx, part)| {
-                if !part.is_active_primitive_calculation(engine) {
+                if !engine.part_is_active(part, Iact::Gradient) {
                     return None;
                 }
 
@@ -356,7 +362,7 @@ impl Space {
             .for_each(|(part, gradient)| {
                 if let Some(gradient) = gradient {
                     part.gradients = *gradient;
-                    debug_assert!(part.is_active_primitive_calculation(engine));
+                    debug_assert!(engine.part_is_active(part, Iact::Gradient));
                 }
             });
     }
@@ -471,7 +477,7 @@ impl Space {
             return;
         }
         self.parts.par_iter_mut().for_each(|part| {
-            if part.is_active(engine) {
+            if part.is_starting(engine) {
                 part.grav_kick();
             }
         })
@@ -483,7 +489,7 @@ impl Space {
             return;
         }
         self.parts.par_iter_mut().for_each(|part| {
-            if part.is_active(engine) {
+            if part.is_ending(engine) {
                 part.grav_kick();
                 part.reset_fluxes();
             }
@@ -493,7 +499,7 @@ impl Space {
     /// Prepare the particles for the next timestep
     pub fn prepare(&mut self, engine: &Engine) {
         for part in self.parts.iter_mut() {
-            if part.is_active(engine) {
+            if part.is_starting(engine) {
                 part.reset_fluxes();
             }
         }
