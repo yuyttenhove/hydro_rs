@@ -106,6 +106,7 @@ impl Particle {
     /// Also predicts the primitive quantities forward in time over a time dt_extrapolate using the Euler equations.
     pub fn drift(&mut self, dt_drift: f64, dt_extrapolate: f64, eos: &EquationOfState) {
         self.loc += self.v * dt_drift;
+        self.centroid += self.v * dt_drift;
 
         debug_assert!(self.loc.is_finite(), "Infinite x after drift!");
 
