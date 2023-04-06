@@ -62,17 +62,17 @@ pub fn box_wrap(box_size: DVec3, pos: &mut DVec3, dimension: usize) {
 }
 
 pub fn box_reflect(box_size: DVec3, part: &mut Particle) {
-    let x_old = part.x;
+    let x_old = part.loc;
     for i in 0..3 {
-        if part.x[i] < 0. {
-            part.x[i] -= 2. * part.x[i];
+        if part.loc[i] < 0. {
+            part.loc[i] -= 2. * part.loc[i];
         }
-        if part.x[i] > box_size[i] {
-            part.x[i] -= 2. * (part.x[i] - box_size[i]);
+        if part.loc[i] > box_size[i] {
+            part.loc[i] -= 2. * (part.loc[i] - box_size[i]);
         }
     }
-    debug_assert!(contains(box_size, part.x));
-    let dx = part.x - x_old;
+    debug_assert!(contains(box_size, part.loc));
+    let dx = part.loc - x_old;
     if dx.length_squared() > 0. {
         let normal = dx * dx.length_recip();
         *part = part

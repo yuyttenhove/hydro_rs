@@ -26,7 +26,7 @@ pub fn flux_exchange(
     let shift = face.shift().unwrap_or(DVec3::ZERO);
     let dx_right = face.centroid() - right.centroid - shift;
     let dx_centroid = right.centroid + shift - left.centroid;
-    let dx = right.x + shift - left.x;
+    let dx = right.loc + shift - left.loc;
 
     // Calculate the maximal signal velocity (used for timestep computation)
     let mut v_max = 0.;
@@ -55,7 +55,7 @@ pub fn flux_exchange(
     );
 
     // Compute interface velocity (Springel (2010), eq. 33):
-    let midpoint = 0.5 * (left.x + right.x + shift);
+    let midpoint = 0.5 * (left.loc + right.loc + shift);
     let fac = (right.v - left.v).dot(face.centroid() - midpoint) / dx.length_squared();
     let v_face = 0.5 * (left.v + right.v) - fac * dx;
 
@@ -91,7 +91,7 @@ pub fn flux_exchange_boundary(
     let mut reflected = part.reflect(face.centroid(), face.normal());
     let dx_face = face.centroid() - part.centroid;
     let dx_centroid = reflected.centroid - part.centroid;
-    let dx = reflected.x - part.x;
+    let dx = reflected.loc - part.loc;
 
     // Calculate the maximal signal velocity (used for timestep computation)
     let mut v_max = 0.;

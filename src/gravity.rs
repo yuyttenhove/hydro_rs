@@ -14,8 +14,8 @@ fn compute_self_gravity(particles: &[Particle], softening_length: f64) -> Vec<DV
             let mut acceleration = DVec3::ZERO;
             for j in (i + 1)..num_particles {
                 let pj = &particles[j];
-                let r = (pj.x - pi.x).length() + softening_length;
-                let dir = pj.x - pi.x;
+                let r = (pj.loc - pi.loc).length() + softening_length;
+                let dir = pj.loc - pi.loc;
                 let a = pj.conserved.mass() * dir / (r * r * r);
                 acceleration += a;
             }
@@ -140,14 +140,14 @@ impl KeplerianPotential {
         particles
             .iter()
             .map(|part| {
-                let r = part.x - self.position;
+                let r = part.loc - self.position;
                 -r * (r.length_squared() + self.softening_length * self.softening_length).powf(-1.5)
             })
             .collect()
     }
 
     fn get_timestep(&self, particle: &Particle) -> f64 {
-        let dx = particle.x - self.position;
+        let dx = particle.loc - self.position;
         let eta = 0.1 * (dx.length_squared() + self.softening_length.powi(2)).sqrt();
         (eta / particle.a_grav.length()).sqrt()
     }

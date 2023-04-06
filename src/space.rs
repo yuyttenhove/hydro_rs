@@ -2,6 +2,7 @@ use std::{
     fs::File,
     io::{BufWriter, Error as IoError, Write},
     sync::atomic::{AtomicU64, Ordering},
+    vec,
 };
 
 use glam::DVec3;
@@ -10,6 +11,7 @@ use rayon::prelude::*;
 use yaml_rust::Yaml;
 
 use crate::{
+    cell::Cell,
     engine::Engine,
     equation_of_state::EquationOfState,
     errors::ConfigError,
@@ -55,8 +57,11 @@ macro_rules! get_other {
 
 pub struct Space {
     parts: Vec<Particle>,
+    cells: Vec<Cell>,
     boundary: Boundary,
     box_size: DVec3,
+    cell_width: DVec3,
+    cell_dim: [usize; 3],
     voronoi_faces: Vec<VoronoiFace>,
     voronoi_cell_face_connections: Vec<usize>,
     eos: EquationOfState,
@@ -79,6 +84,94 @@ impl Space {
             .as_str()
             .unwrap_or("reflective")
             .to_string();
+        let max_top_level_cells = space_cfg["max_top_level_cells"].as_i64().unwrap_or(12) as usize;
+
+        // Calculate the number of cells along each dimension
+        let max_width = box_size.max_element();
+        let cwidth = max_width / max_top_level_cells as f64;
+        let mut cdim = [
+            (box_size.x / cwidth).round() as i32,
+            (box_size.y / cwidth).round() as i32,
+            (box_size.z / cwidth).round() as i32,
+        ];
+        match initial_conditions.dimensionality() {
+            HydroDimension::HydroDimension1D => {
+                cdim[1] = 1;
+                cdim[2] = 1;
+            }
+            HydroDimension::HydroDimension2D => cdim[2] = 1,
+            _ => (),
+        }
+        let cwidth = DVec3::new(
+            box_size.x / cdim[0] as f64,
+            box_size.y / cdim[1] as f64,
+            box_size.z / cdim[2] as f64,
+        );
+
+        // Initialize the cells
+        let mut cells = vec![];
+        for i in 0..cdim[0] {
+            for j in 0..cdim[1] {
+                for k in 0..cdim[2] {
+                    let loc = DVec3::new(
+                        i as f64 + cwidth.x,
+                        j as f64 * cwidth.y,
+                        k as f64 * cwidth.z,
+                    );
+                    let mut ngb_cid = vec![];
+                    let mut ngb_shift = vec![];
+                    let di = 1;
+                    let dj = match initial_conditions.dimensionality() {
+                        HydroDimension::HydroDimension1D => 0,
+                        _ => 1,
+                    };
+                    let dk = match initial_conditions.dimensionality() {
+                        HydroDimension::HydroDimension3D => 1,
+                        _ => 0,
+                    };
+                    for ii in (i - di)..=(i + di) {
+                        for jj in (j - dj)..=(j + dj) {
+                            for kk in (k - dk)..=(k + dk) {
+                                let mut shift = DVec3::ZERO;
+                                let mut iii = ii;
+                                if ii < 0 {
+                                    shift.x = -box_size.x;
+                                    iii += cdim[0];
+                                } else if ii >= cdim[0] {
+                                    shift.x = box_size.x;
+                                    iii -= cdim[0];
+                                }
+                                let mut jjj = jj;
+                                if jj < 0 {
+                                    shift.y = -box_size.y;
+                                    jjj += cdim[1];
+                                } else if jj >= cdim[1] {
+                                    shift.y = box_size.y;
+                                    jjj -= cdim[1];
+                                }
+                                let mut kkk = kk;
+                                if kk < 0 {
+                                    shift.z = -box_size.z;
+                                    kkk += cdim[2];
+                                } else if kk >= cdim[2] {
+                                    shift.z = box_size.z;
+                                    kkk -= cdim[2];
+                                }
+
+                                if iii == i && jjj == j && kkk == k {
+                                    continue;
+                                }
+
+                                ngb_cid
+                                    .push((iii * cdim[1] * cdim[2] + jjj * cdim[2] + kkk) as usize);
+                                ngb_shift.push(shift);
+                            }
+                        }
+                    }
+                    cells.push(Cell::new(loc, ngb_cid, ngb_shift));
+                }
+            }
+        }
 
         // create space
         let boundary = match boundary.as_str() {
@@ -89,9 +182,12 @@ impl Space {
             _ => return Err(ConfigError::UnknownBoundaryConditions(boundary)),
         };
         let mut space = Space {
+            cells,
             boundary,
             box_size,
             eos,
+            cell_width: cwidth,
+            cell_dim: [cdim[0] as usize, cdim[1] as usize, cdim[2] as usize],
             dimensionality: initial_conditions.dimensionality(),
             parts: initial_conditions.into_parts(),
             voronoi_faces: vec![],
@@ -138,6 +234,7 @@ impl Space {
             self.box_size,
             self.dimensionality.into(),
             self.periodic(),
+            false,
         );
 
         self.parts
@@ -156,6 +253,40 @@ impl Space {
 
         self.voronoi_cell_face_connections = voronoi.cell_face_connections().to_vec();
         self.voronoi_faces = voronoi.into_faces();
+    }
+
+    pub fn regrid(&mut self) {
+        // Sort the parts along their cell index
+       self.parts.par_iter_mut().for_each(|part| {
+            let i = (part.loc.x / self.cell_width.x).floor() as usize;
+            let j = (part.loc.y / self.cell_width.y).floor() as usize;
+            let k = (part.loc.z / self.cell_width.z).floor() as usize;
+            part.cell_id = (i * self.cell_dim[1] + j) * self.cell_dim[2] + k;
+        });
+        self.parts.sort_by_key(|part| part.cell_id);
+
+        // Now count the number of parts for each cell
+        let mut offset = 0;
+        let mut pid = 0;
+        for (cid, cell) in self.cells.iter_mut().enumerate() {
+            while pid < self.parts.len() && self.parts[pid].cell_id == cid {
+                pid += 1;
+            }
+            cell.part_offset = offset;
+            cell.part_count = pid - offset;
+            offset = pid;
+        }
+
+        // Now update the cells search structures
+        let trees = self
+            .cells
+            .par_iter()
+            .map(|cell| cell.build_search_tree(&self.cells, &self.parts))
+            .collect::<Vec<_>>();
+        self.cells
+            .par_iter_mut()
+            .zip(trees.into_par_iter())
+            .for_each(|(cell, tree)| cell.assign_search_tree(tree));
     }
 
     pub fn convert_conserved_to_primitive(&mut self, engine: &Engine) {
@@ -180,6 +311,7 @@ impl Space {
             self.box_size,
             self.dimensionality.into(),
             self.periodic(),
+            false,
         );
 
         for (part, voronoi_cell) in self.parts.iter_mut().zip(voronoi.cells().iter()) {
@@ -279,12 +411,12 @@ impl Space {
         // Handle particles that left the box.
         let mut to_remove = vec![];
         for (idx, part) in self.parts.iter_mut().enumerate() {
-            if !contains(self.box_size, part.x) {
+            if !contains(self.box_size, part.loc) {
                 match self.boundary {
                     Boundary::Reflective => box_reflect(self.box_size, part),
                     Boundary::Open | Boundary::Vacuum => to_remove.push(idx),
                     Boundary::Periodic => {
-                        box_wrap(self.box_size, &mut part.x, self.dimensionality.into())
+                        box_wrap(self.box_size, &mut part.loc, self.dimensionality.into())
                     }
                 }
             }
@@ -347,6 +479,77 @@ impl Space {
                         .dot(face.centroid() - part.centroid - shift)
                         .into();
                     limiter.collect(&other.primitives, &extrapolated)
+                }
+                limiter.limit(&mut gradients, &part.primitives);
+
+                debug_assert!(gradients.is_finite());
+                Some(gradients)
+            })
+            .collect::<Vec<_>>();
+
+        // Now apply the gradients to the particles
+        self.parts
+            .par_iter_mut()
+            .zip(gradients.par_iter())
+            .for_each(|(part, gradient)| {
+                if let Some(gradient) = gradient {
+                    part.gradients = *gradient;
+                    debug_assert!(engine.part_is_active(part, Iact::Gradient));
+                }
+            });
+    }
+
+    pub fn meshless_gradient_estimate(&mut self, engine: &Engine) {
+        // Compute the gradients for all the active parts
+        let gradients = self
+            .parts
+            .par_iter()
+            .map(|part| {
+                if !engine.part_is_active(part, Iact::Gradient) {
+                    return None;
+                }
+
+                let cell = &self.cells[part.cell_id];
+
+                // Loop over the nearest neighbours of this particle until we reach the safety radius
+                // to compute the gradients
+                let mut gradient_data = GradientData::init(self.dimensionality);
+                for (loc, id) in cell.nn_iter(part.loc) {
+                    let ds = loc - part.loc;
+                    let distance_squared = ds.length_squared();
+                    debug_assert!(distance_squared > 0.);
+                    if distance_squared > part.search_radius * part.search_radius {
+                        break;
+                    }
+                    let ngb_part = &self.parts[id];
+                    if distance_squared > ngb_part.search_radius * ngb_part.search_radius {
+                        continue;
+                    }
+                    gradient_data.collect(
+                        &part.primitives,
+                        &ngb_part.primitives,
+                        1. / distance_squared,
+                        ds,
+                    );
+                }
+                let mut gradients = gradient_data.finalize();
+                debug_assert!(gradients.is_finite());
+
+                // Loop over the nearest neighbours of this particle until we reach the safety radius
+                // to limit the gradients
+                let mut limiter = LimiterData::init(&part.primitives);
+                for (loc, id) in cell.nn_iter(part.loc) {
+                    let ds = loc - part.loc;
+                    let distance_squared = ds.length_squared();
+                    if distance_squared > part.search_radius * part.search_radius {
+                        break;
+                    }
+                    let ngb_part = &self.parts[id];
+                    if distance_squared > ngb_part.search_radius * ngb_part.search_radius {
+                        continue;
+                    }
+                    let extrapolated = gradients.dot(0.5 * ds).into();
+                    limiter.collect(&ngb_part.primitives, &extrapolated)
                 }
                 limiter.limit(&mut gradients, &part.primitives);
 
@@ -458,6 +661,46 @@ impl Space {
             });
     }
 
+    /// Apply the timestep limiter to the particles, in a meshless fashion
+    pub fn meshless_timestep_limiter(&mut self, engine: &Engine) {
+        // Loop over all the particles to compute their wakeup times
+        let wakeups = self
+            .parts
+            .par_iter()
+            .map(|part| {
+
+                // Loop over the nearest neighbours of this particle until we reach the safety radius
+                let mut wakeup = NUM_TIME_BINS;
+                for (loc, id) in self.cells[part.cell_id].nn_iter(part.loc) {
+                    let ds = loc - part.loc;
+                    let distance_squared = ds.length_squared();
+                    debug_assert!(distance_squared > 0.);
+                    if distance_squared > part.search_radius * part.search_radius {
+                        break;
+                    }
+                    let ngb_part = &self.parts[id];
+                    if !ngb_part.is_ending(engine) {
+                        continue;
+                    }
+                    if distance_squared > ngb_part.search_radius * ngb_part.search_radius {
+                        continue;
+                    }
+                    wakeup = wakeup.min(ngb_part.timebin + TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN);
+                }
+
+                wakeup
+            })
+            .collect::<Vec<_>>();
+
+        // Now apply the timestep limiter
+        self.parts
+            .par_iter_mut()
+            .zip(wakeups.par_iter())
+            .for_each(|(part, &wakeup)| {
+                part.timestep_limit(wakeup, engine);
+            });
+    }
+
     /// Collect the gravitational accellerations in the particles
     pub fn gravity(&mut self, engine: &Engine) {
         let Some(solver) = &engine.gravity_solver else { return; };
@@ -528,9 +771,9 @@ impl Space {
             writeln!(
                 f,
                 "p\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-                part.x.x,
-                part.x.y,
-                part.x.z,
+                part.loc.x,
+                part.loc.y,
+                part.loc.z,
                 density,
                 part.primitives.velocity().x,
                 part.primitives.velocity().y,
@@ -558,7 +801,7 @@ impl Space {
 
     pub fn self_check(&self) {
         for part in self.parts.iter() {
-            debug_assert!(part.x.is_finite());
+            debug_assert!(part.loc.is_finite());
             debug_assert!(part.primitives.density().is_finite());
             debug_assert!(part.primitives.velocity().is_finite());
             debug_assert!(part.primitives.pressure().is_finite());

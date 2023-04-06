@@ -23,7 +23,9 @@ pub struct Particle {
     pub volume: f64,
     pub face_connections_offset: usize,
     pub face_count: usize,
-    pub x: DVec3,
+    pub search_radius: f64,
+    pub cell_id: usize,
+    pub loc: DVec3,
     pub centroid: DVec3,
     pub v: DVec3,
     pub max_signal_velocity: f64,
@@ -55,7 +57,7 @@ impl Particle {
             - 0.5 * self.conserved.momentum().dot(self.primitives.velocity()))
             * m_inv;
 
-        let d_v = Primitives::from(self.gradients.dot(self.centroid - self.x)).velocity();
+        let d_v = Primitives::from(self.gradients.dot(self.centroid - self.loc)).velocity();
         // Fluid velocity at generator (instead of centroid)
         let fluid_v = self.conserved.momentum() * m_inv + d_v;
         let sound_speed = eos.sound_speed(
@@ -68,7 +70,7 @@ impl Particle {
             ParticleMotion::FIXED => DVec3::ZERO,
             ParticleMotion::FLUID => fluid_v,
             ParticleMotion::STEER => {
-                let d = self.centroid - self.x;
+                let d = self.centroid - self.loc;
                 let abs_d = d.length();
                 let r = radius;
                 let eta = 0.25;
@@ -103,9 +105,9 @@ impl Particle {
     ///
     /// Also predicts the primitive quantities forward in time over a time dt_extrapolate using the Euler equations.
     pub fn drift(&mut self, dt_drift: f64, dt_extrapolate: f64, eos: &EquationOfState) {
-        self.x += self.v * dt_drift;
+        self.loc += self.v * dt_drift;
 
-        debug_assert!(self.x.is_finite(), "Infinite x after drift!");
+        debug_assert!(self.loc.is_finite(), "Infinite x after drift!");
 
         // Extrapolate primitives in time
         if let EquationOfState::Ideal { gamma, .. } = eos {
@@ -134,6 +136,7 @@ impl Particle {
         self.volume = voronoi_cell.volume();
         self.face_connections_offset = voronoi_cell.face_connections_offset();
         self.face_count = voronoi_cell.face_count();
+        self.search_radius = 1.5 * voronoi_cell.safety_radius();
         self.set_centroid(voronoi_cell.centroid());
         debug_assert!(self.volume >= 0.);
     }
@@ -184,7 +187,7 @@ impl Particle {
 
     pub fn from_ic(x: DVec3, mass: f64, velocity: DVec3, internal_energy: f64) -> Self {
         Self {
-            x,
+            loc: x,
             conserved: Conserved::new(
                 mass,
                 mass * velocity,
@@ -323,7 +326,7 @@ impl Particle {
 
     pub fn reflect(&self, around: DVec3, normal: DVec3) -> Self {
         let mut reflected = self.clone();
-        reflected.x += 2. * (around - self.x).dot(normal) * normal;
+        reflected.loc += 2. * (around - self.loc).dot(normal) * normal;
         reflected.centroid += 2. * (around - self.centroid).dot(normal) * normal;
         reflected.v -= 2. * reflected.v.dot(normal) * normal;
 
@@ -377,7 +380,7 @@ impl Particle {
     }
 
     pub fn loc(&self) -> DVec3 {
-        self.x
+        self.loc
     }
 
     pub fn set_centroid(&mut self, centroid: DVec3) {
