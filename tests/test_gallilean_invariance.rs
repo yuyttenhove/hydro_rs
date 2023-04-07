@@ -46,9 +46,23 @@ fn drift(space: &mut Space, space_boosted: &mut Space) {
         .iter()
         .zip(space_boosted.parts().iter())
         .for_each(|(part, part_boosted)| {
-            assert_approx_eq!(f64, part.extrapolations.density(), part_boosted.extrapolations.density(), epsilon=1e-10);
-            assert_approx_eq_dvec3!(part.extrapolations.velocity(), part_boosted.extrapolations.velocity(), epsilon=1e-10);
-            assert_approx_eq!(f64, part.extrapolations.pressure(), part_boosted.extrapolations.pressure(), epsilon=1e-10);
+            assert_approx_eq!(
+                f64,
+                part.extrapolations.density(),
+                part_boosted.extrapolations.density(),
+                epsilon = 1e-10
+            );
+            assert_approx_eq_dvec3!(
+                part.extrapolations.velocity(),
+                part_boosted.extrapolations.velocity(),
+                epsilon = 1e-10
+            );
+            assert_approx_eq!(
+                f64,
+                part.extrapolations.pressure(),
+                part_boosted.extrapolations.pressure(),
+                epsilon = 1e-10
+            );
         });
 }
 

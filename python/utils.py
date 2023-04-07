@@ -13,42 +13,59 @@ from riemann_solver import RiemannSolver
 from typing import List, Tuple
 
 
-def get_start_count(fname, header, name):
-    start = 0
-    count = 0
-    with open(fname) as f:
-        i = 0
-        while (l := f.readline().rstrip()) is not None:
-            i += 1
-            if l == header:
-                start = i
-                break
-        if start == -1:
-            raise ValueError(f"Found no {name} data!")
-        while (l := f.readline().rstrip()) is not None:
-            if len(l) == 0:
-                break
-            if l[:2] == "##":
-                break
-            if l[0] != "#":
-                count += 1
-    return start, count
+def read_particle_data(fname: str) -> Tuple[pd.DataFrame, float]:
+    with h5py.File(fname, "r") as data:
+        time = data["Header"].attrs["Time"][0]
+        coordinates = data["PartType0/Coordinates"][:]
+        velocities = data["PartType0/Velocities"][:]
+        densities = data["PartType0/Densities"][:]
+        pressures = data["PartType0/Pressures"][:]
+        internal_energy = data["PartType0/InternalEnergy"][:]
+        entropy = data["PartType0/Entropy"][:]
+        timestep = data["PartType0/Timestep"][:]
+
+    data = pd.DataFrame(
+        data=np.stack(
+            [
+                coordinates[:, 0],
+                coordinates[:, 1],
+                coordinates[:, 2],
+                densities,
+                velocities[:, 0],
+                velocities[:, 1],
+                velocities[:, 2],
+                pressures,
+                internal_energy,
+                entropy,
+                timestep,
+            ],
+            axis=1
+        ),
+        columns=["x", "y", "z", "rho",
+                 "v_x", "v_y", "v_z", "P", "u", "S", "t"]
+    )
+    return data, time
 
 
-def read_particle_data(fname: str) -> pd.DataFrame:
-    start, count = get_start_count(fname, "## Particles:", "particle")
-    data = pd.read_csv(fname, sep="\t", skiprows=start, nrows=count)
-    data = data.iloc[:, 1:]
-    data.columns = ["x", "y", "z", "rho",
-                    "v_x", "v_y", "v_z", "P", "u", "S", "t"]
-    return data
+def read_face_geometry(fname: str) -> pd.DataFrame:
+    with h5py.File(fname, "r") as data:
+        dimension = data["Header"].attrs["Dimension"]
+        if dimension != 2:
+            raise ValueError(
+                f"Cannot read face geometry with dimension = {dimension}!")
+        if "VoronoiFaces" not in data:
+            raise ValueError("No Voronoi data found in file!")
+        normals = data["VoronoiFaces/Normal"][:]
+        areas = data["VoronoiFaces/Area"][:].reshape((-1, 1))
+        centroids = data["VoronoiFaces/Centroid"][:]
 
+    face_dir = np.stack([normals[:, 1], -normals[:, 0],
+                        np.zeros(len(normals))], axis=1)
+    a = centroids - 0.5 * areas * face_dir
+    b = centroids + 0.5 * areas * face_dir
 
-def read_face_data(fname: str) -> pd.DataFrame:
-    start, count = get_start_count(fname, "## Voronoi faces:", "voronoi face")
-    data = pd.read_csv(fname, sep="\t", skiprows=start, nrows=count)
-    data = data.iloc[:, 1:]
-    data.columns = ["a_x", "a_y", "b_x", "b_y"]
+    data = pd.DataFrame(data=np.concatenate(
+        [a[:, :2], b[:, :2]], axis=1), columns=["a_x", "a_y", "b_x", "b_y"])
     return data
 
 
@@ -58,7 +75,7 @@ def expand_lim(lim):
 
 
 def plot_faces(fname: str, lw=0.5, dpi=300, show_ax=True):
-    faces = read_face_data(fname)
+    faces = read_face_geometry(fname)
     faces = [np.stack([row[:2], row[2:]]) for row in faces.values]
     lines = LineCollection(faces, color="r", lw=lw)
     xlim = (min([f[:, 0].min() for f in faces]),
@@ -190,11 +207,12 @@ def interpolate_nn(data, coordinates_from, coordinates_to):
 
 
 def get_slice(data, coordinates, x_lim, y_lim, res=1000, z=0):
-    x = np.linspace(x_lim[0], x_lim[1], res) + 0.5 * (x_lim[1] - x_lim[0]) / res
+    x = np.linspace(x_lim[0], x_lim[1], res) + \
+        0.5 * (x_lim[1] - x_lim[0]) / res
     y_res = math.floor((y_lim[1] - y_lim[0]) / (x_lim[1] - x_lim[0]) * res)
-    y = np.linspace(y_lim[0], y_lim[1], y_res) + 0.5 * (y_lim[1] - y_lim[0]) / y_res
+    y = np.linspace(y_lim[0], y_lim[1], y_res) + \
+        0.5 * (y_lim[1] - y_lim[0]) / y_res
     z = np.array([z])
     x, y, z = np.meshgrid(x, y, z)
     coords_to = np.column_stack([x.ravel(), y.ravel(), z.ravel()])
     return interpolate_nn(data, coordinates, coords_to).reshape((y_res, res))[::-1, :]
-

@@ -5,7 +5,7 @@ from utils import get_slice, read_particle_data
 
 
 def plot_slice(fname, savename):
-    data = read_particle_data(fname)
+    data, _ = read_particle_data(fname)
     coords = np.column_stack([data["x"].values, data["y"].values, data["z"].values])
     values = data["rho"]
     x_lim = [0., 1.]

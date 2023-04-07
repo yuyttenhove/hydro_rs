@@ -1,17 +1,13 @@
-use std::{
-    fs::File,
-    io::{BufWriter, Error as IoError},
-};
-
 use yaml_rust::Yaml;
 
 use crate::{
     errors::ConfigError,
     gravity::GravitySolver,
+    part::Particle,
     riemann_solver::{get_solver, RiemannFluxSolver},
     space::Space,
-    time_integration::{Runner, Iact},
-    timeline::*, part::Particle,
+    time_integration::{Iact, Runner},
+    timeline::*,
 };
 
 pub enum ParticleMotion {
@@ -51,6 +47,7 @@ pub struct Engine {
     ti_between_status: IntegerTime,
     snap: u16,
     snapshot_prefix: String,
+    save_faces: bool,
     pub particle_motion: ParticleMotion,
 }
 
@@ -107,6 +104,7 @@ impl Engine {
             .ok_or(ConfigError::MissingParameter(
                 "snapshots:t_between_snaps".to_string(),
             ))?;
+        let save_faces = snapshots_cfg["save_faces"].as_bool().unwrap_or(false);
 
         // Setup members
         let runner = Runner::new(runner_kind)?;
@@ -135,12 +133,13 @@ impl Engine {
             ti_between_status: (t_status * time_base_inv) as IntegerTime,
             snap: 0,
             snapshot_prefix: prefix.to_string(),
+            save_faces,
             particle_motion,
         })
     }
 
     /// Run this simulation
-    pub fn run(&mut self, space: &mut Space) -> Result<(), IoError> {
+    pub fn run(&mut self, space: &mut Space) -> Result<(), hdf5::Error> {
         // Start by saving the initial state
         self.dump(space)?;
 
@@ -197,14 +196,10 @@ impl Engine {
         self.t_current += dt;
     }
 
-    fn dump(&mut self, space: &mut Space) -> Result<(), IoError> {
+    fn dump(&mut self, space: &mut Space) -> Result<(), hdf5::Error> {
         println!("Writing snapshot at t={}!", self.t_current);
-        let f = File::create(&format!(
-            "output/{}{:04}.txt",
-            self.snapshot_prefix, self.snap
-        ))?;
-        let mut f = BufWriter::new(f);
-        space.dump(&mut f)?;
+        let filename = format!("output/{}{:04}.hdf5", self.snapshot_prefix, self.snap);
+        space.dump(&self, &filename)?;
         self.ti_snap += self.ti_between_snaps;
         self.snap += 1;
 
@@ -253,5 +248,9 @@ impl Engine {
 
     pub fn with_gravity(&self) -> bool {
         self.gravity_solver.is_some()
+    }
+
+    pub fn save_faces(&self) -> bool {
+        self.save_faces
     }
 }

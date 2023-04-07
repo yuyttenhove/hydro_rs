@@ -15,7 +15,7 @@ def main(fname: str, savename: str, time=0.25):
     P_R = 0.1  # Pressure right state
 
     # read data
-    data = read_particle_data(fname)
+    data, time = read_particle_data(fname)
 
     # Plot
     x_lim = [0.5, 1.5]
@@ -38,6 +38,6 @@ if __name__ == "__main__":
         fname = sys.argv[1]
         savename = sys.argv[2]
     except IndexError:
-        fname = root / "run/output/sodshock_1D_0005.txt"
+        fname = root / "run/output/sodshock_2D_0005.hdf5"
         savename = "test.png"
     main(fname, savename)

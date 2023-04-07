@@ -199,12 +199,10 @@ impl Runner {
                 Iact::ApplyFlux => part.is_ending(engine),
                 _ => part.is_halfway(engine),
             },
-            Runner::MeshlessGradientHalfDrift => {
-                match iact {
-                    Iact::Flux | Iact::Volume => part.is_halfway(engine),
-                    _ => part.is_ending(engine),
-                }
-            }
+            Runner::MeshlessGradientHalfDrift => match iact {
+                Iact::Flux | Iact::Volume => part.is_halfway(engine),
+                _ => part.is_ending(engine),
+            },
         }
     }
 }

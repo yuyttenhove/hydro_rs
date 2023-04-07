@@ -1,6 +1,5 @@
 use std::{
-    fs::File,
-    io::{BufWriter, Error as IoError, Write},
+    path::Path,
     sync::atomic::{AtomicU64, Ordering},
     vec,
 };
@@ -52,6 +51,21 @@ macro_rules! get_other {
         } else {
             &$space.parts[$face.left()]
         }
+    };
+}
+
+macro_rules! create_dataset {
+    ($group:expr, $data_iter:expr, $name:expr) => {
+        $group
+            .new_dataset_builder()
+            .with_data(&$data_iter.collect::<Vec<_>>())
+            .create($name)
+    };
+}
+
+macro_rules! create_attr {
+    ($group:expr, $data:expr, $name:expr) => {
+        $group.new_attr_builder().with_data(&$data).create($name)
     };
 }
 
@@ -257,7 +271,7 @@ impl Space {
 
     pub fn regrid(&mut self) {
         // Sort the parts along their cell index
-       self.parts.par_iter_mut().for_each(|part| {
+        self.parts.par_iter_mut().for_each(|part| {
             let i = (part.loc.x / self.cell_width.x).floor() as usize;
             let j = (part.loc.y / self.cell_width.y).floor() as usize;
             let k = (part.loc.z / self.cell_width.z).floor() as usize;
@@ -668,7 +682,6 @@ impl Space {
             .parts
             .par_iter()
             .map(|part| {
-
                 // Loop over the nearest neighbours of this particle until we reach the safety radius
                 let mut wakeup = NUM_TIME_BINS;
                 for (loc, id) in self.cells[part.cell_id].nn_iter(part.loc) {
@@ -756,44 +769,129 @@ impl Space {
     }
 
     /// Dump snapshot of space at the current time
-    pub fn dump(&mut self, f: &mut BufWriter<File>) -> Result<(), IoError> {
-        writeln!(f, "## Particles:")?;
-        writeln!(
-            f,
-            "#p\tx (m)\ty\tz\trho (kg m^-3)\tvx (m s^-1)\tvy\tvz\tP (kg m^-1 s^-2)\tu (J / kg)\tS\ttime (s)"
-        )?;
-        for part in self.parts.iter() {
-            let internal_energy = part.internal_energy();
-            let density = part.primitives.density();
-            let entropy = self
-                .eos
-                .gas_entropy_from_internal_energy(internal_energy, density);
-            writeln!(
-                f,
-                "p\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-                part.loc.x,
-                part.loc.y,
-                part.loc.z,
-                density,
-                part.primitives.velocity().x,
-                part.primitives.velocity().y,
-                part.primitives.velocity().z,
-                part.primitives.pressure(),
-                internal_energy,
-                entropy,
-                part.dt,
-            )?;
-        }
+    pub fn dump<P: AsRef<Path>>(
+        &mut self,
+        engine: &Engine,
+        filename: P,
+    ) -> Result<(), hdf5::Error> {
+        let file = hdf5::File::create(filename)?;
 
-        if self.dimensionality == HydroDimension::HydroDimension2D {
-            writeln!(f, "## Voronoi faces:")?;
-            writeln!(f, "#f\ta_x\ta_y\tb_x\t_by")?;
-            for face in self.voronoi_faces.iter() {
-                let d = face.normal().cross(DVec3::Z);
-                let a = face.centroid() + 0.5 * face.area() * d;
-                let b = face.centroid() - 0.5 * face.area() * d;
-                writeln!(f, "f\t{}\t{}\t{}\t{}", a.x, a.y, b.x, b.y)?;
-            }
+        // Write header
+        let header = file.create_group("Header")?;
+        let time = make_timestep(engine.ti_current(), engine.time_base());
+        create_attr!(header, [time], "Time")?;
+        create_attr!(header, self.box_size.to_array(), "BoxSize")?;
+        create_attr!(header, [self.parts.len(), 0, 0, 0, 0], "Numpart_Total")?;
+        create_attr!(header, [usize::from(self.dimensionality)], "Dimension")?;
+
+        // Write particle data
+        let part_data = file.create_group("PartType0")?;
+        create_dataset!(
+            part_data,
+            self.parts.iter().map(|part| part.loc.to_array()),
+            "Coordinates"
+        )?;
+        create_dataset!(
+            part_data,
+            self.parts.iter().map(|part| part.conserved.mass()),
+            "Masses"
+        )?;
+        create_dataset!(
+            part_data,
+            self.parts.iter().map(|part| part.primitives.density()),
+            "Densities"
+        )?;
+        create_dataset!(
+            part_data,
+            self.parts
+                .iter()
+                .map(|part| part.conserved.momentum().to_array()),
+            "Momentum"
+        )?;
+        create_dataset!(
+            part_data,
+            self.parts
+                .iter()
+                .map(|part| part.primitives.velocity().to_array()),
+            "Velocities"
+        )?;
+        create_dataset!(
+            part_data,
+            self.parts.iter().map(|part| part.primitives.pressure()),
+            "Pressures"
+        )?;
+        create_dataset!(
+            part_data,
+            self.parts.iter().map(|part| part.conserved.energy()),
+            "Energy"
+        )?;
+        create_dataset!(
+            part_data,
+            self.parts.iter().map(|part| part.internal_energy()),
+            "InternalEnergy"
+        )?;
+        create_dataset!(
+            part_data,
+            self.parts
+                .iter()
+                .map(|part| self.eos.gas_entropy_from_internal_energy(
+                    part.internal_energy(),
+                    part.primitives.density()
+                )),
+            "Entropy"
+        )?;
+        create_dataset!(
+            part_data,
+            self.parts.iter().map(|part| part.volume),
+            "Volumes"
+        )?;
+        create_dataset!(
+            part_data,
+            self.parts.iter().map(|part| part.centroid.to_array()),
+            "Centroids"
+        )?;
+        create_dataset!(
+            part_data,
+            self.parts.iter().map(|part| part.a_grav.to_array()),
+            "GravitationalAcceleration"
+        )?;
+        create_dataset!(part_data, self.parts.iter().map(|part| part.dt), "Timestep")?;
+
+        if engine.save_faces() {
+            // Write Voronoi faces
+            let face_data = file.create_group("VoronoiFaces")?;
+            create_dataset!(
+                face_data,
+                self.voronoi_faces.iter().map(|face| face.area()),
+                "Area"
+            )?;
+            create_dataset!(
+                face_data,
+                self.voronoi_faces
+                    .iter()
+                    .map(|face| face.centroid().to_array()),
+                "Centroid"
+            )?;
+            create_dataset!(
+                face_data,
+                self.voronoi_faces
+                    .iter()
+                    .map(|face| face.normal().to_array()),
+                "Normal"
+            )?;
+            create_dataset!(
+                face_data,
+                self.voronoi_faces.iter().map(|face| face.left()),
+                "Left"
+            )?;
+            create_dataset!(
+                face_data,
+                self.voronoi_faces.iter().map(|face| match face.right() {
+                    Some(right) => right as i64,
+                    None => -1,
+                }),
+                "Right"
+            )?;
         }
 
         Ok(())

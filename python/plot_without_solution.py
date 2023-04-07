@@ -6,7 +6,7 @@ if __name__ == "__main__":
     root = get_root()
     fname = root / "run" / "output" / "sodshock_2D_0050.txt"
     save_name = root / "run" / "constant_2D.png"
-    data = read_particle_data(fname)
+    data, _ = read_particle_data(fname)
     x_lim = (0, 1)
 
     fig, axes = plt.subplots(2, 3, figsize=(9, 6))

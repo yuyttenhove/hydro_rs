@@ -7,6 +7,7 @@ pub use equation_of_state::EquationOfState;
 pub use initial_conditions::InitialConditions;
 pub use space::Space;
 
+mod cell;
 mod engine;
 mod equation_of_state;
 mod errors;
@@ -22,4 +23,3 @@ mod space;
 mod time_integration;
 mod timeline;
 mod utils;
-mod cell;

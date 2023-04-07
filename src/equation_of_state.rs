@@ -39,9 +39,7 @@ impl EquationOfState {
     /// Specific internal energy
     pub fn gas_internal_energy_from_pressure(&self, pressure: f64, density_inv: f64) -> f64 {
         match self {
-            EquationOfState::Ideal { odgm1, .. } => {
-                pressure * density_inv * odgm1
-            }
+            EquationOfState::Ideal { odgm1, .. } => pressure * density_inv * odgm1,
             _ => todo!(),
         }
     }

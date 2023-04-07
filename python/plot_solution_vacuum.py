@@ -17,7 +17,7 @@ def main(fname: str, savename: str, time=0.1):
     P_R = 0.0  # Pressure right state
 
     # read data
-    data = read_particle_data(fname)
+    data, time = read_particle_data(fname)
 
     # Plot
     x_lim = [0.5, 1.5]

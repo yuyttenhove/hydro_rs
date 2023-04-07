@@ -1,10 +1,10 @@
 import matplotlib.pyplot as plt
 from pathlib import Path
-from utils import read_data, plot_quantity
+from utils import read_particle_data, plot_quantity
 
 
 def main(fname, savename):
-    data = read_data(fname)
+    data, time = read_particle_data(fname)
     fig, axes = plt.subplots(1, 2, figsize=(9, 6))
     xlim = (0., 1.)
     plot_quantity(axes[0], data["x"].values, data["rho"].values, xlim, "Density", logx=False)

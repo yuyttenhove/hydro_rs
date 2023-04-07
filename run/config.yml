@@ -7,7 +7,8 @@ time_integration:
 
 snapshots:
   t_between_snaps: 0.05
-  prefix: "sodshock_1D_"
+  prefix: "sodshock_2D_"
+  save_faces: false
 
 engine:
   t_status: 0.01
@@ -15,8 +16,8 @@ engine:
   # runner: "DefaultHalfDrift"
   # runner: "OptimalOrderHalfDrift"
   # runner: "TwoGradientHalfDrift"
-  runner: "MeshlessGradientHalfDrift"
-  # runner: "OptimalOrder"
+  # runner: "MeshlessGradientHalfDrift"
+  runner: "OptimalOrder"
   # runner: "TwoGradient"
   # runner: "Default"
 
@@ -35,7 +36,7 @@ space:
   max_top_level_cells: 12
 
 initial_conditions:
-  type: "sodshock"
+  type: "file"
   box_size: [2., 1., 1.]
   num_part: 200
   filename: "ICs/sodshock_2D.hdf5"

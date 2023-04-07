@@ -37,9 +37,9 @@ impl Cell {
         // Add the neighbouring cells parts to the search tree
         for (cid, shift) in self.ngb_cid.iter().zip(self.ngb_shift.iter()) {
             let ngb_cell = &cells[*cid];
-            let ngb_parts = &parts[ngb_cell.part_offset..(ngb_cell.part_offset + ngb_cell.part_count)];
-            for (i, part) in ngb_parts.iter().enumerate()
-            {
+            let ngb_parts =
+                &parts[ngb_cell.part_offset..(ngb_cell.part_offset + ngb_cell.part_count)];
+            for (i, part) in ngb_parts.iter().enumerate() {
                 let pid = i + ngb_cell.part_offset;
                 tree_objects.push(TreeNode::new((part.loc + *shift).to_array(), pid));
             }
@@ -51,7 +51,7 @@ impl Cell {
         self.tree = tree;
     }
 
-    pub fn nn_iter(&self, loc: DVec3) -> Box<dyn Iterator<Item=(DVec3, usize)> + '_> {
+    pub fn nn_iter(&self, loc: DVec3) -> Box<dyn Iterator<Item = (DVec3, usize)> + '_> {
         let mut iter = self.tree.nearest_neighbor_iter(&loc.to_array());
 
         // skip the first element (will always be the query site itself)
