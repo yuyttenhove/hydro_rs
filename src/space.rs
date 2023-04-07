@@ -54,7 +54,6 @@ macro_rules! get_other {
     };
 }
 
-
 macro_rules! create_attr {
     ($group:expr, $data:expr, $name:expr) => {
         $group.new_attr_builder().with_data(&$data).create($name)
