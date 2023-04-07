@@ -539,11 +539,12 @@ impl Space {
                     if distance_squared > ngb_part.search_radius * ngb_part.search_radius {
                         continue;
                     }
+                    let dx_centroid = ngb_part.centroid - part.centroid;
                     gradient_data.collect(
                         &part.primitives,
                         &ngb_part.primitives,
                         1. / distance_squared,
-                        ds,
+                        dx_centroid,
                     );
                 }
                 let mut gradients = gradient_data.finalize();
@@ -562,7 +563,8 @@ impl Space {
                     if distance_squared > ngb_part.search_radius * ngb_part.search_radius {
                         continue;
                     }
-                    let extrapolated = gradients.dot(0.5 * ds).into();
+                    let midpoint = part.loc + 0.5 * ds;
+                    let extrapolated = gradients.dot(midpoint - part.centroid).into();
                     limiter.collect(&ngb_part.primitives, &extrapolated)
                 }
                 limiter.limit(&mut gradients, &part.primitives);
