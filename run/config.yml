@@ -16,10 +16,11 @@ engine:
   # runner: "DefaultHalfDrift"
   # runner: "OptimalOrderHalfDrift"
   # runner: "TwoGradientHalfDrift"
-  runner: "MeshlessGradientHalfDrift"
+  # runner: "MeshlessGradientHalfDrift"
   # runner: "OptimalOrder"
   # runner: "TwoGradient"
   # runner: "Default"
+  runner: "Pakmor"
 
 gravity:
   kind: "none"

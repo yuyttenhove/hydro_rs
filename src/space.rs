@@ -14,6 +14,7 @@ use crate::{
     engine::Engine,
     equation_of_state::EquationOfState,
     errors::ConfigError,
+    flux::FluxInfo,
     gradients::GradientData,
     initial_conditions::InitialConditions,
     part::Particle,
@@ -342,11 +343,9 @@ impl Space {
         }
     }
 
-    /// Do flux exchange between neighbouring particles
-    pub fn flux_exchange(&mut self, engine: &Engine) {
-        // Calculate the fluxes accross each face
-        let fluxes = self
-            .voronoi_faces
+    /// Compute the fluxes for each face (if any).
+    fn compute_fluxes(&self, engine: &Engine) -> Vec<Option<FluxInfo>> {
+        self.voronoi_faces
             .par_iter()
             .map(|face| {
                 let left = &self.parts[face.left()];
@@ -382,7 +381,13 @@ impl Space {
                     }
                 }
             })
-            .collect::<Vec<_>>();
+            .collect()
+    }
+
+    /// Do flux exchange between neighbouring particles
+    pub fn flux_exchange(&mut self, engine: &Engine) {
+        // Calculate the fluxes accross each face
+        let fluxes = self.compute_fluxes(engine);
 
         // Add fluxes to parts
         self.parts
@@ -394,6 +399,38 @@ impl Space {
                 let faces = &self.voronoi_cell_face_connections[offset..offset + part.face_count];
                 for &face_idx in faces {
                     if let Some(flux_info) = &fluxes[face_idx] {
+                        // Left or right?
+                        if idx == self.voronoi_faces[face_idx].left() {
+                            part.update_fluxes_left(flux_info, engine);
+                        } else {
+                            part.update_fluxes_right(flux_info, engine);
+                        }
+                    }
+                }
+            });
+    }
+
+    /// Apply the (first or second) half flux (for Heun's method).
+    pub fn half_flux_exchange(&mut self, engine: &Engine) {
+        // Calculate the fluxes accross each face
+        let fluxes = self.compute_fluxes(engine);
+
+        // Add fluxes to parts
+        self.parts
+            .par_iter_mut()
+            .enumerate()
+            .for_each(|(idx, part)| {
+                // Loop over faces and add fluxes if any
+                let offset = part.face_connections_offset;
+                let faces = &self.voronoi_cell_face_connections[offset..offset + part.face_count];
+                for &face_idx in faces {
+                    if let Some(flux_info) = &fluxes[face_idx] {
+                        // Half the fluxes
+                        let flux_info = &FluxInfo {
+                            fluxes: 0.5 * flux_info.fluxes,
+                            mflux: 0.5 * flux_info.mflux,
+                            v_max: flux_info.v_max,
+                        };
                         // Left or right?
                         if idx == self.voronoi_faces[face_idx].left() {
                             part.update_fluxes_left(flux_info, engine);
@@ -771,11 +808,7 @@ impl Space {
     }
 
     /// Dump snapshot of space at the current time
-    pub fn dump<P: AsRef<Path>>(
-        &self,
-        engine: &Engine,
-        filename: P,
-    ) -> Result<(), hdf5::Error> {
+    pub fn dump<P: AsRef<Path>>(&self, engine: &Engine, filename: P) -> Result<(), hdf5::Error> {
         let file = hdf5::File::create(filename)?;
 
         // Write header
@@ -895,7 +928,7 @@ impl Space {
                 "Right"
             )?;
         }
-        
+
         file.close()?;
 
         Ok(())

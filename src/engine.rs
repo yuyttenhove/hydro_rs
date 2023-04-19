@@ -31,10 +31,7 @@ struct SyncPoint {
 
 impl SyncPoint {
     fn new(ti: IntegerTime, kind: SyncPointType) -> Self {
-        Self {
-            ti,
-            kind,
-        }
+        Self { ti, kind }
     }
 }
 
@@ -176,10 +173,16 @@ impl Engine {
     pub fn run(&mut self, space: &mut Space) -> Result<(), hdf5::Error> {
         while self.t_current < self.t_end {
             // Get next sync point
-            let sync_point = self.sync_points.pop_front().expect("sync_points cannot be empty before end of simulation");
+            let sync_point = self
+                .sync_points
+                .pop_front()
+                .expect("sync_points cannot be empty before end of simulation");
 
             // Drift to next sync point
-            assert!(sync_point.ti >= self.ti_current, "Trying to drift backwards in time!");
+            assert!(
+                sync_point.ti >= self.ti_current,
+                "Trying to drift backwards in time!"
+            );
             let dti = sync_point.ti - self.ti_current;
             if dti > 0 {
                 self.runner().drift(dti, self, space);
@@ -249,14 +252,18 @@ impl Engine {
 
     fn queue_step(&mut self, ti: IntegerTime, kind: SyncPointType) {
         while self.ti_snap < ti {
-            self.sync_points.push_back(SyncPoint::new(self.ti_snap, SyncPointType::Dump));
+            self.sync_points
+                .push_back(SyncPoint::new(self.ti_snap, SyncPointType::Dump));
             self.ti_snap += self.ti_between_snaps;
         }
         self.sync_points.push_back(SyncPoint::new(ti, kind));
     }
 
     pub fn update_ti_next(&mut self, ti_next: IntegerTime) {
-        debug_assert_eq!(self.ti_current, self.ti_next, "Updating ti_next while not at the end of a timestep!");
+        debug_assert_eq!(
+            self.ti_current, self.ti_next,
+            "Updating ti_next while not at the end of a timestep!"
+        );
         self.ti_old = self.ti_next;
         self.ti_next = ti_next;
         self.status();
