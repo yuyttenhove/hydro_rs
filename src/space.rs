@@ -771,18 +771,13 @@ impl Space {
         self.parts.par_iter_mut().for_each(|part| {
             if part.is_ending(engine) {
                 part.grav_kick();
-                part.reset_fluxes();
             }
         })
     }
 
     /// Prepare the particles for the next timestep
-    pub fn prepare(&mut self, engine: &Engine) {
-        for part in self.parts.iter_mut() {
-            if part.is_starting(engine) {
-                part.reset_fluxes();
-            }
-        }
+    pub fn prepare(&mut self, _engine: &Engine) {
+        // Nothing to do here
     }
 
     fn periodic(&self) -> bool {

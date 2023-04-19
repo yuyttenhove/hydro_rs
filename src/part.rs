@@ -172,9 +172,10 @@ impl Particle {
             eprintln!("Negative energy after applying fluxes");
             self.conserved = Conserved::vacuum();
         }
+        self.reset_fluxes();
     }
 
-    pub fn reset_fluxes(&mut self) {
+    fn reset_fluxes(&mut self) {
         self.fluxes = Conserved::vacuum();
         self.gravity_mflux = DVec3::ZERO;
     }
