@@ -17,6 +17,7 @@ def read_particle_data(fname: str) -> Tuple[pd.DataFrame, float]:
     with h5py.File(fname, "r") as data:
         time = data["Header"].attrs["Time"][0]
         coordinates = data["PartType0/Coordinates"][:]
+        centroids = data["PartType0/Centroids"][:]
         velocities = data["PartType0/Velocities"][:]
         densities = data["PartType0/Densities"][:]
         pressures = data["PartType0/Pressures"][:]
@@ -25,23 +26,20 @@ def read_particle_data(fname: str) -> Tuple[pd.DataFrame, float]:
         timestep = data["PartType0/Timestep"][:]
 
     data = pd.DataFrame(
-        data=np.stack(
+        data=np.concatenate(
             [
-                coordinates[:, 0],
-                coordinates[:, 1],
-                coordinates[:, 2],
-                densities,
-                velocities[:, 0],
-                velocities[:, 1],
-                velocities[:, 2],
-                pressures,
-                internal_energy,
-                entropy,
-                timestep,
+                coordinates,
+                centroids,
+                densities.reshape((-1, 1)),
+                velocities,
+                pressures.reshape((-1, 1)),
+                internal_energy.reshape((-1, 1)),
+                entropy.reshape((-1, 1)),
+                timestep.reshape((-1, 1)),
             ],
             axis=1
         ),
-        columns=["x", "y", "z", "rho",
+        columns=["x", "y", "z", "c_x", "c_y", "c_z", "rho",
                  "v_x", "v_y", "v_z", "P", "u", "S", "t"]
     )
     return data, time
@@ -216,3 +214,20 @@ def get_slice(data, coordinates, x_lim, y_lim, res=1000, z=0):
     x, y, z = np.meshgrid(x, y, z)
     coords_to = np.column_stack([x.ravel(), y.ravel(), z.ravel()])
     return interpolate_nn(data, coordinates, coords_to).reshape((y_res, res))[::-1, :]
+
+
+def yee_quantities(coordinates: np.ndarray, T_inf, gamma, beta) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+     See appendix A from Hopkins 2016 (Has wrong sign in exponent of density!!)
+     Coordinates are assumed to be centred around zero
+    """
+    radii_2 = np.sum(coordinates * coordinates, axis=1)
+    temperature = T_inf - (gamma - 1) * beta**2 / \
+        (8 * gamma * math.pi**2) * np.exp(1 - radii_2)
+    density = np.power(temperature, 1 / (gamma - 1))
+    v_fac = 0.5 * beta / math.pi * np.exp(0.5 * (1 - radii_2))
+    velocity = np.stack([-coordinates[:, 1] * v_fac,
+                        coordinates[:, 0] * v_fac], axis=1)
+    internal_energy = temperature / (gamma - 1)
+
+    return density, velocity, internal_energy
