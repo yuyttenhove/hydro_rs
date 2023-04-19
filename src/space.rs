@@ -772,7 +772,7 @@ impl Space {
 
     /// Dump snapshot of space at the current time
     pub fn dump<P: AsRef<Path>>(
-        &mut self,
+        &self,
         engine: &Engine,
         filename: P,
     ) -> Result<(), hdf5::Error> {
@@ -895,6 +895,8 @@ impl Space {
                 "Right"
             )?;
         }
+        
+        file.close()?;
 
         Ok(())
     }

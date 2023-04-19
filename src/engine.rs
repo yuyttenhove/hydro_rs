@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use yaml_rust::Yaml;
 
 use crate::{
@@ -14,6 +15,27 @@ pub enum ParticleMotion {
     FIXED,
     STEER,
     FLUID,
+}
+
+enum SyncPointType {
+    Dump,
+    HalfStep1,
+    HalfStep2,
+    Step,
+}
+
+struct SyncPoint {
+    kind: SyncPointType,
+    ti: IntegerTime,
+}
+
+impl SyncPoint {
+    fn new(ti: IntegerTime, kind: SyncPointType) -> Self {
+        Self {
+            ti,
+            kind,
+        }
+    }
 }
 
 impl ParticleMotion {
@@ -36,6 +58,7 @@ pub struct Engine {
     ti_old: IntegerTime,
     ti_current: IntegerTime,
     ti_next: IntegerTime,
+    sync_points: VecDeque<SyncPoint>,
     time_base: f64,
     time_base_inv: f64,
     cfl_criterion: f64,
@@ -45,7 +68,7 @@ pub struct Engine {
     ti_between_snaps: IntegerTime,
     ti_status: IntegerTime,
     ti_between_status: IntegerTime,
-    snap: u16,
+    snap: u32,
     snapshot_prefix: String,
     save_faces: bool,
     pub particle_motion: ParticleMotion,
@@ -113,6 +136,16 @@ impl Engine {
         let particle_motion = ParticleMotion::new(particle_motion)?;
         let time_base = t_end / MAX_NR_TIMESTEPS as f64;
         let time_base_inv = 1. / time_base;
+
+        // Setup intial sync points
+        let mut sync_points = VecDeque::new();
+        if runner.use_half_step() {
+            sync_points.push_back(SyncPoint::new(0, SyncPointType::HalfStep1));
+            sync_points.push_back(SyncPoint::new(0, SyncPointType::HalfStep2));
+        } else {
+            sync_points.push_back(SyncPoint::new(0, SyncPointType::Step));
+        }
+
         Ok(Self {
             runner,
             hydro_solver,
@@ -122,6 +155,7 @@ impl Engine {
             ti_old: 0,
             ti_current: 0,
             ti_next: 0,
+            sync_points,
             time_base,
             time_base_inv,
             cfl_criterion,
@@ -140,33 +174,26 @@ impl Engine {
 
     /// Run this simulation
     pub fn run(&mut self, space: &mut Space) -> Result<(), hdf5::Error> {
-        // Start by saving the initial state
-        self.dump(space)?;
-
         while self.t_current < self.t_end {
-            // Print info?
-            if self.ti_between_status == 0 || self.ti_current >= self.ti_status {
-                println!(
-                    "Running at t={:.4e}. Stepping forward in time by: {:.4e}",
-                    self.t_current,
-                    make_timestep(self.ti_current - self.ti_old, self.time_base)
-                );
-                while self.ti_between_status != 0 && self.ti_current >= self.ti_status {
-                    self.ti_status += self.ti_between_status;
-                }
+            // Get next sync point
+            let sync_point = self.sync_points.pop_front().expect("sync_points cannot be empty before end of simulation");
+
+            // Drift to next sync point
+            assert!(sync_point.ti >= self.ti_current, "Trying to drift backwards in time!");
+            let dti = sync_point.ti - self.ti_current;
+            if dti > 0 {
+                self.runner().drift(dti, self, space);
+                self.ti_current += dti;
+                self.t_current = make_timestep(self.ti_current, self.time_base);
             }
 
-            // Do we need to save a snapshot?
-            if self.ti_next > self.ti_snap {
-                if self.ti_current < self.ti_snap {
-                    // Drift to snapshot time
-                    self.step(space, self.ti_snap)
-                }
-                self.dump(space)?;
-            }
-
-            // take a step
-            self.step(space, self.ti_next);
+            // What to do at this sync point?
+            match sync_point.kind {
+                SyncPointType::Dump => self.dump(space)?,
+                SyncPointType::HalfStep1 => self.half_step1(space),
+                SyncPointType::HalfStep2 => self.half_step2(space),
+                SyncPointType::Step => self.step(space),
+            };
         }
 
         // Save the final state of the simulation
@@ -175,35 +202,64 @@ impl Engine {
         Ok(())
     }
 
-    fn step(&mut self, space: &mut Space, ti_next: IntegerTime) {
+    fn step(&mut self, space: &mut Space) {
+        assert!(!self.runner.use_half_step());
+        let ti_next = self.runner.step(self, space);
+        self.queue_step(ti_next, SyncPointType::Step);
+        self.update_ti_next(ti_next);
+    }
+
+    fn half_step1(&self, space: &mut Space) {
+        debug_assert!(self.runner.use_half_step());
+        self.runner.half_step1(self, space);
+    }
+
+    fn half_step2(&mut self, space: &mut Space) {
+        debug_assert!(self.runner.use_half_step());
+        let ti_next = self.runner.half_step2(self, space);
         let dti = ti_next - self.ti_current;
-
-        if self.runner.use_half_step() {
-            assert!(dti % 2 == 0, "Integer timestep not divisable by 2!");
-            let half_dti = dti / 2;
-            self.ti_old = self.ti_current;
-            self.ti_current += half_dti;
-            self.runner.half_step1(self, space);
-            self.ti_current += half_dti;
-            self.ti_next = self.runner.half_step2(self, space);
-        } else {
-            self.ti_old = self.ti_current;
-            self.ti_current = ti_next;
-            self.ti_next = self.runner.step(self, space);
-        }
-
-        let dt = make_timestep(dti, self.time_base);
-        self.t_current += dt;
+        assert_eq!(dti % 2, 0, "Encountered indivisible time-step!");
+        let ti_half_next = self.ti_current + dti / 2;
+        self.queue_step(ti_half_next, SyncPointType::HalfStep1);
+        self.queue_step(ti_next, SyncPointType::HalfStep2);
+        self.update_ti_next(ti_next);
     }
 
     fn dump(&mut self, space: &mut Space) -> Result<(), hdf5::Error> {
         println!("Writing snapshot at t={}!", self.t_current);
         let filename = format!("output/{}{:04}.hdf5", self.snapshot_prefix, self.snap);
         space.dump(&self, &filename)?;
-        self.ti_snap += self.ti_between_snaps;
         self.snap += 1;
 
         Ok(())
+    }
+
+    fn status(&mut self) {
+        if self.ti_status < self.ti_next {
+            println!(
+                "Running at t={:.4e}. Stepping forward in time by: {:.4e}",
+                self.t_current,
+                make_timestep(self.ti_next - self.ti_old, self.time_base)
+            );
+            while self.ti_between_status != 0 && self.ti_next >= self.ti_status {
+                self.ti_status += self.ti_between_status;
+            }
+        }
+    }
+
+    fn queue_step(&mut self, ti: IntegerTime, kind: SyncPointType) {
+        while self.ti_snap < ti {
+            self.sync_points.push_back(SyncPoint::new(self.ti_snap, SyncPointType::Dump));
+            self.ti_snap += self.ti_between_snaps;
+        }
+        self.sync_points.push_back(SyncPoint::new(ti, kind));
+    }
+
+    pub fn update_ti_next(&mut self, ti_next: IntegerTime) {
+        debug_assert_eq!(self.ti_current, self.ti_next, "Updating ti_next while not at the end of a timestep!");
+        self.ti_old = self.ti_next;
+        self.ti_next = ti_next;
+        self.status();
     }
 
     pub fn part_is_active(&self, part: &Particle, iact: Iact) -> bool {
@@ -230,8 +286,8 @@ impl Engine {
         self.time_base
     }
 
-    pub fn dt(&self) -> f64 {
-        make_timestep(self.ti_current - self.ti_old, self.time_base)
+    pub fn dt(&self, dti: IntegerTime) -> f64 {
+        make_timestep(dti, self.time_base)
     }
 
     pub fn cfl_criterion(&self) -> f64 {

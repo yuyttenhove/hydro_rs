@@ -35,12 +35,18 @@ impl Runner {
         }
     }
 
+    pub fn drift(&self, dti: IntegerTime, engine: &Engine, space: &mut Space) {
+        let dt = engine.dt(dti);
+        match self {
+            Runner::MeshlessGradientHalfDrift => space.drift(dt, dt),
+            _ => space.drift(dt, 0.5 * dt),
+        }
+    }
+
     pub fn step(&self, engine: &Engine, space: &mut Space) -> IntegerTime {
         let ti_next;
         match self {
             Runner::Default => {
-                let dt = engine.dt();
-                space.drift(dt, 0.5 * dt);
                 space.volume_calculation(engine);
                 space.convert_conserved_to_primitive(engine);
                 space.gradient_estimate(engine);
@@ -52,8 +58,6 @@ impl Runner {
                 space.kick1(engine);
             }
             Runner::OptimalOrder => {
-                let dt = engine.dt();
-                space.drift(dt, 0.5 * dt);
                 space.volume_calculation(engine);
                 space.flux_exchange(engine);
                 space.apply_flux(engine);
@@ -66,8 +70,6 @@ impl Runner {
                 space.kick1(engine);
             }
             Runner::TwoGradient => {
-                let dt = engine.dt();
-                space.drift(dt, 0.5 * dt);
                 space.volume_calculation(engine);
                 // space.convert_conserved_to_primitive(engine);
                 space.gradient_estimate(engine);
@@ -93,8 +95,6 @@ impl Runner {
     pub fn half_step1(&self, engine: &Engine, space: &mut Space) {
         match self {
             Runner::TwoGradientHalfDrift => {
-                let dt = engine.dt();
-                space.drift(dt, 0.5 * dt);
                 space.volume_calculation(engine);
                 // space.convert_conserved_to_primitive(engine);
                 space.gradient_estimate(engine);
@@ -104,8 +104,6 @@ impl Runner {
                 space.gradient_estimate(engine);
             }
             Runner::OptimalOrderHalfDrift => {
-                let dt = engine.dt();
-                space.drift(dt, 0.5 * dt);
                 space.volume_calculation(engine);
                 space.flux_exchange(engine);
                 space.apply_flux(engine);
@@ -113,16 +111,12 @@ impl Runner {
                 space.gradient_estimate(engine);
             }
             Runner::DefaultHalfDrift => {
-                let dt = engine.dt();
-                space.drift(dt, 0.5 * dt);
                 space.volume_calculation(engine);
                 space.convert_conserved_to_primitive(engine);
                 space.gradient_estimate(engine);
                 space.flux_exchange(engine);
             }
             Runner::MeshlessGradientHalfDrift => {
-                let dt = engine.dt();
-                space.drift(dt, dt);
                 space.volume_calculation(engine);
                 space.flux_exchange(engine);
             }
@@ -136,24 +130,18 @@ impl Runner {
         let ti_next;
         match self {
             Runner::TwoGradientHalfDrift => {
-                let dt = engine.dt();
-                space.drift(0.5 * dt, 0.25 * dt);
                 space.kick2(engine);
                 ti_next = space.timestep(engine);
                 space.timestep_limiter(engine); // Note: this can never decrease ti_next
                 space.kick1(engine);
             }
             Runner::OptimalOrderHalfDrift => {
-                let dt = engine.dt();
-                space.drift(0.5 * dt, 0.25 * dt);
                 space.kick2(engine);
                 ti_next = space.timestep(engine);
                 space.timestep_limiter(engine); // Note: this can never decrease ti_next
                 space.kick1(engine);
             }
             Runner::DefaultHalfDrift => {
-                let dt = engine.dt();
-                space.drift(0.5 * dt, 0.25 * dt);
                 space.apply_flux(engine);
                 space.kick2(engine);
                 ti_next = space.timestep(engine);
@@ -161,8 +149,6 @@ impl Runner {
                 space.kick1(engine);
             }
             Runner::MeshlessGradientHalfDrift => {
-                let dt = engine.dt();
-                space.drift(0.5 * dt, 0.5 * dt);
                 space.regrid();
                 space.apply_flux(engine);
                 space.kick2(engine);
