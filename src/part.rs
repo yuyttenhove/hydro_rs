@@ -388,7 +388,7 @@ impl Particle {
         self.centroid = centroid;
     }
 
-    fn radius(&self, dimensionality: HydroDimension) -> f64 {
+    pub fn radius(&self, dimensionality: HydroDimension) -> f64 {
         match dimensionality {
             HydroDimension1D => 0.5 * self.volume(),
             HydroDimension2D => (std::f64::consts::FRAC_1_PI * self.volume()).sqrt(),

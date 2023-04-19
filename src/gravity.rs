@@ -2,7 +2,7 @@ use glam::DVec3;
 use rayon::prelude::*;
 use yaml_rust::Yaml;
 
-use crate::{errors::ConfigError, part::Particle};
+use crate::{errors::ConfigError, part::Particle, utils::HydroDimension};
 
 fn compute_self_gravity(particles: &[Particle], softening_length: f64) -> Vec<DVec3> {
     let num_particles = particles.len();
@@ -126,6 +126,7 @@ impl Potential {
 pub struct KeplerianPotential {
     position: DVec3,
     softening_length: f64,
+    eta: f64,
 }
 
 impl KeplerianPotential {
@@ -133,22 +134,44 @@ impl KeplerianPotential {
         Self {
             position,
             softening_length,
+            eta: 0.5,
         }
     }
 
     fn accelerations(&self, particles: &[Particle]) -> Vec<DVec3> {
         particles
             .iter()
-            .map(|part| {
-                let r = part.loc - self.position;
-                -r * (r.length_squared() + self.softening_length * self.softening_length).powf(-1.5)
-            })
+            .map(|part| self.acceleration(part.loc))
             .collect()
     }
 
     fn get_timestep(&self, particle: &Particle) -> f64 {
-        let dx = particle.loc - self.position;
-        let eta = 0.1 * (dx.length_squared() + self.softening_length.powi(2)).sqrt();
-        (eta / particle.a_grav.length()).sqrt()
+        // Make sure the particle does not travel its more than a fraction of its radius at the gravitational circular velocity. Only 2D simulations are supported
+        self.eta * particle.radius(HydroDimension::HydroDimension2D)
+            / self.circular_velocity(particle.loc)
+    }
+
+    fn acceleration(&self, position: DVec3) -> DVec3 {
+        let dx = position - self.position;
+        let r2 = dx.length_squared();
+        let r = r2.sqrt();
+        // soften if necessary
+        let r2 = if r < self.softening_length {
+            r2 + self.softening_length * self.softening_length
+        } else {
+            r2
+        };
+        -dx / (r * r2)
+    }
+
+    fn circular_velocity(&self, position: DVec3) -> f64 {
+        let dx = position - self.position;
+        let r = dx.length();
+        let r_softened = if r < self.softening_length {
+            r + self.softening_length
+        } else {
+            r
+        };
+        (1. / r_softened).sqrt()
     }
 }
