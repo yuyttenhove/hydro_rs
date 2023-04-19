@@ -384,12 +384,8 @@ impl Space {
             .collect()
     }
 
-    /// Do flux exchange between neighbouring particles
-    pub fn flux_exchange(&mut self, engine: &Engine) {
-        // Calculate the fluxes accross each face
-        let fluxes = self.compute_fluxes(engine);
-
-        // Add fluxes to parts
+    /// Add fluxes to the parts
+    fn add_fluxes(&mut self, fluxes: Vec<Option<FluxInfo>>, engine: &Engine) {
         self.parts
             .par_iter_mut()
             .enumerate()
@@ -410,36 +406,25 @@ impl Space {
             });
     }
 
+    /// Do flux exchange between neighbouring particles
+    pub fn flux_exchange(&mut self, engine: &Engine) {
+        self.add_fluxes(self.compute_fluxes(engine), engine);
+    }
+
     /// Apply the (first or second) half flux (for Heun's method).
     pub fn half_flux_exchange(&mut self, engine: &Engine) {
         // Calculate the fluxes accross each face
-        let fluxes = self.compute_fluxes(engine);
+        let mut fluxes = self.compute_fluxes(engine);
 
-        // Add fluxes to parts
-        self.parts
-            .par_iter_mut()
-            .enumerate()
-            .for_each(|(idx, part)| {
-                // Loop over faces and add fluxes if any
-                let offset = part.face_connections_offset;
-                let faces = &self.voronoi_cell_face_connections[offset..offset + part.face_count];
-                for &face_idx in faces {
-                    if let Some(flux_info) = &fluxes[face_idx] {
-                        // Half the fluxes
-                        let flux_info = &FluxInfo {
-                            fluxes: 0.5 * flux_info.fluxes,
-                            mflux: 0.5 * flux_info.mflux,
-                            v_max: flux_info.v_max,
-                        };
-                        // Left or right?
-                        if idx == self.voronoi_faces[face_idx].left() {
-                            part.update_fluxes_left(flux_info, engine);
-                        } else {
-                            part.update_fluxes_right(flux_info, engine);
-                        }
-                    }
-                }
-            });
+        // Half the fluxes
+        fluxes.par_iter_mut().for_each(|flux_info| {
+            if let Some(flux_info) = flux_info {
+                flux_info.fluxes = 0.5 * flux_info.fluxes;
+                flux_info.mflux = 0.5 * flux_info.mflux;
+            }
+        });
+
+        self.add_fluxes(fluxes, engine);
     }
 
     /// Apply the accumulated fluxes to all active particles before calculating the primitives

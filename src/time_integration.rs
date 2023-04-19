@@ -87,6 +87,7 @@ impl Runner {
             Runner::Pakmor => {
                 space.volume_calculation(engine);
                 space.gradient_estimate(engine);
+                // First half flux
                 space.half_flux_exchange(engine);
                 space.apply_flux(engine);
                 space.gravity(engine);
@@ -96,6 +97,7 @@ impl Runner {
                 ti_next = space.timestep(engine);
                 space.timestep_limiter(engine); // Note: this can never decrease ti_next
                 space.kick1(engine);
+                // second half flux
                 space.half_flux_exchange(engine);
             }
             _ => {

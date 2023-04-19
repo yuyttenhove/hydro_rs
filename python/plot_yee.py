@@ -9,7 +9,7 @@ BETA = 5.
 
 if __name__ == "__main__":
     root = get_root()
-    fname = root / "run/output/yee_25_0017.hdf5"
+    fname = root / "run/output/yee_25_0020.hdf5"
     data, _ = read_particle_data(fname)
     # faces = plot_faces(fname)
     coordinates = data.loc[:, ["x", "y", "z"]].values
