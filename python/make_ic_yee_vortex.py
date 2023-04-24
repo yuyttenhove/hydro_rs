@@ -72,8 +72,9 @@ def gen_ic_from_file(fname: Path, save_name: Path):
 
 def main():
     root = get_root()
-    # gen_ic(10, 50, root / "run/ICs/yee_25.hdf5")
-    gen_ic_from_file(root / "run/output/yee_25_0000.hdf5", root / "run/ICs/yee_25.hdf5")
+    n = 50
+    gen_ic(10, n, root / f"run/ICs/yee_{n}.hdf5")
+    # gen_ic_from_file(root / f"run/output/yee_{n}_0000.hdf5", root / f"run/ICs/yee_{n}.hdf5")
 
 
 if __name__ == "__main__":

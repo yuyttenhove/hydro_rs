@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+from matplotlib.colors import LogNorm
 import numpy as np
 
 from utils import read_particle_data, plot_faces, get_root, yee_quantities, get_slice
@@ -9,7 +10,7 @@ BETA = 5.
 
 if __name__ == "__main__":
     root = get_root()
-    fname = root / "run/output/yee_25_0015.hdf5"
+    fname = root / "run/output/yee_25_0002.hdf5"
     data, _ = read_particle_data(fname)
     # faces = plot_faces(fname)
     coordinates = data.loc[:, ["x", "y", "z"]].values
@@ -46,4 +47,6 @@ if __name__ == "__main__":
     im = ax22.imshow(slice_u)
     plt.colorbar(im, ax=ax22)
 
+    plt.tight_layout()
+    plt.savefig("run/yee_50_two_mesh_1_volume.png")
     plt.show()

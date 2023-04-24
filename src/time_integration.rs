@@ -16,7 +16,7 @@ pub enum Runner {
     OptimalOrder,
     TwoGradient,
     Pakmor,
-    TwoGradientHalfDrift,
+    TwoVolumeHalfDrift,
     OptimalOrderHalfDrift,
     DefaultHalfDrift,
     MeshlessGradientHalfDrift,
@@ -29,7 +29,7 @@ impl Runner {
             "OptimalOrder" => Ok(Runner::OptimalOrder),
             "TwoGradient" => Ok(Runner::TwoGradient),
             "Pakmor" => Ok(Runner::Pakmor),
-            "TwoGradientHalfDrift" => Ok(Runner::TwoGradientHalfDrift),
+            "TwoVolumeHalfDrift" => Ok(Runner::TwoVolumeHalfDrift),
             "OptimalOrderHalfDrift" => Ok(Runner::OptimalOrderHalfDrift),
             "DefaultHalfDrift" => Ok(Runner::DefaultHalfDrift),
             "MeshlessGradientHalfDrift" => Ok(Runner::MeshlessGradientHalfDrift),
@@ -111,14 +111,9 @@ impl Runner {
 
     pub fn half_step1(&self, engine: &Engine, space: &mut Space) {
         match self {
-            Runner::TwoGradientHalfDrift => {
+            Runner::TwoVolumeHalfDrift => {
                 space.volume_calculation(engine);
-                // space.convert_conserved_to_primitive(engine);
-                space.gradient_estimate(engine);
                 space.flux_exchange(engine);
-                space.apply_flux(engine);
-                space.convert_conserved_to_primitive(engine);
-                space.gradient_estimate(engine);
             }
             Runner::OptimalOrderHalfDrift => {
                 space.volume_calculation(engine);
@@ -136,6 +131,7 @@ impl Runner {
             Runner::MeshlessGradientHalfDrift => {
                 space.volume_calculation(engine);
                 space.flux_exchange(engine);
+                // space.volume_derivative_estimate(engine);
             }
             _ => {
                 panic!("{self:?} should not be run with half steps!")
@@ -146,8 +142,12 @@ impl Runner {
     pub fn half_step2(&self, engine: &Engine, space: &mut Space) -> IntegerTime {
         let ti_next;
         match self {
-            Runner::TwoGradientHalfDrift => {
+            Runner::TwoVolumeHalfDrift => {
+                space.volume_calculation(engine);
+                space.apply_flux(engine);
                 space.kick2(engine);
+                space.convert_conserved_to_primitive(engine);
+                space.gradient_estimate(engine);
                 ti_next = space.timestep(engine);
                 space.timestep_limiter(engine); // Note: this can never decrease ti_next
                 space.kick1(engine);
@@ -188,7 +188,7 @@ impl Runner {
         match self {
             Runner::DefaultHalfDrift
             | Runner::OptimalOrderHalfDrift
-            | Runner::TwoGradientHalfDrift
+            | Runner::TwoVolumeHalfDrift
             | Runner::MeshlessGradientHalfDrift => true,
             _ => false,
         }
@@ -199,11 +199,16 @@ impl Runner {
             Runner::Default | Runner::OptimalOrder | Runner::TwoGradient | Runner::Pakmor => {
                 part.is_ending(engine)
             }
-            Runner::OptimalOrderHalfDrift | Runner::TwoGradientHalfDrift => part.is_halfway(engine),
+            Runner::OptimalOrderHalfDrift => part.is_halfway(engine),
             Runner::DefaultHalfDrift => match iact {
                 Iact::ApplyFlux => part.is_ending(engine),
                 _ => part.is_halfway(engine),
             },
+            Runner::TwoVolumeHalfDrift => match iact {
+                Iact::Flux => part.is_halfway(engine),
+                Iact::Volume => part.is_ending(engine) || part.is_halfway(engine),
+                _ => part.is_ending(engine),
+            }
             Runner::MeshlessGradientHalfDrift => match iact {
                 Iact::Flux | Iact::Volume => part.is_halfway(engine),
                 _ => part.is_ending(engine),

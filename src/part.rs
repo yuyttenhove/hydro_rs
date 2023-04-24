@@ -31,6 +31,7 @@ pub struct Particle {
     pub max_signal_velocity: f64,
     pub timebin: Timebin,
     pub dt: f64,
+    pub dr: f64,
 
     pub a_grav: DVec3,
 }
@@ -131,6 +132,11 @@ impl Particle {
         }
 
         self.primitives.check_physical();
+
+        // Extrapolate volume in time
+        let r = self.radius(HydroDimension2D) + self.dr * dt_drift;
+        let volume = std::f64::consts::PI * r * r;
+        self.volume = (volume).clamp(0.5 * self.volume, 2. * self.volume);
     }
 
     pub fn apply_volume(&mut self, voronoi_cell: &VoronoiCell) {

@@ -268,6 +268,13 @@ impl Space {
 
         self.voronoi_cell_face_connections = voronoi.cell_face_connections().to_vec();
         self.voronoi_faces = voronoi.into_faces();
+
+        #[cfg(debug_assertions)]
+        {
+            for face in self.voronoi_faces.iter() {
+                debug_assert!(face.normal().z == 0.);
+            }
+        }
     }
 
     pub fn regrid(&mut self) {
@@ -608,6 +615,46 @@ impl Space {
             });
     }
 
+    pub fn volume_derivative_estimate(&mut self, engine: &Engine) {
+        let dr = self
+            .parts
+            .par_iter()
+            .map(|part| {
+                if !engine.part_is_active(part, Iact::Flux) {
+                    return None;
+                }
+
+                let mut dv = 0.;
+                let mut total_area = 0.;
+
+                // Loop over faces of particle
+                let offset = part.face_connections_offset;
+                let faces = &self.voronoi_cell_face_connections[offset..offset + part.face_count];
+                for &face_idx in faces {
+                    let face = &self.voronoi_faces[face_idx];
+                    let Some(ngb_idx) = face.right() else {continue;};
+                    let ngb = &self.parts[ngb_idx];
+
+                    // Get the relative velocity of the face
+                    let v_face = 0.5 * (ngb.v - part.v);
+                    dv += face.area() * v_face.dot(face.normal());
+                    total_area += face.area();
+                }
+
+                Some(dv / total_area)
+            })
+            .collect::<Vec<_>>();
+
+        self.parts
+            .par_iter_mut()
+            .zip(dr.into_par_iter())
+            .for_each(|(part, dr)| {
+                if let Some(dr) = dr {
+                    part.dr = dr;
+                }
+            });
+    }
+
     /// Calculate the next timestep for all active particles
     pub fn timestep(&mut self, engine: &Engine) -> IntegerTime {
         // Some useful variables
@@ -654,7 +701,7 @@ impl Space {
 
         let ti_end_min = ti_end_min.into_inner();
         debug_assert!(
-            ti_end_min > ti_current,
+            ti_end_min >= ti_current,
             "Next sync point before current time!"
         );
         ti_end_min
