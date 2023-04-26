@@ -19,7 +19,7 @@ use crate::{
     initial_conditions::InitialConditions,
     kernels::{Kernel, OneOver},
     part::Particle,
-    physical_quantities::Primitives,
+    physical_quantities::{Conserved, Primitives},
     time_integration::Iact,
     timeline::{
         get_integer_time_end, make_integer_timestep, make_timestep, IntegerTime, MAX_NR_TIMESTEPS,
@@ -435,6 +435,50 @@ impl Space {
         self.add_fluxes(fluxes, engine);
     }
 
+    pub fn extrapolate_flux(&mut self, engine: &Engine) {
+        let fluxes = self.compute_fluxes(engine);
+
+        let mut d_conserved = vec![Conserved::vacuum(); self.parts.len()];
+        for (i, part) in self.parts.iter().enumerate() {
+            if !engine.part_is_active(part, Iact::Flux) {
+                continue;
+            }
+            let offset = part.face_connections_offset;
+            let faces = &self.voronoi_cell_face_connections[offset..offset + part.face_count];
+            for &face_idx in faces {
+                if let Some(flux_info) = &fluxes[face_idx] {
+                    // Left or right?
+                    if i == self.voronoi_faces[face_idx].left() {
+                        d_conserved[i] -= 0.5 * flux_info.fluxes;
+                    } else {
+                        debug_assert_eq!(
+                            i,
+                            self.voronoi_faces[face_idx]
+                                .right()
+                                .expect("Should not be boundary face!")
+                        );
+                        d_conserved[i] += 0.5 * flux_info.fluxes;
+                    }
+                }
+            }
+        }
+
+        self.parts
+            .iter_mut()
+            .zip(d_conserved.into_iter())
+            .for_each(|(part, d_conserved)| {
+                if part.conserved.mass() + d_conserved.mass() > 0. {
+                    let mut new_primitives = Primitives::from_conserved(
+                        &(part.conserved + d_conserved),
+                        part.volume(),
+                        &self.eos,
+                    );
+                    new_primitives.check_physical();
+                    part.primitives = new_primitives;
+                }
+            });
+    }
+
     /// Apply the accumulated fluxes to all active particles before calculating the primitives
     pub fn apply_flux(&mut self, engine: &Engine) {
         self.parts.par_iter_mut().for_each(|part| {
@@ -833,6 +877,40 @@ impl Space {
             Boundary::Periodic => true,
             _ => false,
         }
+    }
+
+    pub fn status(&self, engine: &Engine) -> String {
+        let total_mass: f64 = self
+            .parts
+            .iter()
+            .map(|part| part.conserved.mass() + part.fluxes.mass())
+            .sum();
+        let total_energy: f64 = self
+            .parts
+            .iter()
+            .map(|part| part.conserved.energy() + part.fluxes.energy())
+            .sum();
+        let min_timestep = self
+            .parts
+            .iter()
+            .map(|part| part.dt)
+            .min_by(|a, b| a.partial_cmp(b).expect("Uncomparable timestep found!"))
+            .expect("particles cannot be empty!");
+        let max_timestep = self
+            .parts
+            .iter()
+            .map(|part| part.dt)
+            .max_by(|a, b| a.partial_cmp(b).expect("Uncomparable timestep found!"))
+            .expect("particles cannot be empty!");
+        let n_active = self.parts.iter().filter(|part| part.is_ending(engine)).count();
+        format!(
+            "{}\t{:.8e}\t{:.8e}\t{:.8e}\t{:.8e}",
+            n_active,
+            min_timestep,
+            max_timestep,
+            total_mass,
+            total_energy,
+        )
     }
 
     /// Dump snapshot of space at the current time

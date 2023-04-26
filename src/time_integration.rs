@@ -20,6 +20,7 @@ pub enum Runner {
     OptimalOrderHalfDrift,
     DefaultHalfDrift,
     MeshlessGradientHalfDrift,
+    FluxExtrapolateHalfDrift,
 }
 
 impl Runner {
@@ -33,6 +34,7 @@ impl Runner {
             "OptimalOrderHalfDrift" => Ok(Runner::OptimalOrderHalfDrift),
             "DefaultHalfDrift" => Ok(Runner::DefaultHalfDrift),
             "MeshlessGradientHalfDrift" => Ok(Runner::MeshlessGradientHalfDrift),
+            "FluxExtrapolateHalfDrift" => Ok(Runner::FluxExtrapolateHalfDrift),
             _ => Err(ConfigError::UnknownRunner(kind.to_string())),
         }
     }
@@ -41,6 +43,7 @@ impl Runner {
         let dt = engine.dt(dti);
         match self {
             Runner::MeshlessGradientHalfDrift | Runner::Pakmor => space.drift(dt, dt),
+            Runner::FluxExtrapolateHalfDrift => space.drift(dt, 0.),
             _ => space.drift(dt, 0.5 * dt),
         }
     }
@@ -133,6 +136,11 @@ impl Runner {
                 space.flux_exchange(engine);
                 // space.volume_derivative_estimate(engine);
             }
+            Runner::FluxExtrapolateHalfDrift => {
+                space.volume_calculation(engine);
+                space.extrapolate_flux(engine);
+                space.flux_exchange(engine);
+            }
             _ => {
                 panic!("{self:?} should not be run with half steps!")
             }
@@ -175,6 +183,16 @@ impl Runner {
                 space.meshless_timestep_limiter(engine); // Note: this can never decrease ti_next
                 space.kick1(engine);
             }
+            Runner::FluxExtrapolateHalfDrift => {
+                space.regrid();
+                space.apply_flux(engine);
+                space.kick2(engine);
+                space.convert_conserved_to_primitive(engine);
+                space.meshless_gradient_estimate(engine);
+                ti_next = space.timestep(engine);
+                space.meshless_timestep_limiter(engine); // Note: this can never decrease ti_next
+                space.kick1(engine);
+            }
             _ => {
                 panic!("{self:?} should not be run with half steps!")
             }
@@ -189,7 +207,8 @@ impl Runner {
             Runner::DefaultHalfDrift
             | Runner::OptimalOrderHalfDrift
             | Runner::TwoVolumeHalfDrift
-            | Runner::MeshlessGradientHalfDrift => true,
+            | Runner::MeshlessGradientHalfDrift
+            | Runner::FluxExtrapolateHalfDrift => true,
             _ => false,
         }
     }
@@ -208,8 +227,12 @@ impl Runner {
                 Iact::Flux => part.is_halfway(engine),
                 Iact::Volume => part.is_ending(engine) || part.is_halfway(engine),
                 _ => part.is_ending(engine),
-            }
+            },
             Runner::MeshlessGradientHalfDrift => match iact {
+                Iact::Flux | Iact::Volume => part.is_halfway(engine),
+                _ => part.is_ending(engine),
+            },
+            Runner::FluxExtrapolateHalfDrift => match iact {
                 Iact::Flux | Iact::Volume => part.is_halfway(engine),
                 _ => part.is_ending(engine),
             },

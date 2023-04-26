@@ -54,6 +54,7 @@ pub struct Engine {
     t_current: f64,
     ti_old: IntegerTime,
     ti_current: IntegerTime,
+    step_count: usize,
     ti_next: IntegerTime,
     sync_points: VecDeque<SyncPoint>,
     time_base: f64,
@@ -151,6 +152,7 @@ impl Engine {
             t_current: 0.0,
             ti_old: 0,
             ti_current: 0,
+            step_count: 0,
             ti_next: 0,
             sync_points,
             time_base,
@@ -171,6 +173,10 @@ impl Engine {
 
     /// Run this simulation
     pub fn run(&mut self, space: &mut Space) -> Result<(), hdf5::Error> {
+        // Print status line
+        println!("timestep \t #Particles \t t_current \t ti_current \t dt \t #Active particles \t min_dt \t max_dt \t total mass \t total energy");
+
+        // run
         while self.t_current < self.t_end {
             // Get next sync point
             let sync_point = self
@@ -209,7 +215,7 @@ impl Engine {
         assert!(!self.runner.use_half_step());
         let ti_next = self.runner.step(self, space);
         self.queue_step(ti_next, SyncPointType::Step);
-        self.update_ti_next(ti_next);
+        self.update_ti_next(ti_next, space);
     }
 
     fn half_step1(&self, space: &mut Space) {
@@ -225,7 +231,7 @@ impl Engine {
         let ti_half_next = self.ti_current + dti / 2;
         self.queue_step(ti_half_next, SyncPointType::HalfStep1);
         self.queue_step(ti_next, SyncPointType::HalfStep2);
-        self.update_ti_next(ti_next);
+        self.update_ti_next(ti_next, space);
     }
 
     fn dump(&mut self, space: &mut Space) -> Result<(), hdf5::Error> {
@@ -237,13 +243,18 @@ impl Engine {
         Ok(())
     }
 
-    fn status(&mut self) {
+    fn status(&mut self, space: &Space) {
         if self.ti_status < self.ti_next {
             println!(
-                "Running at t={:.4e}. Stepping forward in time by: {:.4e}",
+                "{}\t{}\t{:.8e}\t{}\t{:.8e}\t{}",
+                self.step_count,
+                space.parts().len(),
                 self.t_current,
-                make_timestep(self.ti_next - self.ti_old, self.time_base)
+                self.ti_current,
+                make_timestep(self.ti_next - self.ti_old, self.time_base),
+                space.status(&self),
             );
+
             while self.ti_between_status != 0 && self.ti_next >= self.ti_status {
                 self.ti_status += self.ti_between_status;
             }
@@ -259,14 +270,15 @@ impl Engine {
         self.sync_points.push_back(SyncPoint::new(ti, kind));
     }
 
-    pub fn update_ti_next(&mut self, ti_next: IntegerTime) {
+    pub fn update_ti_next(&mut self, ti_next: IntegerTime, space: &Space) {
         debug_assert_eq!(
             self.ti_current, self.ti_next,
             "Updating ti_next while not at the end of a timestep!"
         );
         self.ti_old = self.ti_next;
         self.ti_next = ti_next;
-        self.status();
+        self.step_count += 1;
+        self.status(space);
     }
 
     pub fn part_is_active(&self, part: &Particle, iact: Iact) -> bool {
