@@ -15,6 +15,7 @@ mod flux;
 mod gradients;
 mod gravity;
 mod initial_conditions;
+mod kernels;
 mod part;
 mod physical_constants;
 mod physical_quantities;

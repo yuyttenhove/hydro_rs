@@ -17,6 +17,7 @@ use crate::{
     flux::FluxInfo,
     gradients::GradientData,
     initial_conditions::InitialConditions,
+    kernels::{Kernel, OneOver},
     part::Particle,
     physical_quantities::Primitives,
     time_integration::Iact,
@@ -572,7 +573,7 @@ impl Space {
                     gradient_data.collect(
                         &part.primitives,
                         &ngb_part.primitives,
-                        1. / distance_squared,
+                        OneOver(8).kernel(dx_centroid.length(), part.search_radius),
                         dx_centroid,
                     );
                 }
