@@ -11,6 +11,7 @@ pub struct FluxInfo {
     pub fluxes: Conserved,
     pub mflux: DVec3,
     pub v_max: f64,
+    pub a_over_r: f64,
 }
 
 pub fn flux_exchange(
@@ -77,6 +78,7 @@ pub fn flux_exchange(
         fluxes: dt * fluxes,
         mflux: dx * fluxes.mass(),
         v_max,
+        a_over_r: face.area() / dx.length(),
     }
 }
 
@@ -166,5 +168,6 @@ pub fn flux_exchange_boundary(
         fluxes: part.dt * fluxes,
         mflux: dx * fluxes.mass(),
         v_max,
+        a_over_r: face.area() / dx.length(),
     }
 }

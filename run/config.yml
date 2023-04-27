@@ -3,7 +3,7 @@ time_integration:
   dt_max: 1e0
   t_min: 1e-8
   t_end: 0.5
-  cfl_criterion: 0.3
+  cfl_criterion: 3.0
 
 snapshots:
   t_between_snaps: 0.05
@@ -11,7 +11,7 @@ snapshots:
   save_faces: false
 
 engine:
-  t_status: 1e-3
+  t_status: 1e-2
   particle_motion: "steer"
   # runner: "DefaultHalfDrift"
   # runner: "OptimalOrderHalfDrift"
@@ -21,7 +21,7 @@ engine:
   # runner: "OptimalOrder"
   # runner: "TwoGradient"
   # runner: "Default"
-  runner: "Pakmor"
+  # runner: "Pakmor"
 
 gravity:
   kind: "none"

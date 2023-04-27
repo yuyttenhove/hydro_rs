@@ -115,6 +115,18 @@ impl StateGradients {
             && self.1[2].is_finite()
             && self.2.is_finite()
     }
+
+    pub fn div_v(&self) -> f64 {
+        self.1[0].x + self.1[1].y + self.1[2].z
+    }
+
+    pub fn curl_v(&self) -> DVec3 {
+        DVec3::new(
+            self.1[2].y - self.1[1].z,
+            self.1[0].z - self.1[2].x,
+            self.1[1].x - self.1[0].y,
+        )
+    }
 }
 
 impl Index<usize> for StateGradients {

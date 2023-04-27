@@ -42,9 +42,9 @@ impl Runner {
     pub fn drift(&self, dti: IntegerTime, engine: &Engine, space: &mut Space) {
         let dt = engine.dt(dti);
         match self {
-            Runner::MeshlessGradientHalfDrift | Runner::Pakmor => space.drift(dt, dt),
-            Runner::FluxExtrapolateHalfDrift => space.drift(dt, 0.),
-            _ => space.drift(dt, 0.5 * dt),
+            Runner::MeshlessGradientHalfDrift | Runner::Pakmor | Runner::TwoVolumeHalfDrift => space.drift(dt, dt, engine),
+            Runner::FluxExtrapolateHalfDrift => space.drift(dt, 0., engine),
+            _ => space.drift(dt, 0.5 * dt, engine),
         }
     }
 

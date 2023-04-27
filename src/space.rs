@@ -489,11 +489,11 @@ impl Space {
     }
 
     /// drift all particles forward over the given timestep
-    pub fn drift(&mut self, dt_drift: f64, dt_extrapolate: f64) {
+    pub fn drift(&mut self, dt_drift: f64, dt_extrapolate: f64, engine: &Engine) {
         let eos = self.eos;
         // drift all particles, including inactive particles
         self.parts.par_iter_mut().for_each(|part| {
-            part.drift(dt_drift, dt_extrapolate, &eos);
+            part.drift(dt_drift, dt_extrapolate, &engine.particle_motion, &eos);
         });
 
         // Handle particles that left the box.
@@ -617,7 +617,7 @@ impl Space {
                     gradient_data.collect(
                         &part.primitives,
                         &ngb_part.primitives,
-                        OneOver(8).kernel(dx_centroid.length(), part.search_radius),
+                        OneOver(2).kernel(dx_centroid.length(), part.search_radius),
                         dx_centroid,
                     );
                 }
@@ -711,8 +711,8 @@ impl Space {
                 // Compute new timestep
                 let mut dt = part.timestep(
                     engine.cfl_criterion(),
-                    &self.eos,
                     &engine.particle_motion,
+                    &self.eos,
                     self.dimensionality,
                 );
                 if let Some(solver) = &engine.gravity_solver {
@@ -732,8 +732,7 @@ impl Space {
                     ti_current,
                     engine.time_base_inv(),
                 );
-                part.dt = make_timestep(dti, engine.time_base());
-                part.set_timebin(dti);
+                part.set_timestep(make_timestep(dti, engine.time_base()), dti);
 
                 ti_end_min.fetch_min(ti_current + dti, Ordering::Relaxed);
             } else {
@@ -902,14 +901,14 @@ impl Space {
             .map(|part| part.dt)
             .max_by(|a, b| a.partial_cmp(b).expect("Uncomparable timestep found!"))
             .expect("particles cannot be empty!");
-        let n_active = self.parts.iter().filter(|part| part.is_ending(engine)).count();
+        let n_active = self
+            .parts
+            .iter()
+            .filter(|part| part.is_ending(engine))
+            .count();
         format!(
             "{}\t{:.8e}\t{:.8e}\t{:.8e}\t{:.8e}",
-            n_active,
-            min_timestep,
-            max_timestep,
-            total_mass,
-            total_energy,
+            n_active, min_timestep, max_timestep, total_mass, total_energy,
         )
     }
 
@@ -990,6 +989,11 @@ impl Space {
             part_data,
             self.parts.iter().map(|part| part.centroid.to_array()),
             "Centroids"
+        )?;
+        create_dataset!(
+            part_data,
+            self.parts.iter().map(|part| part.v.to_array()),
+            "ParticleVelocities"
         )?;
         create_dataset!(
             part_data,

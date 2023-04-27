@@ -12,9 +12,10 @@ use crate::{
 };
 
 pub enum ParticleMotion {
-    FIXED,
-    STEER,
-    FLUID,
+    Fixed,
+    Steer,
+    SteerPakmor,
+    Fluid,
 }
 
 enum SyncPointType {
@@ -38,9 +39,10 @@ impl SyncPoint {
 impl ParticleMotion {
     fn new(kind: &str) -> Result<Self, ConfigError> {
         match kind {
-            "fixed" => Ok(ParticleMotion::FIXED),
-            "steer" => Ok(ParticleMotion::STEER),
-            "fluid" => Ok(ParticleMotion::FLUID),
+            "fixed" => Ok(ParticleMotion::Fixed),
+            "steer" => Ok(ParticleMotion::Steer),
+            "steer_pakmor" => Ok(ParticleMotion::SteerPakmor),
+            "fluid" => Ok(ParticleMotion::Fluid),
             _ => Err(ConfigError::UnknownParticleMotion(kind.to_string())),
         }
     }

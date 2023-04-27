@@ -36,10 +36,10 @@ macro_rules! assert_approx_eq_dvec3 {
     };
 }
 
-fn drift(space: &mut Space, space_boosted: &mut Space) {
+fn drift(space: &mut Space, space_boosted: &mut Space, engine: &Engine) {
     let dt = space.parts()[0].dt;
-    space.drift(dt, 0.5 * dt);
-    space_boosted.drift(dt, 0.5 * dt);
+    space.drift(dt, 0.5 * dt, engine);
+    space_boosted.drift(dt, 0.5 * dt, engine);
 
     space
         .parts()
@@ -226,14 +226,14 @@ fn test_invariance() {
     gradient_estimate(&mut space, &mut space_boosted, &engine);
     let _dti = timestep(&mut space, &mut space_boosted, &engine);
 
-    drift(&mut space, &mut space_boosted);
+    drift(&mut space, &mut space_boosted, &engine);
     volume_calculation(&mut space, &engine, &mut space_boosted);
     flux_exchange(&mut space, &mut space_boosted, &engine, boost_velocity);
     convert_conserved_to_primitive(&mut space, &mut space_boosted, &engine, boost_velocity);
     gradient_estimate(&mut space, &mut space_boosted, &engine);
     let _dti = timestep(&mut space, &mut space_boosted, &engine);
 
-    drift(&mut space, &mut space_boosted);
+    drift(&mut space, &mut space_boosted, &engine);
     volume_calculation(&mut space, &engine, &mut space_boosted);
     flux_exchange(&mut space, &mut space_boosted, &engine, boost_velocity);
     convert_conserved_to_primitive(&mut space, &mut space_boosted, &engine, boost_velocity);

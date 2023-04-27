@@ -27,7 +27,11 @@ pub struct Particle {
     pub cell_id: usize,
     pub loc: DVec3,
     pub centroid: DVec3,
+    // Extrapolated particle velocity
     pub v: DVec3,
+    // particle velocity at last full timestep
+    v_full: DVec3,
+    max_a_over_r: f64,
     pub max_signal_velocity: f64,
     pub timebin: Timebin,
     pub dt: f64,
@@ -40,8 +44,8 @@ impl Particle {
     pub fn timestep(
         &mut self,
         cfl_criterion: f64,
-        eos: &EquationOfState,
         particle_motion: &ParticleMotion,
+        eos: &EquationOfState,
         dimensionality: HydroDimension,
     ) -> f64 {
         if self.conserved.mass() == 0. {
@@ -52,43 +56,18 @@ impl Particle {
             return f64::INFINITY;
         }
 
-        // Normal case
         let m_inv = 1. / self.conserved.mass();
-        let internal_energy = (self.conserved.energy()
-            - 0.5 * self.conserved.momentum().dot(self.primitives.velocity()))
-            * m_inv;
-
-        let d_v = Primitives::from(self.gradients.dot(self.centroid - self.loc)).velocity();
         // Fluid velocity at generator (instead of centroid)
+        let d_v = Primitives::from(self.gradients.dot(self.loc - self.centroid)).velocity();
         let fluid_v = self.conserved.momentum() * m_inv + d_v;
         let sound_speed = eos.sound_speed(
-            eos.gas_pressure_from_internal_energy(internal_energy, self.primitives.density()),
+            eos.gas_pressure_from_internal_energy(
+                self.internal_energy(),
+                self.primitives.density(),
+            ),
             self.volume() * m_inv,
         );
-        // Set the velocity with which this particle will be drifted over the course of it's next timestep
-        let radius = self.radius(dimensionality);
-        self.v = match particle_motion {
-            ParticleMotion::FIXED => DVec3::ZERO,
-            ParticleMotion::FLUID => fluid_v,
-            ParticleMotion::STEER => {
-                let d = self.centroid - self.loc;
-                let abs_d = d.length();
-                let r = radius;
-                let eta = 0.25;
-                let eta_r = eta * r;
-                let xi = 1.0;
-                if abs_d > 0.9 * eta_r {
-                    let mut fac = xi * sound_speed / abs_d;
-                    if abs_d < 1.1 * eta_r {
-                        fac *= 5. * (abs_d - 0.9 * eta_r) / eta_r;
-                    }
-                    fluid_v + fac * d
-                } else {
-                    fluid_v
-                }
-            }
-        };
-        assert!(self.v.is_finite(), "Invalid value for v!");
+        self.set_particle_velocity(fluid_v, sound_speed, particle_motion, dimensionality);
 
         // determine the size of this particle's next timestep
         let v_rel = (self.v - fluid_v).length();
@@ -96,7 +75,7 @@ impl Particle {
         self.max_signal_velocity = 0.;
 
         if v_max > 0. {
-            cfl_criterion * radius / v_max
+            cfl_criterion * self.radius(dimensionality) / v_max
         } else {
             f64::INFINITY
         }
@@ -105,7 +84,7 @@ impl Particle {
     /// Drifts the particle forward in time over a time `dt_drift`.
     ///
     /// Also predicts the primitive quantities forward in time over a time dt_extrapolate using the Euler equations.
-    pub fn drift(&mut self, dt_drift: f64, dt_extrapolate: f64, eos: &EquationOfState) {
+    pub fn drift(&mut self, dt_drift: f64, dt_extrapolate: f64, particle_motion: &ParticleMotion, eos: &EquationOfState) {
         self.loc += self.v * dt_drift;
         self.centroid += self.v * dt_drift;
 
@@ -117,15 +96,21 @@ impl Particle {
             if rho > 0. {
                 let rho_inv = 1. / rho;
                 // Use fluid velocity in comoving frame!
-                let v = self.primitives.velocity() - self.v;
+                let v = self.primitives.velocity() - self.v_full;
                 let p = self.primitives.pressure();
-                let div_v = self.gradients[1].x + self.gradients[2].y + self.gradients[3].z;
+                let div_v = self.gradients.div_v();
                 self.extrapolations -= dt_extrapolate
                     * Primitives::new(
                         rho * div_v + v.dot(self.gradients[0]),
                         v * div_v + rho_inv * self.gradients[4],
                         gamma * p * div_v + v.dot(self.gradients[4]),
-                    )
+                    );
+                // Extrapolate particle velocity as well
+                match particle_motion {
+                    ParticleMotion::Fixed => (),
+                    _ => self.v -= dt_drift * rho_inv * self.gradients[4],
+                };
+                
             }
         } else {
             unimplemented!()
@@ -153,6 +138,7 @@ impl Particle {
         self.gravity_mflux -= flux_info.mflux;
         if engine.part_is_active(self, Iact::Flux) {
             self.max_signal_velocity = flux_info.v_max.max(self.max_signal_velocity);
+            self.max_a_over_r = self.max_a_over_r.max(flux_info.a_over_r);
         }
     }
 
@@ -324,12 +310,57 @@ impl Particle {
         return self.timebin <= get_max_active_bin(engine.ti_current());
     }
 
-    pub fn set_timebin(&mut self, new_dti: IntegerTime) {
+    pub fn set_timestep(&mut self, dt: f64, new_dti: IntegerTime) {
+        self.dt = dt;
         self.timebin = get_time_bin(new_dti);
     }
 
     pub fn volume(&self) -> f64 {
         self.volume
+    }
+
+    fn set_particle_velocity(
+        &mut self,
+        fluid_v: DVec3,
+        sound_speed: f64,
+        particle_motion: &ParticleMotion,
+        dimensionality: HydroDimension,
+    ) {
+        self.v = match particle_motion {
+            ParticleMotion::Fixed => DVec3::ZERO,
+            ParticleMotion::Fluid => fluid_v,
+            ParticleMotion::Steer => {
+                let d = self.centroid - self.loc;
+                let abs_d = d.length();
+                let eta = 0.25;
+                let eta_r = eta * self.radius(dimensionality);
+                let xi = 1.0;
+                if abs_d > 0.9 * eta_r {
+                    let mut fac = xi * sound_speed / abs_d;
+                    if abs_d < 1.1 * eta_r {
+                        fac *= 5. * (abs_d - 0.9 * eta_r) / eta_r;
+                    }
+                    fluid_v + fac * d
+                } else {
+                    fluid_v
+                }
+            }
+            ParticleMotion::SteerPakmor => {
+                let alpha = 2. / usize::from(dimensionality) as f64 * self.max_a_over_r;
+                let beta = 2.25;
+                let eta = 0f64.max(0.5f64.min(2. / beta * (alpha - 0.75 * beta)));
+                let d = (self.centroid - self.loc).normalize();
+                let v_reg = self.radius(dimensionality) * self.gradients.curl_v().length();
+                let v_reg = eta * sound_speed.max(v_reg) * d;
+                fluid_v + v_reg
+            }
+        };
+        // Set the velocity with which this particle will be drifted over the course of it's next timestep
+        assert!(self.v.is_finite(), "Invalid value for v!");
+        self.v_full = self.v;
+
+        // Reset max_a_over_r (not needed any more)
+        self.max_a_over_r = 0.;
     }
 
     pub fn reflect(&self, around: DVec3, normal: DVec3) -> Self {
