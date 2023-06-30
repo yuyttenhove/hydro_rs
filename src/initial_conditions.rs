@@ -295,10 +295,10 @@ fn read_parts_from_cfg(ic_cfg: &Yaml, num_part: usize) -> Result<Vec<Particle>, 
 }
 
 pub struct HydroIC {
-    coordinates: Vec<DVec3>,
-    masses: Vec<f64>,
-    velocities: Vec<DVec3>,
-    internal_energies: Vec<f64>,
+    pub coordinates: Vec<DVec3>,
+    pub masses: Vec<f64>,
+    pub velocities: Vec<DVec3>,
+    pub internal_energies: Vec<f64>,
     volumes: Option<Vec<f64>>,
     gamma: f64,
     num_part: usize,
