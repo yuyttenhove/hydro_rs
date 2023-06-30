@@ -379,6 +379,7 @@ impl HydroIC {
 
     pub fn set_densities(mut self, densities: &[f64]) -> Self {
         // Set masses
+        self.init_volumes();
         self.masses = densities
             .iter()
             .zip(self.get_volumes().iter())
