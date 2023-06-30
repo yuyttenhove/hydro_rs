@@ -6,6 +6,7 @@ use yaml_rust::Yaml;
 use crate::{
     equation_of_state::EquationOfState,
     errors::ConfigError,
+    macros::{create_attr, create_dataset},
     part::Particle,
     physical_quantities::Conserved,
     utils::{HydroDimension, HydroDimension::*},
@@ -290,6 +291,174 @@ fn read_parts_from_cfg(ic_cfg: &Yaml, num_part: usize) -> Result<Vec<Particle>, 
     Ok(ic)
 }
 
+pub struct HydroIC {
+    coordinates: Vec<DVec3>,
+    masses: Vec<f64>,
+    velocities: Vec<DVec3>,
+    internal_energies: Vec<f64>,
+    volumes: Option<Vec<f64>>,
+    gamma: f64,
+    num_part: usize,
+    periodic: bool,
+    dimension: usize,
+    box_size: DVec3,
+}
+
+impl HydroIC {
+    pub fn empty(
+        num_part: usize,
+        dimension: usize,
+        box_size: DVec3,
+        periodic: Option<bool>,
+        gamma: Option<f64>,
+    ) -> Self {
+        let gamma = gamma.unwrap_or(5. / 3.);
+        let periodic = periodic.unwrap_or(true);
+        Self {
+            coordinates: vec![],
+            masses: vec![],
+            velocities: vec![],
+            internal_energies: vec![],
+            volumes: None,
+            gamma,
+            num_part,
+            periodic,
+            dimension,
+            box_size,
+        }
+    }
+
+    fn init_volumes(&mut self) {
+        self.volumes.get_or_insert_with(|| {
+            assert_eq!(
+                self.coordinates.len(),
+                self.num_part,
+                "Invalid lenght of coordinates!"
+            );
+            VoronoiIntegrator::build(
+                &self.coordinates,
+                None,
+                DVec3::ZERO,
+                self.box_size,
+                self.dimension,
+                self.periodic,
+            )
+            .compute_cell_integrals::<VolumeIntegral>()
+            .iter()
+            .map(|int| int.volume)
+            .collect::<Vec<_>>()
+        });
+    }
+
+    fn get_volumes(&self) -> &[f64] {
+        self.volumes.as_ref().unwrap()
+    }
+
+    pub fn set_coordinates(mut self, coordinates: Vec<DVec3>) -> Self {
+        self.coordinates = coordinates;
+        self
+    }
+
+    pub fn set_masses(mut self, masses: Vec<f64>) -> Self {
+        self.masses = masses;
+        self
+    }
+
+    pub fn set_internal_energies(mut self, internal_energies: Vec<f64>) -> Self {
+        self.internal_energies = internal_energies;
+        self
+    }
+
+    pub fn set_densities(mut self, densities: &[f64]) -> Self {
+        // Set masses
+        self.masses = densities
+            .iter()
+            .zip(self.get_volumes().iter())
+            .map(|(rho, vol)| rho * vol)
+            .collect();
+
+        self
+    }
+
+    pub fn set_pressures(mut self, pressures: &[f64]) -> Self {
+        assert_eq!(
+            self.masses.len(),
+            self.num_part,
+            "Invalid lenght of masses!"
+        );
+        assert_eq!(
+            pressures.len(),
+            self.num_part,
+            "Invalid lenght of pressures!"
+        );
+
+        self.init_volumes();
+        let inv_densities = self
+            .masses
+            .iter()
+            .zip(self.get_volumes().iter())
+            .map(|(m, vol)| vol / m);
+        let odgm1 = 1. / (self.gamma - 1.);
+        self.internal_energies = pressures
+            .iter()
+            .zip(inv_densities)
+            .map(|(pres, rho_inv)| *pres * rho_inv * odgm1)
+            .collect();
+
+        self
+    }
+
+    pub fn set_momenta(mut self, momenta: &[DVec3]) -> Self {
+        assert_eq!(
+            self.masses.len(),
+            self.num_part,
+            "Invalid lenght of masses!"
+        );
+        assert_eq!(momenta.len(), self.num_part, "Invalid lenght of momenta!");
+
+        self.velocities = self
+            .masses
+            .iter()
+            .zip(momenta.iter())
+            .map(|(m, p)| *p / *m)
+            .collect();
+        self
+    }
+
+    pub fn save<P: AsRef<Path>>(&self, save_name: P) -> Result<(), hdf5::Error> {
+        let file = hdf5::File::create(save_name)?;
+
+        // Write header
+        let header = file.create_group("Header")?;
+        create_attr!(header, self.box_size.to_array(), "BoxSize")?;
+        create_attr!(header, [self.num_part, 0, 0, 0, 0], "Numpart_Total")?;
+        create_attr!(header, [self.dimension], "Dimension")?;
+
+        // Write particle data
+        let part_data = file.create_group("PartType0")?;
+        create_dataset!(
+            part_data,
+            self.coordinates.iter().map(|x| x.to_array()),
+            "Coordinates"
+        )?;
+        part_data
+            .new_dataset_builder()
+            .with_data(&self.masses)
+            .create("Masses");
+        create_dataset!(
+            part_data,
+            self.velocities.iter().map(|v| v.to_array()),
+            "Velocities"
+        )?;
+        part_data
+            .new_dataset_builder()
+            .with_data(&self.internal_energies)
+            .create("InternalEnergy");
+
+        Ok(())
+    }
+}
+
 pub struct InitialConditions {
     particles: Vec<Particle>,
     box_size: DVec3,
@@ -493,5 +662,25 @@ impl InitialConditions {
 
     pub fn dimensionality(&self) -> HydroDimension {
         self.dimensionality
+    }
+}
+
+impl From<HydroIC> for InitialConditions {
+    fn from(ic: HydroIC) -> Self {
+        let particles = (0..ic.num_part)
+            .map(|i| {
+                Particle::from_ic(
+                    ic.coordinates[i],
+                    ic.masses[i],
+                    ic.velocities[i],
+                    ic.internal_energies[i],
+                )
+            })
+            .collect();
+        Self {
+            particles,
+            box_size: ic.box_size,
+            dimensionality: ic.dimension.into(),
+        }
     }
 }

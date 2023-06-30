@@ -29,8 +29,8 @@ pub struct Particle {
     pub centroid: DVec3,
     // Extrapolated particle velocity
     pub v: DVec3,
-    // particle velocity at last full timestep
-    v_full: DVec3,
+    // relative fluid velocity at last full timestep
+    v_rel: DVec3,
     max_a_over_r: f64,
     pub max_signal_velocity: f64,
     pub timebin: Timebin,
@@ -70,8 +70,9 @@ impl Particle {
         self.set_particle_velocity(fluid_v, sound_speed, particle_motion, dimensionality);
 
         // determine the size of this particle's next timestep
-        let v_rel = (self.v - fluid_v).length();
-        let v_max = self.max_signal_velocity.max(v_rel + sound_speed);
+        let v_max = self
+            .max_signal_velocity
+            .max(self.v_rel.length() + sound_speed);
         self.max_signal_velocity = 0.;
 
         if v_max > 0. {
@@ -84,7 +85,13 @@ impl Particle {
     /// Drifts the particle forward in time over a time `dt_drift`.
     ///
     /// Also predicts the primitive quantities forward in time over a time dt_extrapolate using the Euler equations.
-    pub fn drift(&mut self, dt_drift: f64, dt_extrapolate: f64, particle_motion: &ParticleMotion, eos: &EquationOfState) {
+    pub fn drift(
+        &mut self,
+        dt_drift: f64,
+        dt_extrapolate: f64,
+        particle_motion: &ParticleMotion,
+        eos: &EquationOfState,
+    ) {
         self.loc += self.v * dt_drift;
         self.centroid += self.v * dt_drift;
 
@@ -96,21 +103,19 @@ impl Particle {
             if rho > 0. {
                 let rho_inv = 1. / rho;
                 // Use fluid velocity in comoving frame!
-                let v = self.primitives.velocity() - self.v_full;
                 let p = self.primitives.pressure();
                 let div_v = self.gradients.div_v();
                 self.extrapolations -= dt_extrapolate
                     * Primitives::new(
-                        rho * div_v + v.dot(self.gradients[0]),
-                        v * div_v + rho_inv * self.gradients[4],
-                        gamma * p * div_v + v.dot(self.gradients[4]),
+                        rho * div_v + self.v_rel.dot(self.gradients[0]),
+                        self.v_rel * div_v + rho_inv * self.gradients[4],
+                        gamma * p * div_v + self.v_rel.dot(self.gradients[4]),
                     );
                 // Extrapolate particle velocity as well
                 match particle_motion {
                     ParticleMotion::Fixed => (),
                     _ => self.v -= dt_drift * rho_inv * self.gradients[4],
                 };
-                
             }
         } else {
             unimplemented!()
@@ -357,7 +362,7 @@ impl Particle {
         };
         // Set the velocity with which this particle will be drifted over the course of it's next timestep
         assert!(self.v.is_finite(), "Invalid value for v!");
-        self.v_full = self.v;
+        self.v_rel = fluid_v - self.v;
 
         // Reset max_a_over_r (not needed any more)
         self.max_a_over_r = 0.;

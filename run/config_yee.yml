@@ -7,7 +7,7 @@ time_integration:
 
 snapshots:
   t_between_snaps: 20.
-  prefix: "yee_200_pakmor_"
+  prefix: "yee_50_meshless_gradient_half_"
   save_faces: false
 
 engine:
@@ -16,12 +16,12 @@ engine:
   # runner: "DefaultHalfDrift"
   # runner: "OptimalOrderHalfDrift"
   # runner: "TwoVolumeHalfDrift"
-  # runner: "MeshlessGradientHalfDrift"
+  runner: "MeshlessGradientHalfDrift"
   # runner: "FluxExtrapolateHalfDrift"
   # runner: "OptimalOrder"
   # runner: "TwoGradient"
   # runner: "Default"
-  runner: "Pakmor"
+  # runner: "Pakmor"
 
 gravity:
   kind: "none"
@@ -35,13 +35,13 @@ hydrodynamics:
 
 space:
   boundary: "reflective"
-  max_top_level_cells: 12
+  max_top_level_cells: 10
 
 initial_conditions:
   type: "file"
   box_size: [2., 1., 1.]
   num_part: 250
-  filename: "ICs/yee_200.hdf5"
+  filename: "ICs/yee_50.hdf5"
 
 equation_of_state:
   gamma: 1.66666667

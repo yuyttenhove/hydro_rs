@@ -18,6 +18,7 @@ use crate::{
     gradients::GradientData,
     initial_conditions::InitialConditions,
     kernels::{Kernel, OneOver},
+    macros::{create_attr, create_dataset},
     part::Particle,
     physical_quantities::{Conserved, Primitives},
     time_integration::Iact,
@@ -53,21 +54,6 @@ macro_rules! get_other {
         } else {
             &$space.parts[$face.left()]
         }
-    };
-}
-
-macro_rules! create_attr {
-    ($group:expr, $data:expr, $name:expr) => {
-        $group.new_attr_builder().with_data(&$data).create($name)
-    };
-}
-
-macro_rules! create_dataset {
-    ($group:expr, $data_iter:expr, $name:expr) => {
-        $group
-            .new_dataset_builder()
-            .with_data(&$data_iter.collect::<Vec<_>>())
-            .create($name)
     };
 }
 
