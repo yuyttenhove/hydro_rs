@@ -415,9 +415,9 @@ dependencies = [
 
 [[package]]
 name = "meshless_voronoi"
-version = "0.4.1"
+version = "0.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e4f8e7b201793c308ef3e6257b505ee392ef2b51797d43292715ba00ac6934f4"
+checksum = "6668f955e8f9aa50481bfb1f86bda3f1b817f22c622e07e0e0ef2aeef700fb6d"
 dependencies = [
  "glam",
  "rayon",

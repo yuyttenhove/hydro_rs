@@ -236,7 +236,6 @@ impl Space {
             self.box_size,
             self.dimensionality.into(),
             self.periodic(),
-            false,
         );
 
         self.parts
@@ -320,7 +319,6 @@ impl Space {
             self.box_size,
             self.dimensionality.into(),
             self.periodic(),
-            false,
         );
 
         for (part, voronoi_cell) in self.parts.iter_mut().zip(voronoi.cells().iter()) {

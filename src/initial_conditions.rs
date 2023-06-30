@@ -3,6 +3,9 @@ use std::{error::Error, path::Path};
 use glam::DVec3;
 use yaml_rust::Yaml;
 
+use meshless_voronoi::VoronoiIntegrator;
+use meshless_voronoi::integrals::VolumeIntegral;
+
 use crate::{
     equation_of_state::EquationOfState,
     errors::ConfigError,
@@ -444,7 +447,7 @@ impl HydroIC {
         part_data
             .new_dataset_builder()
             .with_data(&self.masses)
-            .create("Masses");
+            .create("Masses")?;
         create_dataset!(
             part_data,
             self.velocities.iter().map(|v| v.to_array()),
@@ -453,7 +456,7 @@ impl HydroIC {
         part_data
             .new_dataset_builder()
             .with_data(&self.internal_energies)
-            .create("InternalEnergy");
+            .create("InternalEnergy")?;
 
         Ok(())
     }
