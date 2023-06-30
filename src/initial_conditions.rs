@@ -294,7 +294,7 @@ fn read_parts_from_cfg(ic_cfg: &Yaml, num_part: usize) -> Result<Vec<Particle>, 
     Ok(ic)
 }
 
-pub struct HydroIC {
+pub struct HydroICBuilder {
     coordinates: Vec<DVec3>,
     masses: Vec<f64>,
     velocities: Vec<DVec3>,
@@ -307,7 +307,7 @@ pub struct HydroIC {
     box_size: DVec3,
 }
 
-impl HydroIC {
+impl HydroICBuilder {
     pub fn empty(
         num_part: usize,
         dimension: usize,
@@ -668,8 +668,8 @@ impl InitialConditions {
     }
 }
 
-impl From<HydroIC> for InitialConditions {
-    fn from(ic: HydroIC) -> Self {
+impl From<HydroICBuilder> for InitialConditions {
+    fn from(ic: HydroICBuilder) -> Self {
         let particles = (0..ic.num_part)
             .map(|i| {
                 Particle::from_ic(

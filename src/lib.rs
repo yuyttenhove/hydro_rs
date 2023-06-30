@@ -4,7 +4,7 @@ extern crate derive_more;
 
 pub use engine::Engine;
 pub use equation_of_state::EquationOfState;
-pub use initial_conditions::{HydroIC, InitialConditions};
+pub use initial_conditions::{HydroICBuilder, InitialConditions};
 pub use space::Space;
 
 mod cell;
