@@ -367,6 +367,11 @@ impl HydroIC {
         self
     }
 
+    pub fn set_velocities(mut self, velocities: Vec<DVec3>) -> Self {
+        self.velocities = velocities;
+        self
+    }
+
     pub fn set_internal_energies(mut self, internal_energies: Vec<f64>) -> Self {
         self.internal_energies = internal_energies;
         self
