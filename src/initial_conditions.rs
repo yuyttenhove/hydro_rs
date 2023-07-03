@@ -492,7 +492,7 @@ impl HydroIC {
             .with_data(&self.internal_energies)
             .create("InternalEnergy")?;
         part_data
-            .new_attr_builder()
+            .new_dataset_builder()
             .with_data(smoothing_lengths)
             .create("SmoothingLength")?;
 
