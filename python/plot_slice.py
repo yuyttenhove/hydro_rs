@@ -13,7 +13,8 @@ def plot_slice(key, fname, savename):
     res = 1500
 
     interpolated = get_slice(values, coords, x_lim, y_lim, res)
-    plt.imshow(interpolated, cmap="viridis")
+    im = plt.imshow(interpolated, cmap="viridis")
+    plt.colorbar(im)
     plt.axis("off")
     plt.tight_layout()
     plt.savefig(savename, dpi=300)

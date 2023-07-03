@@ -129,7 +129,7 @@ impl Particle {
         self.volume = (volume).clamp(0.5 * self.volume, 2. * self.volume);
     }
 
-    pub fn apply_volume(&mut self, voronoi_cell: &VoronoiCell) {
+    pub fn update_geometry(&mut self, voronoi_cell: &VoronoiCell) {
         self.volume = voronoi_cell.volume();
         self.face_connections_offset = voronoi_cell.face_connections_offset();
         self.face_count = voronoi_cell.face_count();

@@ -246,7 +246,7 @@ impl Space {
             .zip(mask.par_iter())
             .for_each(|((part, voronoi_cell), is_active)| {
                 if *is_active {
-                    part.apply_volume(voronoi_cell);
+                    part.update_geometry(voronoi_cell);
                 } else {
                     // just update the face offset and counts for inactive particles
                     part.face_connections_offset = voronoi_cell.face_connections_offset();
@@ -324,13 +324,13 @@ impl Space {
         );
 
         for (part, voronoi_cell) in self.parts.iter_mut().zip(voronoi.cells().iter()) {
-            part.apply_volume(voronoi_cell);
+            part.update_geometry(voronoi_cell);
         }
 
         self.voronoi_cell_face_connections = voronoi.cell_face_connections().to_vec();
         self.voronoi_faces = voronoi.into_faces();
 
-        // Calculate the conserved quantities
+        // Calculate the primitive quantities
         let eos = self.eos;
         for part in self.parts.iter_mut() {
             part.first_init(&eos);

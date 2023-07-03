@@ -443,6 +443,10 @@ impl HydroIC {
         create_attr!(header, self.box_size.to_array(), "BoxSize")?;
         create_attr!(header, [self.num_part, 0, 0, 0, 0], "NumPart_Total")?;
         create_attr!(header, [self.dimension], "Dimension")?;
+        
+        // Some unused values, necessary for swift compatibility
+        create_attr!(header, [0], "Flag_Entropy_ICs")?;
+        create_attr!(header, [0, 0, 0, 0, 0], "NumPart_Total_HighWord")?;
 
         // Write particle data
         let part_data = file.create_group("PartType0")?;
