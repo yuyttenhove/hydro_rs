@@ -81,6 +81,7 @@ impl Space {
         eos: EquationOfState,
     ) -> Result<Self, ConfigError> {
         // read config
+        print!("Initializing Space...");
         let box_size = initial_conditions.box_size();
         let boundary = space_cfg["boundary"]
             .as_str()
@@ -200,6 +201,7 @@ impl Space {
         space.first_init_parts();
 
         // return
+        println!("✅");
         Ok(space)
     }
 

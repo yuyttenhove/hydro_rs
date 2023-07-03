@@ -294,17 +294,18 @@ fn read_parts_from_cfg(ic_cfg: &Yaml, num_part: usize) -> Result<Vec<Particle>, 
     Ok(ic)
 }
 
+#[derive(Clone)]
 pub struct HydroIC {
     pub coordinates: Vec<DVec3>,
     pub masses: Vec<f64>,
     pub velocities: Vec<DVec3>,
     pub internal_energies: Vec<f64>,
+    pub num_part: usize,
+    pub periodic: bool,
+    pub dimension: usize,
+    pub box_size: DVec3,
     volumes: Option<Vec<f64>>,
     gamma: f64,
-    num_part: usize,
-    periodic: bool,
-    dimension: usize,
-    box_size: DVec3,
 }
 
 impl HydroIC {
@@ -476,6 +477,7 @@ pub struct InitialConditions {
 
 impl InitialConditions {
     pub fn new(ic_cfg: &Yaml, eos: &EquationOfState) -> Result<Self, Box<dyn Error>> {
+        println!("Reading ICs...");
         let kind = ic_cfg["type"]
             .as_str()
             .ok_or(ConfigError::MissingParameter(
@@ -535,6 +537,7 @@ impl InitialConditions {
         let file = hdf5::File::open(filename)?;
 
         // Read some properties from the file
+        print!(" - Reading header...");
         let header = file.group("Header")?;
         let num_parts = header.attr("NumPart_Total")?.read_raw::<usize>()?[0];
         let dimension = header.attr("Dimension")?.read_raw::<usize>()?[0];
@@ -547,19 +550,23 @@ impl InitialConditions {
             }
         }
         let box_size = DVec3::from_slice(&box_size);
+        println!("✅");
 
         // Read the particle data from the file
+        print!(" - Reading raw particle data...");
         let data = file.group("PartType0")?;
-        let coordinates = data.dataset("Coordinates")?.read_raw::<f64>()?;
+        let coordinates = data.dataset("Coordinates")?.read_raw::<[f64; 3]>()?;
         let masses = data.dataset("Masses")?.read_raw::<f64>()?;
-        let velocities = data.dataset("Velocities")?.read_raw::<f64>()?;
+        let velocities = data.dataset("Velocities")?.read_raw::<[f64; 3]>()?;
         let internal_energy = data.dataset("InternalEnergy")?.read_raw::<f64>()?;
+        println!("✅");
 
         file.close()?;
 
         // Construct the actual particles
+        print!(" - Contructing particle array...");
         assert_eq!(
-            3 * num_parts,
+            num_parts,
             coordinates.len(),
             "Incorrect lenght of coordinates vector!"
         );
@@ -569,7 +576,7 @@ impl InitialConditions {
             "Incorrect lenght of masses vector!"
         );
         assert_eq!(
-            3 * num_parts,
+            num_parts,
             velocities.len(),
             "Incorrect lenght of velocities vector!"
         );
@@ -580,8 +587,8 @@ impl InitialConditions {
         );
         let mut parts = Vec::with_capacity(num_parts);
         for i in 0..num_parts {
-            let x = DVec3::from_slice(&coordinates[3 * i..3 * i + 3]);
-            let velocity = DVec3::from_slice(&velocities[3 * i..3 * i + 3]);
+            let x = DVec3::from_array(coordinates[i]);
+            let velocity = DVec3::from_array(velocities[i]);
             parts.push(Particle::from_ic(
                 x,
                 masses[i],
@@ -589,6 +596,7 @@ impl InitialConditions {
                 internal_energy[i],
             ));
         }
+        println!("✅");
 
         Ok(Self {
             particles: parts,

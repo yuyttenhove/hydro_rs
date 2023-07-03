@@ -4,10 +4,10 @@ import numpy as np
 from utils import get_slice, read_particle_data
 
 
-def plot_slice(fname, savename):
+def plot_slice(key, fname, savename):
     data, _ = read_particle_data(fname)
     coords = np.column_stack([data["x"].values, data["y"].values, data["z"].values])
-    values = data["rho"]
+    values = data[key]
     x_lim = [0., 1.]
     y_lim = [0., 1.]
     res = 1500
@@ -21,6 +21,21 @@ def plot_slice(fname, savename):
 
 if __name__ == "__main__":
     from utils import get_root
-    n = 6
-    plot_slice(get_root() / "run" / "output" / f"KelvinHelmholtz_HLLC_boosted_2D_{n:04}.txt", get_root() / "run/slice_hllc.png")
+    import sys
+
+    try:
+        key = sys.argv[1]
+    except IndexError:
+        key = "rho"
+
+    try:
+        fname = sys.argv[2]
+    except IndexError:
+        fname = get_root() / "run" / "output" / f"KelvinHelmholtz_HLLC_boosted_2D_0006.txt"
+
+    try:
+        savename = sys.argv[3]
+    except IndexError:
+        savename = get_root() / "run" / "output" / f"slice.png"
+    plot_slice(key, fname, savename)
     

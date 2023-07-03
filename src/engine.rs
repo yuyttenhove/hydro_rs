@@ -84,6 +84,7 @@ impl Engine {
         gravity_solver_cfg: &Yaml,
     ) -> Result<Self, ConfigError> {
         // Read config
+        print!("Initializing engine...");
         let t_status = engine_cfg["t_status"]
             .as_f64()
             .ok_or(ConfigError::MissingParameter("engine:t_status".to_string()))?;
@@ -146,6 +147,7 @@ impl Engine {
             sync_points.push_back(SyncPoint::new(0, SyncPointType::Step));
         }
 
+        println!("✅");
         Ok(Self {
             runner,
             hydro_solver,
@@ -175,6 +177,8 @@ impl Engine {
 
     /// Run this simulation
     pub fn run(&mut self, space: &mut Space) -> Result<(), hdf5::Error> {
+        println!("Started running!");
+        
         // Print status line
         println!("timestep \t #Particles \t t_current \t ti_current \t dt \t #Active particles \t min_dt \t max_dt \t total mass \t total energy");
 
