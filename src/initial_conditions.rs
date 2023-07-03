@@ -440,7 +440,7 @@ impl HydroIC {
         // Write header
         let header = file.create_group("Header")?;
         create_attr!(header, self.box_size.to_array(), "BoxSize")?;
-        create_attr!(header, [self.num_part, 0, 0, 0, 0], "Numpart_Total")?;
+        create_attr!(header, [self.num_part, 0, 0, 0, 0], "NumPart_Total")?;
         create_attr!(header, [self.dimension], "Dimension")?;
 
         // Write particle data

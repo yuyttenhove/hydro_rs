@@ -3,11 +3,11 @@ time_integration:
   dt_max: 1e0
   t_min: 1e-8
   t_end: 0.5
-  cfl_criterion: 3.0
+  cfl_criterion: 0.3
 
 snapshots:
   t_between_snaps: 0.05
-  prefix: "sodshock_1D_"
+  prefix: "momentum_feedback_random_direct_"
   save_faces: false
 
 engine:
@@ -21,7 +21,7 @@ engine:
   # runner: "OptimalOrder"
   # runner: "TwoGradient"
   # runner: "Default"
-  # runner: "Pakmor"
+  runner: "Pakmor"
 
 gravity:
   kind: "none"
@@ -38,10 +38,10 @@ space:
   max_top_level_cells: 12
 
 initial_conditions:
-  type: "sodshock"
+  type: "file"
   box_size: [2., 1., 1.]
   num_part: 250
-  filename: "ICs/yee_25.hdf5"
+  filename: "ICs/momentum_feedback/random/ic_momentum_direct.hdf5"
 
 equation_of_state:
   gamma: 1.66666667
