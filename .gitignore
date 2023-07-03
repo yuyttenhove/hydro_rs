@@ -6,3 +6,4 @@ run/output
 *.png
 *.pyc
 *.hdf5
+*.nix
