@@ -17,13 +17,25 @@ def read_particle_data(fname: str) -> Tuple[pd.DataFrame, float]:
     with h5py.File(fname, "r") as data:
         time = data["Header"].attrs["Time"][0]
         coordinates = data["PartType0/Coordinates"][:]
-        centroids = data["PartType0/Centroids"][:]
+        try:
+            centroids = data["PartType0/Centroids"][:]
+        except KeyError:
+            centroids = np.zeros_like(coordinates)
         velocities = data["PartType0/Velocities"][:]
         densities = data["PartType0/Densities"][:]
         pressures = data["PartType0/Pressures"][:]
-        internal_energy = data["PartType0/InternalEnergy"][:]
-        entropy = data["PartType0/Entropy"][:]
-        timestep = data["PartType0/Timestep"][:]
+        try:
+            internal_energy = data["PartType0/InternalEnergy"][:]
+        except KeyError:
+            internal_energy = np.zeros_like(pressures)
+        try:
+            entropy = data["PartType0/Entropy"][:]
+        except KeyError:
+            entropy = np.zeros_like(pressures)
+        try:
+            timestep = data["PartType0/Timestep"][:]
+        except KeyError:
+            timestep = np.zeros_like(pressures)
 
     data = pd.DataFrame(
         data=np.concatenate(
