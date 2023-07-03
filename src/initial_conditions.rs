@@ -444,7 +444,7 @@ impl HydroIC {
         if self.smoothing_lengths.is_none() {
             self.init_volumes();
         }
-        let smoothing_lengths: &[f64] = self.smoothing_lengths.get_or_insert_with(|| {
+        let smoothing_lengths: &Vec<f64> = self.smoothing_lengths.get_or_insert_with(|| {
             self.volumes
                 .as_ref()
                 .expect("Volumes have to be initialized at this point.")
