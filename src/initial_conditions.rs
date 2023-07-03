@@ -443,7 +443,7 @@ impl HydroIC {
         create_attr!(header, self.box_size.to_array(), "BoxSize")?;
         create_attr!(header, [self.num_part, 0, 0, 0, 0], "NumPart_Total")?;
         create_attr!(header, [self.dimension], "Dimension")?;
-        
+
         // Some unused values, necessary for swift compatibility
         create_attr!(header, [0], "Flag_Entropy_ICs")?;
         create_attr!(header, [0, 0, 0, 0, 0], "NumPart_Total_HighWord")?;
@@ -452,7 +452,7 @@ impl HydroIC {
         let part_data = file.create_group("PartType0")?;
         create_dataset!(
             part_data,
-            self.coordinates.iter().map(|x| x.to_array()),
+            self.coordinates.iter().map(|x| x.to_array()).flatten(),
             "Coordinates"
         )?;
         part_data
@@ -461,7 +461,7 @@ impl HydroIC {
             .create("Masses")?;
         create_dataset!(
             part_data,
-            self.velocities.iter().map(|v| v.to_array()),
+            self.velocities.iter().map(|v| v.to_array()).flatten(),
             "Velocities"
         )?;
         part_data
@@ -559,9 +559,9 @@ impl InitialConditions {
         // Read the particle data from the file
         print!(" - Reading raw particle data...");
         let data = file.group("PartType0")?;
-        let coordinates = data.dataset("Coordinates")?.read_raw::<[f64; 3]>()?;
+        let coordinates = data.dataset("Coordinates")?.read_raw::<f64>()?;
         let masses = data.dataset("Masses")?.read_raw::<f64>()?;
-        let velocities = data.dataset("Velocities")?.read_raw::<[f64; 3]>()?;
+        let velocities = data.dataset("Velocities")?.read_raw::<f64>()?;
         let internal_energy = data.dataset("InternalEnergy")?.read_raw::<f64>()?;
         println!("✅");
 
@@ -570,7 +570,7 @@ impl InitialConditions {
         // Construct the actual particles
         print!(" - Contructing particle array...");
         assert_eq!(
-            num_parts,
+            3 * num_parts,
             coordinates.len(),
             "Incorrect lenght of coordinates vector!"
         );
@@ -580,7 +580,7 @@ impl InitialConditions {
             "Incorrect lenght of masses vector!"
         );
         assert_eq!(
-            num_parts,
+            3 * num_parts,
             velocities.len(),
             "Incorrect lenght of velocities vector!"
         );
@@ -591,8 +591,8 @@ impl InitialConditions {
         );
         let mut parts = Vec::with_capacity(num_parts);
         for i in 0..num_parts {
-            let x = DVec3::from_array(coordinates[i]);
-            let velocity = DVec3::from_array(velocities[i]);
+            let x = DVec3::from_slice(&coordinates[3 * i..3 * (i + 1)]);
+            let velocity = DVec3::from_slice(&velocities[3 * i..3 * (i + 1)]);
             parts.push(Particle::from_ic(
                 x,
                 masses[i],
