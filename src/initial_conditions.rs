@@ -3,8 +3,8 @@ use std::{error::Error, path::Path};
 use glam::DVec3;
 use yaml_rust::Yaml;
 
-use meshless_voronoi::VoronoiIntegrator;
 use meshless_voronoi::integrals::VolumeIntegral;
+use meshless_voronoi::VoronoiIntegrator;
 
 use crate::{
     equation_of_state::EquationOfState,
@@ -294,7 +294,7 @@ fn read_parts_from_cfg(ic_cfg: &Yaml, num_part: usize) -> Result<Vec<Particle>, 
     Ok(ic)
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct HydroIC {
     pub coordinates: Vec<DVec3>,
     pub masses: Vec<f64>,
@@ -305,6 +305,7 @@ pub struct HydroIC {
     pub dimension: usize,
     pub box_size: DVec3,
     volumes: Option<Vec<f64>>,
+    smoothing_lengths: Option<Vec<f64>>,
     gamma: f64,
 }
 
@@ -319,20 +320,16 @@ impl HydroIC {
         let gamma = gamma.unwrap_or(5. / 3.);
         let periodic = periodic.unwrap_or(true);
         Self {
-            coordinates: vec![],
-            masses: vec![],
-            velocities: vec![],
-            internal_energies: vec![],
-            volumes: None,
             gamma,
             num_part,
             periodic,
             dimension,
             box_size,
+            ..Self::default()
         }
     }
 
-    fn init_volumes(&mut self) {
+    fn init_volumes(&mut self) -> &[f64] {
         self.volumes.get_or_insert_with(|| {
             assert_eq!(
                 self.coordinates.len(),
@@ -351,7 +348,7 @@ impl HydroIC {
             .iter()
             .map(|int| int.volume)
             .collect::<Vec<_>>()
-        });
+        })
     }
 
     fn get_volumes(&self) -> &[f64] {
@@ -435,8 +432,34 @@ impl HydroIC {
         self
     }
 
-    pub fn save<P: AsRef<Path>>(&self, save_name: P) -> Result<(), hdf5::Error> {
+    pub fn set_smoothing_lengths(mut self, smoothing_lengths: Vec<f64>) -> Self {
+        self.smoothing_lengths = Some(smoothing_lengths);
+        self
+    }
+
+    pub fn save<P: AsRef<Path>>(&mut self, save_name: P) -> Result<(), hdf5::Error> {
         let file = hdf5::File::create(save_name)?;
+
+        // Do we need to compute smoothing lengths?
+        if self.smoothing_lengths.is_none() {
+            self.init_volumes();
+        }
+        let smoothing_lengths: &[f64] = self.smoothing_lengths.get_or_insert_with(|| {
+            self.volumes
+                .as_ref()
+                .expect("Volumes have to be initialized at this point.")
+                .iter()
+                .map(|vol| {
+                    let radius = match self.dimension {
+                        1 => 0.5 * *vol,
+                        2 => (std::f64::consts::FRAC_1_PI * vol).sqrt(),
+                        3 => (0.25 * 3. * std::f64::consts::FRAC_1_PI * vol).powi(-3),
+                        _ => panic!("Invalid dimension: {:}!", self.dimension),
+                    };
+                    1.5 * radius
+                })
+                .collect()
+        });
 
         // Write header
         let header = file.create_group("Header")?;
@@ -468,6 +491,10 @@ impl HydroIC {
             .new_dataset_builder()
             .with_data(&self.internal_energies)
             .create("InternalEnergy")?;
+        part_data
+            .new_attr_builder()
+            .with_data(smoothing_lengths)
+            .create("SmoothingLength")?;
 
         Ok(())
     }
