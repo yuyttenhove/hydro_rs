@@ -306,6 +306,7 @@ pub struct HydroIC {
     pub box_size: DVec3,
     volumes: Option<Vec<f64>>,
     smoothing_lengths: Option<Vec<f64>>,
+    ids: Option<Vec<u64>>,
     gamma: f64,
 }
 
@@ -437,6 +438,11 @@ impl HydroIC {
         self
     }
 
+    pub fn set_ids(mut self, ids: Vec<u64>) -> Self {
+        self.ids = Some(ids);
+        self
+    }
+
     pub fn save<P: AsRef<Path>>(&mut self, save_name: P) -> Result<(), hdf5::Error> {
         let file = hdf5::File::create(save_name)?;
 
@@ -460,6 +466,9 @@ impl HydroIC {
                 })
                 .collect()
         });
+
+        // Do we need to set ids?
+        let ids: &Vec<u64> = self.ids.get_or_insert_with(|| (1..=self.num_part as u64).collect());
 
         // Write header
         let header = file.create_group("Header")?;
@@ -495,6 +504,10 @@ impl HydroIC {
             .new_dataset_builder()
             .with_data(smoothing_lengths)
             .create("SmoothingLength")?;
+        part_data
+            .new_dataset_builder()
+            .with_data(ids)
+            .create("ParticleIDs")?;
 
         Ok(())
     }
