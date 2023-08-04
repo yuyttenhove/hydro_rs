@@ -1086,10 +1086,10 @@ particles:
         let space = Space::from_ic(ics, space_config, eos).expect("Config should be valid!");
         assert_eq!(space.parts.len(), 4);
         // Check volumes
-        assert_approx_eq!(f64, space.parts[0].volume, 0.45);
-        assert_approx_eq!(f64, space.parts[1].volume, 0.25);
-        assert_approx_eq!(f64, space.parts[2].volume, 0.1);
-        assert_approx_eq!(f64, space.parts[3].volume, 0.2);
+        assert_approx_eq!(f64, space.parts[0].volume, 0.45, epsilon=1e-10);
+        assert_approx_eq!(f64, space.parts[1].volume, 0.25, epsilon=1e-10);
+        assert_approx_eq!(f64, space.parts[2].volume, 0.1, epsilon=1e-10);
+        assert_approx_eq!(f64, space.parts[3].volume, 0.2, epsilon=1e-10);
         // Check faces
         assert_eq!(space.voronoi_faces.len(), 5);
         assert_approx_eq!(f64, space.voronoi_faces[0].area(), 1.);

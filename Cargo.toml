@@ -8,10 +8,10 @@ edition = "2021"
 [dependencies]
 glam = "0.23"
 yaml-rust = "0.4"
-clap = {version = "3.2", features = ["derive"]}
+clap = { version = "3.2", features = ["derive"] }
 derive_more = "0.99"
-meshless_voronoi = {version = "0.5.0", features = ["rayon"] }
-hdf5 = "0.8.1"
+meshless_voronoi = { version = "0.5.0", features = ["rayon"] }
+hdf5 = { git = "https://github.com/aldanor/hdf5-rust.git" }
 rayon = "1.6.1"
 rstar = "0.10"
 
