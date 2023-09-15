@@ -330,7 +330,7 @@ impl HydroIC {
         }
     }
 
-    fn from_hdf5<P: AsRef<Path>>(filename: P) -> Result<Self, Box<dyn Error>> {
+    pub fn from_hdf5<P: AsRef<Path>>(filename: P) -> Result<Self, Box<dyn Error>> {
         let file = hdf5::File::open(filename)?;
 
         // Read some properties from the file
