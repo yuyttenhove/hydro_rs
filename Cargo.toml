@@ -11,7 +11,7 @@ yaml-rust = "0.4"
 clap = { version = "3.2", features = ["derive"] }
 derive_more = "0.99"
 meshless_voronoi = { version = "0.5.0", features = ["rayon"] }
-hdf5 = { git = "https://github.com/aldanor/hdf5-rust.git" }
+hdf5 = { version = "0.8.1" }
 rayon = "1.6.1"
 rstar = "0.10"
 
