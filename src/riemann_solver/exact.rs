@@ -405,4 +405,26 @@ mod test {
         assert_approx_eq!(f64, fluxes_lab.momentum().x, fluxes_face.momentum().x);
         assert_approx_eq!(f64, fluxes_lab.energy(), fluxes_face.energy());
     }
+
+    #[test]
+    fn test_problem_swift() {
+        let left = Primitives::new(
+            2.1669723793e-9,
+            DVec3::new(-2.9266309738e+00, 7.4537420273e+00, 1.4240785599e+01),
+            1.4698121886e-10,
+        );
+        let right = Primitives::new(
+            1.7172516742e-09,
+            DVec3::new(1.8704223633e+00, -7.5396900177e+00, -1.4482626915e+01),
+            1.1778487907e-10,
+        );
+        let v_l = -1.5249514580e+00;
+        let v_r = 4.9803251028e-01;
+	    let a_l = 3.3622390032e-01;
+        let a_r = 3.3810544014e-01;
+
+        let eos = get_eos(GAMMA);
+
+        ExactRiemannSolver.solve_for_star_state(&left, &right, v_l, v_r, a_l, a_r, &eos);
+    }
 }

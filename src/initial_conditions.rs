@@ -330,6 +330,71 @@ impl HydroIC {
         }
     }
 
+    fn from_hdf5<P: AsRef<Path>>(filename: P) -> Result<Self, Box<dyn Error>> {
+        let file = hdf5::File::open(filename)?;
+
+        // Read some properties from the file
+        print!(" - Reading header...");
+        let header = file.group("Header")?;
+        let num_parts = header.attr("NumPart_Total")?.read_raw::<usize>()?[0];
+        let dimension = header.attr("Dimension")?.read_raw::<usize>()?[0];
+        let mut box_size = header.attr("BoxSize")?.read_raw::<f64>()?;
+        for i in dimension..3 {
+            if box_size.len() < i + 1 {
+                box_size.push(1.)
+            } else {
+                box_size[i] = 1.;
+            }
+        }
+        let box_size = DVec3::from_slice(&box_size);
+        println!("✅");
+
+        // Read the particle data from the file
+        print!(" - Reading raw particle data...");
+        let data = file.group("PartType0")?;
+        let coordinates = data.dataset("Coordinates")?.read_raw::<f64>()?;
+        let masses = data.dataset("Masses")?.read_raw::<f64>()?;
+        let velocities = data.dataset("Velocities")?.read_raw::<f64>()?;
+        let internal_energy = data.dataset("InternalEnergy")?.read_raw::<f64>()?;
+        println!("✅");
+
+        file.close()?;
+
+        // Construct the actual particles
+        print!(" - Contructing particle ICs...");
+        assert_eq!(
+            3 * num_parts,
+            coordinates.len(),
+            "Incorrect lenght of coordinates vector!"
+        );
+        assert_eq!(
+            num_parts,
+            masses.len(),
+            "Incorrect lenght of masses vector!"
+        );
+        assert_eq!(
+            3 * num_parts,
+            velocities.len(),
+            "Incorrect lenght of velocities vector!"
+        );
+        assert_eq!(
+            num_parts,
+            internal_energy.len(),
+            "Incorrect lenght of internal energies vector!"
+        );
+        let coordinates = coordinates.chunks(3).map(|c| DVec3::from_slice(c)).collect();
+        let velocities = velocities.chunks(3).map(|c| DVec3::from_slice(c)).collect();
+
+        let mut ics = Self::empty(num_parts, dimension, box_size, Some(false), None);
+        ics = ics.set_coordinates(coordinates);
+        ics = ics.set_masses(masses);
+        ics = ics.set_velocities(velocities);
+        ics = ics.set_internal_energies(internal_energy);
+        println!("✅");
+
+        Ok(ics)
+    }
+
     fn init_volumes(&mut self) -> &[f64] {
         self.volumes.get_or_insert_with(|| {
             assert_eq!(
@@ -578,75 +643,7 @@ impl InitialConditions {
     }
 
     fn from_hdf5<P: AsRef<Path>>(filename: P) -> Result<Self, Box<dyn Error>> {
-        let file = hdf5::File::open(filename)?;
-
-        // Read some properties from the file
-        print!(" - Reading header...");
-        let header = file.group("Header")?;
-        let num_parts = header.attr("NumPart_Total")?.read_raw::<usize>()?[0];
-        let dimension = header.attr("Dimension")?.read_raw::<usize>()?[0];
-        let mut box_size = header.attr("BoxSize")?.read_raw::<f64>()?;
-        for i in dimension..3 {
-            if box_size.len() < i + 1 {
-                box_size.push(1.)
-            } else {
-                box_size[i] = 1.;
-            }
-        }
-        let box_size = DVec3::from_slice(&box_size);
-        println!("✅");
-
-        // Read the particle data from the file
-        print!(" - Reading raw particle data...");
-        let data = file.group("PartType0")?;
-        let coordinates = data.dataset("Coordinates")?.read_raw::<f64>()?;
-        let masses = data.dataset("Masses")?.read_raw::<f64>()?;
-        let velocities = data.dataset("Velocities")?.read_raw::<f64>()?;
-        let internal_energy = data.dataset("InternalEnergy")?.read_raw::<f64>()?;
-        println!("✅");
-
-        file.close()?;
-
-        // Construct the actual particles
-        print!(" - Contructing particle array...");
-        assert_eq!(
-            3 * num_parts,
-            coordinates.len(),
-            "Incorrect lenght of coordinates vector!"
-        );
-        assert_eq!(
-            num_parts,
-            masses.len(),
-            "Incorrect lenght of masses vector!"
-        );
-        assert_eq!(
-            3 * num_parts,
-            velocities.len(),
-            "Incorrect lenght of velocities vector!"
-        );
-        assert_eq!(
-            num_parts,
-            internal_energy.len(),
-            "Incorrect lenght of internal energies vector!"
-        );
-        let mut parts = Vec::with_capacity(num_parts);
-        for i in 0..num_parts {
-            let x = DVec3::from_slice(&coordinates[3 * i..3 * (i + 1)]);
-            let velocity = DVec3::from_slice(&velocities[3 * i..3 * (i + 1)]);
-            parts.push(Particle::from_ic(
-                x,
-                masses[i],
-                velocity,
-                internal_energy[i],
-            ));
-        }
-        println!("✅");
-
-        Ok(Self {
-            particles: parts,
-            box_size,
-            dimensionality: dimension.into(),
-        })
+        Ok(HydroIC::from_hdf5(filename)?.into())
     }
 
     /// Create an initial condition from a mapper that maps a particle's `position` to its `(density, velocity, pressure)`.
