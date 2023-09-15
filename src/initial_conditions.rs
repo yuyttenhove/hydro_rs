@@ -524,7 +524,7 @@ impl HydroIC {
                     let radius = match self.dimension {
                         1 => 0.5 * *vol,
                         2 => (std::f64::consts::FRAC_1_PI * vol).sqrt(),
-                        3 => (0.25 * 3. * std::f64::consts::FRAC_1_PI * vol).powi(-3),
+                        3 => (0.25 * 3. * std::f64::consts::FRAC_1_PI * vol).powf(1. / 3.),
                         _ => panic!("Invalid dimension: {:}!", self.dimension),
                     };
                     1.5 * radius
