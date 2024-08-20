@@ -13,7 +13,7 @@ boundary: "periodic"
 "##;
 
 fn get_ic_2d(v: DVec3, eos: &EquationOfState) -> InitialConditions {
-    InitialConditions::from_fn(DVec3::ONE, 9, 2, eos, |position| {
+    InitialConditions::from_fn(DVec3::ONE, 9, 2, eos, None, |position| {
         let pressure = if approx_eq!(f64, position.x, 0.5) && approx_eq!(f64, position.y, 0.5) {
             100.
         } else {

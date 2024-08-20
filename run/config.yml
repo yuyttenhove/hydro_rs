@@ -1,17 +1,16 @@
 time_integration:
   dt_min: 1e-11
-  dt_max: 1e0
-  t_min: 1e-8
-  t_end: 0.5
+  dt_max: 0.05
+  t_end: 0.2
   cfl_criterion: 0.3
 
 snapshots:
-  t_between_snaps: 0.05
-  prefix: "momentum_feedback_random_direct_"
+  t_between_snaps: 0.01
+  prefix: "sodshock_2D"
   save_faces: false
 
 engine:
-  t_status: 1e-2
+  t_status: 1e-3
   particle_motion: "steer"
   # runner: "DefaultHalfDrift"
   # runner: "OptimalOrderHalfDrift"
@@ -40,7 +39,7 @@ initial_conditions:
   type: "file"
   box_size: [2., 1., 1.]
   num_part: 250
-  filename: "ICs/momentum_feedback/random/ic_momentum_direct.hdf5"
+  filename: "ICs/sodshock_2D.hdf5"
 
 equation_of_state:
   gamma: 1.66666667

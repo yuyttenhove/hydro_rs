@@ -1,6 +1,7 @@
 use std::{error::Error, path::Path};
 
 use glam::DVec3;
+use rand::Rng;
 use yaml_rust::Yaml;
 
 use meshless_voronoi::integrals::VolumeIntegral;
@@ -382,7 +383,10 @@ impl HydroIC {
             internal_energy.len(),
             "Incorrect lenght of internal energies vector!"
         );
-        let coordinates = coordinates.chunks(3).map(|c| DVec3::from_slice(c)).collect();
+        let coordinates = coordinates
+            .chunks(3)
+            .map(|c| DVec3::from_slice(c))
+            .collect();
         let velocities = velocities.chunks(3).map(|c| DVec3::from_slice(c)).collect();
 
         let mut ics = Self::empty(num_parts, dimension, box_size, Some(false), None);
@@ -407,7 +411,9 @@ impl HydroIC {
                 None,
                 DVec3::ZERO,
                 self.box_size,
-                self.dimension,
+                self.dimension
+                    .try_into()
+                    .expect("IC dimension must be <= 3!"),
                 self.periodic,
             )
             .compute_cell_integrals::<VolumeIntegral>()
@@ -533,7 +539,9 @@ impl HydroIC {
         });
 
         // Do we need to set ids?
-        let ids: &Vec<u64> = self.ids.get_or_insert_with(|| (1..=self.num_part as u64).collect());
+        let ids: &Vec<u64> = self
+            .ids
+            .get_or_insert_with(|| (1..=self.num_part as u64).collect());
 
         // Write header
         let header = file.create_group("Header")?;
@@ -637,13 +645,15 @@ impl InitialConditions {
                     particles: parts,
                     box_size,
                     dimensionality: HydroDimension1D,
-                })
+                }
+                .postprocess_positions())
             }
         }
     }
 
     fn from_hdf5<P: AsRef<Path>>(filename: P) -> Result<Self, Box<dyn Error>> {
-        Ok(HydroIC::from_hdf5(filename)?.into())
+        let ics: Self = HydroIC::from_hdf5(filename)?.into();
+        Ok(ics.postprocess_positions())
     }
 
     /// Create an initial condition from a mapper that maps a particle's `position` to its `(density, velocity, pressure)`.
@@ -652,28 +662,33 @@ impl InitialConditions {
         num_part: usize,
         dimensionality: usize,
         eos: &EquationOfState,
+        perturbation: Option<f64>,
         mut mapper: F,
     ) -> Self
     where
         F: FnMut(DVec3) -> (f64, DVec3, f64),
     {
+        let mut perturbation = DVec3::splat(perturbation.unwrap_or_default());
         if dimensionality < 2 {
             box_size.y = 1.;
+            perturbation.y = 0.;
         }
         if dimensionality < 3 {
             box_size.z = 1.;
+            perturbation.z = 0.;
         }
+        let mut rng = rand::thread_rng();
 
         let volume = box_size.x * box_size.y * box_size.z;
-        let num_part_per_unit_length = (num_part as f64 * volume).powf(1. / dimensionality as f64);
-        let num_part_x = (box_size.x * num_part_per_unit_length) as usize;
+        let num_part_per_unit_length = (num_part as f64 / volume).powf(1. / dimensionality as f64);
+        let num_part_x = (box_size.x * num_part_per_unit_length).round() as usize;
         let num_part_y = if dimensionality > 1 {
-            (box_size.y * num_part_per_unit_length) as usize
+            (box_size.y * num_part_per_unit_length).round() as usize
         } else {
             1
         };
         let num_part_z = if dimensionality > 2 {
-            (box_size.z * num_part_per_unit_length) as usize
+            (box_size.z * num_part_per_unit_length).round() as usize
         } else {
             1
         };
@@ -686,10 +701,14 @@ impl InitialConditions {
                 let j = (n - i * num_part_y * num_part_z) / num_part_z;
                 let k = n - i * num_part_y * num_part_z - j * num_part_z;
 
+                let x_pert = perturbation.x * rng.gen::<f64>();
+                let y_pert = perturbation.y * rng.gen::<f64>();
+                let z_pert = perturbation.z * rng.gen::<f64>();
+
                 let position = DVec3 {
-                    x: (i as f64 + 0.5) / num_part_x as f64 * box_size.x,
-                    y: (j as f64 + 0.5) / num_part_y as f64 * box_size.y,
-                    z: (k as f64 + 0.5) / num_part_z as f64 * box_size.z,
+                    x: (i as f64 + 0.5 + x_pert) / num_part_x as f64 * box_size.x,
+                    y: (j as f64 + 0.5 + y_pert) / num_part_y as f64 * box_size.y,
+                    z: (k as f64 + 0.5 + z_pert) / num_part_z as f64 * box_size.z,
                 };
 
                 let (density, velocity, pressure) = mapper(position);
@@ -706,8 +725,23 @@ impl InitialConditions {
         Self {
             particles,
             box_size,
-            dimensionality: dimensionality.into(),
+            dimensionality: dimensionality
+                .try_into()
+                .expect("IC dimension must be <= 3!"),
         }
+        .postprocess_positions()
+    }
+
+    fn postprocess_positions(mut self) -> Self {
+        let dimension_fac = match self.dimensionality {
+            HydroDimension1D => DVec3::new(1., 0., 0.),
+            HydroDimension2D => DVec3::new(1., 1., 0.),
+            HydroDimension3D => DVec3::new(1., 1., 1.),
+        };
+        for part in self.particles.iter_mut() {
+            part.loc *= dimension_fac;
+        }
+        self
     }
 
     pub fn box_size(&self) -> DVec3 {
@@ -738,7 +772,7 @@ impl From<HydroIC> for InitialConditions {
         Self {
             particles,
             box_size: ic.box_size,
-            dimensionality: ic.dimension.into(),
+            dimensionality: ic.dimension.try_into().expect("IC dimension must be <= 3!"),
         }
     }
 }

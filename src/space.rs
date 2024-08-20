@@ -663,7 +663,9 @@ impl Space {
                 let faces = &self.voronoi_cell_face_connections[offset..offset + part.face_count];
                 for &face_idx in faces {
                     let face = &self.voronoi_faces[face_idx];
-                    let Some(ngb_idx) = face.right() else {continue;};
+                    let Some(ngb_idx) = face.right() else {
+                        continue;
+                    };
                     let ngb = &self.parts[ngb_idx];
 
                     // Get the relative velocity of the face
@@ -817,7 +819,9 @@ impl Space {
 
     /// Collect the gravitational accellerations in the particles
     pub fn gravity(&mut self, engine: &Engine) {
-        let Some(solver) = &engine.gravity_solver else { return; };
+        let Some(solver) = &engine.gravity_solver else {
+            return;
+        };
 
         let accelerations = solver.accelerations(&self.parts);
         self.parts
@@ -1054,10 +1058,14 @@ impl Space {
 
 #[cfg(test)]
 mod test {
+    use std::f64;
+
     use float_cmp::assert_approx_eq;
+    use glam::DVec3;
     use yaml_rust::YamlLoader;
 
     use crate::equation_of_state::EquationOfState;
+    use crate::initial_conditions::InitialConditions;
 
     use super::Space;
 
@@ -1074,8 +1082,6 @@ particles:
 
     #[test]
     fn test_init_1d() {
-        use crate::initial_conditions::InitialConditions;
-
         let eos = EquationOfState::new(
             &YamlLoader::load_from_str(&format!("gamma: {:}", GAMMA)).unwrap()[0],
         )
@@ -1086,10 +1092,10 @@ particles:
         let space = Space::from_ic(ics, space_config, eos).expect("Config should be valid!");
         assert_eq!(space.parts.len(), 4);
         // Check volumes
-        assert_approx_eq!(f64, space.parts[0].volume, 0.45, epsilon=1e-10);
-        assert_approx_eq!(f64, space.parts[1].volume, 0.25, epsilon=1e-10);
-        assert_approx_eq!(f64, space.parts[2].volume, 0.1, epsilon=1e-10);
-        assert_approx_eq!(f64, space.parts[3].volume, 0.2, epsilon=1e-10);
+        assert_approx_eq!(f64, space.parts[0].volume, 0.45, epsilon = 1e-10);
+        assert_approx_eq!(f64, space.parts[1].volume, 0.25, epsilon = 1e-10);
+        assert_approx_eq!(f64, space.parts[2].volume, 0.1, epsilon = 1e-10);
+        assert_approx_eq!(f64, space.parts[3].volume, 0.2, epsilon = 1e-10);
         // Check faces
         assert_eq!(space.voronoi_faces.len(), 5);
         assert_approx_eq!(f64, space.voronoi_faces[0].area(), 1.);
@@ -1102,5 +1108,77 @@ particles:
         assert_approx_eq!(f64, space.voronoi_faces[2].centroid().x, 0.7);
         assert_approx_eq!(f64, space.voronoi_faces[3].centroid().x, 0.8);
         assert_approx_eq!(f64, space.voronoi_faces[4].centroid().x, 1.);
+    }
+
+    #[test]
+    fn test_init_2d() {
+        let box_size = DVec3::new(2., 2., 1.);
+        let num_part = 256;
+        let dimensionality = 2;
+        let eos = EquationOfState::new(
+            &YamlLoader::load_from_str(&format!("gamma: {:}", GAMMA)).unwrap()[0],
+        )
+        .unwrap();
+
+        let mapper = |_| (1., DVec3::ZERO, 1.);
+        let ics =
+            InitialConditions::from_fn(box_size, num_part, dimensionality, &eos, Some(0.1), mapper);
+
+        let space_config = &YamlLoader::load_from_str(CFG_STR).unwrap()[0];
+        let space = Space::from_ic(ics, space_config, eos).expect("Config should be valid");
+
+        assert_eq!(space.parts.len(), num_part);
+        let mut volume_total = 0.;
+        let mut areas = vec![0.; num_part];
+        for face in space.voronoi_faces {
+            areas[face.left()] += face.area();
+            if let Some(right_idx) = face.right() {
+                areas[right_idx] += face.area();
+            }
+        }
+        for (part, &area) in space.parts.iter().zip(areas.iter()) {
+            let dx = part.loc() - part.centroid;
+            assert!(dx.length() < 0.5 * part.search_radius);
+            volume_total += part.volume();
+            let radius = (f64::consts::FRAC_1_PI * part.volume()).powf(1. / 2.);
+            assert!(area > 2. * f64::consts::PI * radius);
+        }
+        assert_approx_eq!(f64, volume_total, 4., ulps = 8);
+    }
+
+    #[test]
+    fn test_init_3d() {
+        let box_size = DVec3::new(2., 2., 2.);
+        let num_part = 512;
+        let dimensionality = 3;
+        let eos = EquationOfState::new(
+            &YamlLoader::load_from_str(&format!("gamma: {:}", GAMMA)).unwrap()[0],
+        )
+        .unwrap();
+
+        let mapper = |_| (1., DVec3::ZERO, 1.);
+        let ics =
+            InitialConditions::from_fn(box_size, num_part, dimensionality, &eos, Some(0.1), mapper);
+
+        let space_config = &YamlLoader::load_from_str(CFG_STR).unwrap()[0];
+        let space = Space::from_ic(ics, space_config, eos).expect("Config should be valid");
+
+        assert_eq!(space.parts.len(), num_part);
+        let mut volume_total = 0.;
+        let mut areas = vec![0.; num_part];
+        for face in space.voronoi_faces {
+            areas[face.left()] += face.area();
+            if let Some(right_idx) = face.right() {
+                areas[right_idx] += face.area();
+            }
+        }
+        for (part, &area) in space.parts.iter().zip(areas.iter()) {
+            let dx = part.loc() - part.centroid;
+            assert!(dx.length() < 0.5 * part.search_radius);
+            volume_total += part.volume();
+            let radius = (3. / 4. * f64::consts::FRAC_1_PI * part.volume()).powf(1. / 3.);
+            assert!(area > 4. * f64::consts::PI * radius * radius);
+        }
+        assert_approx_eq!(f64, volume_total, 8., ulps = 8);
     }
 }

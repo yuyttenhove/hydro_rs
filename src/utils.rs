@@ -1,31 +1,32 @@
 use glam::DVec3;
+use meshless_voronoi::Dimensionality;
 
 use crate::part::Particle;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, num_enum::IntoPrimitive, num_enum::TryFromPrimitive)]
+#[repr(usize)]
 pub enum HydroDimension {
-    HydroDimension1D,
-    HydroDimension2D,
-    HydroDimension3D,
+    HydroDimension1D = 1,
+    HydroDimension2D = 2,
+    HydroDimension3D = 3,
 }
 
-impl From<usize> for HydroDimension {
-    fn from(u: usize) -> Self {
-        match u {
-            1 => HydroDimension::HydroDimension1D,
-            2 => HydroDimension::HydroDimension2D,
-            3 => HydroDimension::HydroDimension3D,
-            _ => panic!("Illegal hydro dimension: {}", u),
+impl From<Dimensionality> for HydroDimension {
+    fn from(d: Dimensionality) -> Self {
+        match d {
+            Dimensionality::OneD => HydroDimension::HydroDimension1D,
+            Dimensionality::TwoD => HydroDimension::HydroDimension2D,
+            Dimensionality::ThreeD => HydroDimension::HydroDimension3D,
         }
     }
 }
 
-impl From<HydroDimension> for usize {
-    fn from(dim: HydroDimension) -> Self {
-        match dim {
-            HydroDimension::HydroDimension1D => 1,
-            HydroDimension::HydroDimension2D => 2,
-            HydroDimension::HydroDimension3D => 3,
+impl From<HydroDimension> for Dimensionality {
+    fn from(d: HydroDimension) -> Self {
+        match d {
+            HydroDimension::HydroDimension1D => Dimensionality::OneD,
+            HydroDimension::HydroDimension2D => Dimensionality::TwoD,
+            HydroDimension::HydroDimension3D => Dimensionality::ThreeD,
         }
     }
 }

@@ -420,7 +420,7 @@ mod test {
         );
         let v_l = -1.5249514580e+00;
         let v_r = 4.9803251028e-01;
-	    let a_l = 3.3622390032e-01;
+        let a_l = 3.3622390032e-01;
         let a_r = 3.3810544014e-01;
 
         let eos = get_eos(GAMMA);
