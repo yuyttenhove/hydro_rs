@@ -6,8 +6,8 @@ time_integration:
   sync_timesteps: true
 
 snapshots:
-  t_between_snaps: 0.01
-  prefix: "sodshock_2D"
+  t_between_snaps: 0.02
+  prefix: "sodshock_2D_two_volume_half_"
   save_faces: false
 
 engine:
@@ -15,13 +15,14 @@ engine:
   particle_motion: "steer"
   # runner: "DefaultHalfDrift"
   # runner: "OptimalOrderHalfDrift"
-  # runner: "TwoVolumeHalfDrift"
+  runner: "TwoVolumeHalfDrift"
   # runner: "MeshlessGradientHalfDrift"
   # runner: "FluxExtrapolateHalfDrift"
-  runner: "OptimalOrder"
+  # runner: "OptimalOrder"
   # runner: "TwoGradient"
   # runner: "Default"
   # runner: "Pakmor"
+  # runner: "PakmorExtrapolate"
 gravity:
   kind: "none"
   potential:

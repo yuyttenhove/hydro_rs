@@ -1,14 +1,13 @@
 time_integration:
   dt_min: 1e-11
   dt_max: 1e0
-  t_min: 1e-8
   t_end: 100.
   cfl_criterion: 0.3
   sync_timesteps: true
 
 snapshots:
   t_between_snaps: 20.
-  prefix: "yee_50_meshless_gradient_half_"
+  prefix: "yee_100_meshless_gradient_half_"
   save_faces: false
 
 engine:
@@ -23,6 +22,7 @@ engine:
   # runner: "TwoGradient"
   # runner: "Default"
   # runner: "Pakmor"
+  # runner: "PakmorExtrapolate"
 
 gravity:
   kind: "none"
@@ -42,7 +42,7 @@ initial_conditions:
   type: "file"
   box_size: [2., 1., 1.]
   num_part: 250
-  filename: "ICs/yee_50.hdf5"
+  filename: "ICs/yee_100.hdf5"
 
 equation_of_state:
   gamma: 1.66666667
