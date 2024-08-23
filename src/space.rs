@@ -26,7 +26,7 @@ use crate::{
         get_integer_time_end, make_integer_timestep, make_timestep, IntegerTime, MAX_NR_TIMESTEPS,
         NUM_TIME_BINS, TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN,
     },
-    utils::{box_reflect, box_wrap, contains, HydroDimension},
+    utils::{contains, HydroDimension},
 };
 use crate::{
     flux::{flux_exchange, flux_exchange_boundary},
@@ -516,6 +516,16 @@ impl Space {
         });
     }
 
+    /// Apply the time extrapolations
+    pub fn apply_time_extrapolations(&mut self, engine: &Engine) {
+        self.parts.par_iter_mut().for_each(|part| {
+            if engine.part_is_active(part, Iact::Volume) {
+                part.primitives += part.extrapolations;
+                part.extrapolations = Primitives::vacuum();
+            }
+        });
+    }
+
     /// drift all particles forward over the given timestep
     pub fn drift(&mut self, dt_drift: f64, dt_extrapolate: f64, _engine: &Engine) {
         let eos = self.eos;
@@ -527,13 +537,11 @@ impl Space {
         // Handle particles that left the box.
         let mut to_remove = vec![];
         for (idx, part) in self.parts.iter_mut().enumerate() {
-            if !contains(self.box_size, part.loc) {
+            if !contains(self.box_size, part.loc, self.dimensionality.into()) {
                 match self.boundary {
-                    Boundary::Reflective => box_reflect(self.box_size, part),
+                    Boundary::Reflective => part.box_reflect(self.box_size, self.dimensionality),
                     Boundary::Open | Boundary::Vacuum => to_remove.push(idx),
-                    Boundary::Periodic => {
-                        box_wrap(self.box_size, &mut part.loc, self.dimensionality.into())
-                    }
+                    Boundary::Periodic => part.box_wrap(self.box_size, self.dimensionality),
                 }
             }
         }

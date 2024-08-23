@@ -3,6 +3,7 @@ use meshless_voronoi::VoronoiCell;
 
 use crate::physical_quantities::{Conserved, Primitives, StateGradients};
 use crate::time_integration::Iact;
+use crate::utils::{box_reflect, box_wrap, contains};
 use crate::{
     engine::{Engine, ParticleMotion},
     equation_of_state::EquationOfState,
@@ -465,6 +466,28 @@ impl Particle {
             HydroDimension3D => {
                 (0.25 * 3. * std::f64::consts::FRAC_1_PI * self.volume()).powf(1. / 3.)
             }
+        }
+    }
+
+    pub fn box_wrap(&mut self, box_size: DVec3, dimensionality: HydroDimension) {
+        let pos_old = self.loc;
+        box_wrap(box_size, &mut self.loc, dimensionality.into());
+        let shift = self.loc - pos_old;
+        self.gradients_centroid += shift;
+        self.centroid += shift;
+    }
+
+    pub fn box_reflect(&mut self, box_size: DVec3, dimensionality: HydroDimension) {
+        let pos_old = self.loc;
+        box_reflect(box_size, &mut self.loc, dimensionality.into());
+        debug_assert!(contains(box_size, self.loc, dimensionality.into()));
+        let shift = self.loc - pos_old;
+        if shift.length_squared() > 0. {
+            let normal = shift * shift.length_recip();
+            *self = self
+                .clone()
+                .reflect_quantities(normal)
+                .reflect_gradients(normal);
         }
     }
 }

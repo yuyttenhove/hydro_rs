@@ -1,7 +1,6 @@
 use glam::DVec3;
 use meshless_voronoi::Dimensionality;
 
-use crate::part::Particle;
 
 #[derive(Clone, Copy, PartialEq, Eq, num_enum::IntoPrimitive, num_enum::TryFromPrimitive)]
 #[repr(usize)]
@@ -42,13 +41,12 @@ impl Round for f64 {
     }
 }
 
-pub fn contains(box_size: DVec3, pos: DVec3) -> bool {
-    pos.x >= 0.
-        && pos.x < box_size.x
-        && pos.y >= 0.
-        && pos.y < box_size.y
-        && pos.z >= 0.
-        && pos.z < box_size.z
+pub fn contains(box_size: DVec3, pos: DVec3, dimension: usize) -> bool {
+    let mut contains = true;
+    for i in 0..dimension {
+        contains &= pos[i] >= 0. && pos[i] < box_size[i];
+    }
+    contains
 }
 
 pub fn box_wrap(box_size: DVec3, pos: &mut DVec3, dimension: usize) {
@@ -62,23 +60,13 @@ pub fn box_wrap(box_size: DVec3, pos: &mut DVec3, dimension: usize) {
     }
 }
 
-pub fn box_reflect(box_size: DVec3, part: &mut Particle) {
-    let x_old = part.loc;
-    for i in 0..3 {
-        if part.loc[i] < 0. {
-            part.loc[i] -= 2. * part.loc[i];
+pub fn box_reflect(box_size: DVec3, pos: &mut DVec3, dimension: usize) {
+    for i in 0..dimension {
+        if pos[i] < 0. {
+            pos[i] -= 2. * pos[i];
         }
-        if part.loc[i] > box_size[i] {
-            part.loc[i] -= 2. * (part.loc[i] - box_size[i]);
+        if pos[i] > box_size[i] {
+            pos[i] -= 2. * (pos[i] - box_size[i]);
         }
-    }
-    debug_assert!(contains(box_size, part.loc));
-    let dx = part.loc - x_old;
-    if dx.length_squared() > 0. {
-        let normal = dx * dx.length_recip();
-        *part = part
-            .clone()
-            .reflect_quantities(normal)
-            .reflect_gradients(normal);
     }
 }
