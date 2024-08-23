@@ -64,6 +64,7 @@ pub struct Engine {
     cfl_criterion: f64,
     dt_min: f64,
     dt_max: f64,
+    sync_all: bool,
     ti_snap: IntegerTime,
     ti_between_snaps: IntegerTime,
     ti_status: IntegerTime,
@@ -117,6 +118,9 @@ impl Engine {
                 .ok_or(ConfigError::MissingParameter(
                     "time_integration:cfl_criterion".to_string(),
                 ))?;
+        let sync_all = time_integration_cfg["sync_timesteps"]
+            .as_bool()
+            .unwrap_or(false);
         let t_between_snaps =
             snapshots_cfg["t_between_snaps"]
                 .as_f64()
@@ -164,6 +168,7 @@ impl Engine {
             cfl_criterion,
             dt_min,
             dt_max,
+            sync_all,
             ti_snap: 0,
             ti_between_snaps: (t_between_snaps * time_base_inv) as IntegerTime,
             ti_status: 0,
@@ -178,7 +183,7 @@ impl Engine {
     /// Run this simulation
     pub fn run(&mut self, space: &mut Space) -> Result<(), hdf5::Error> {
         println!("Started running!");
-        
+
         // Print status line
         println!("timestep \t #Particles \t t_current \t ti_current \t dt \t #Active particles \t min_dt \t max_dt \t total mass \t total energy");
 
@@ -333,5 +338,9 @@ impl Engine {
 
     pub fn save_faces(&self) -> bool {
         self.save_faces
+    }
+
+    pub fn sync_all(&self) -> bool {
+        self.sync_all
     }
 }

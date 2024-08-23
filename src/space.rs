@@ -692,7 +692,7 @@ impl Space {
     pub fn timestep(&mut self, engine: &Engine) -> IntegerTime {
         // Some useful variables
         let ti_current = engine.ti_current();
-        let ti_end_min = AtomicU64::new(MAX_NR_TIMESTEPS);
+        let dti_min = AtomicU64::new(MAX_NR_TIMESTEPS);
 
         self.parts.par_iter_mut().for_each(|part| {
             if part.is_ending(engine) {
@@ -722,21 +722,34 @@ impl Space {
                 );
                 part.set_timestep(make_timestep(dti, engine.time_base()), dti);
 
-                ti_end_min.fetch_min(ti_current + dti, Ordering::Relaxed);
+                dti_min.fetch_min(dti, Ordering::Relaxed);
             } else {
-                ti_end_min.fetch_min(
-                    get_integer_time_end(ti_current, part.timebin),
+                debug_assert!(
+                    !engine.sync_all(),
+                    "Found particle not ending it's timestep while syncing timesteps!"
+                );
+                dti_min.fetch_min(
+                    get_integer_time_end(ti_current, part.timebin) - ti_current,
                     Ordering::Relaxed,
                 );
             }
         });
 
-        let ti_end_min = ti_end_min.into_inner();
-        debug_assert!(
-            ti_end_min >= ti_current,
-            "Next sync point before current time!"
-        );
-        ti_end_min
+        // Update the particles timesteps to the minimal timestep if syncing timesteps
+        let dti_min = dti_min.into_inner();
+        debug_assert!(dti_min > 0, "Next sync point before current time!");
+        let dt = make_timestep(dti_min, engine.time_base());
+        if engine.sync_all() {
+            for part in self.parts.iter_mut() {
+                debug_assert!(
+                    part.is_ending(engine),
+                    "Found particle not ending it's timestep while syncing timesteps!"
+                );
+                part.set_timestep(dt, dti_min);
+            }
+        }
+
+        ti_current + dti_min
     }
 
     /// Apply the timestep limiter to the particles

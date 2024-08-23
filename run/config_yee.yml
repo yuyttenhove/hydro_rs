@@ -4,6 +4,7 @@ time_integration:
   t_min: 1e-8
   t_end: 100.
   cfl_criterion: 0.3
+  sync_timesteps: true
 
 snapshots:
   t_between_snaps: 20.
