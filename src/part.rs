@@ -15,6 +15,7 @@ use crate::{
 pub struct Particle {
     pub primitives: Primitives,
     pub gradients: StateGradients,
+    pub gradients_centroid: DVec3,
     pub extrapolations: Primitives,
     pub conserved: Conserved,
     pub fluxes: Conserved,
@@ -35,7 +36,8 @@ pub struct Particle {
     pub max_signal_velocity: f64,
     pub timebin: Timebin,
     pub dt: f64,
-    pub dr: f64,
+    // Volume derivative
+    pub dvdt: f64,
 
     pub a_grav: DVec3,
 }
@@ -58,7 +60,8 @@ impl Particle {
 
         let m_inv = 1. / self.conserved.mass();
         // Fluid velocity at generator (instead of centroid)
-        let d_v = Primitives::from(self.gradients.dot(self.loc - self.centroid)).velocity();
+        let d_v =
+            Primitives::from(self.gradients.dot(self.loc - self.gradients_centroid)).velocity();
         let fluid_v = self.conserved.momentum() * m_inv + d_v;
         let sound_speed = eos.sound_speed(
             eos.gas_pressure_from_internal_energy(
@@ -82,6 +85,26 @@ impl Particle {
         }
     }
 
+    /// We need to kick the particle velocity (not fluid velocity!) for half the timestep
+    pub fn hydro_kick1(
+        &mut self,
+        particle_motion: &ParticleMotion,
+        dimensionality: HydroDimension,
+    ) {
+        match particle_motion {
+            ParticleMotion::Fixed => (),
+            _ => {
+                let rho = self.primitives.density();
+                if rho > 0. {
+                    let kick_fac = 0.5 * self.dt / rho;
+                    for i in 0..dimensionality.into() {
+                        self.v[i] -= kick_fac * self.gradients[4][i];
+                    }
+                }
+            }
+        };
+    }
+
     /// Drifts the particle forward in time over a time `dt_drift`.
     ///
     /// Also predicts the primitive quantities forward in time over a time dt_extrapolate using the Euler equations.
@@ -89,15 +112,28 @@ impl Particle {
         &mut self,
         dt_drift: f64,
         dt_extrapolate: f64,
-        particle_motion: &ParticleMotion,
         eos: &EquationOfState,
+        dimensionality: HydroDimension,
     ) {
-        self.loc += self.v * dt_drift;
-        self.centroid += self.v * dt_drift;
+        for i in 0..dimensionality.into() {
+            self.loc[i] += self.v[i] * dt_drift;
+            self.centroid[i] += self.v[i] * dt_drift;
+            self.gradients_centroid[i] += self.v[i] * dt_drift;
+        }
 
         debug_assert!(self.loc.is_finite(), "Infinite x after drift!");
 
         // Extrapolate primitives in time
+        self.extrapolations += self.time_extrapolations(dt_extrapolate, eos);
+
+        self.primitives.check_physical();
+
+        // Extrapolate volume in time
+        let volume = self.volume + self.dvdt * self.dt;
+        self.volume = (volume).clamp(0.5 * self.volume, 2. * self.volume);
+    }
+
+    pub fn time_extrapolations(&self, dt: f64, eos: &EquationOfState) -> Primitives {
         if let EquationOfState::Ideal { gamma, .. } = eos {
             let rho = self.primitives.density();
             if rho > 0. {
@@ -105,28 +141,17 @@ impl Particle {
                 // Use fluid velocity in comoving frame!
                 let p = self.primitives.pressure();
                 let div_v = self.gradients.div_v();
-                self.extrapolations -= dt_extrapolate
-                    * Primitives::new(
-                        rho * div_v + self.v_rel.dot(self.gradients[0]),
-                        self.v_rel * div_v + rho_inv * self.gradients[4],
-                        gamma * p * div_v + self.v_rel.dot(self.gradients[4]),
-                    );
-                // Extrapolate particle velocity as well
-                match particle_motion {
-                    ParticleMotion::Fixed => (),
-                    _ => self.v -= dt_drift * rho_inv * self.gradients[4],
-                };
+                -dt * Primitives::new(
+                    rho * div_v + self.v_rel.dot(self.gradients[0]),
+                    self.v_rel * div_v + rho_inv * self.gradients[4],
+                    gamma * p * div_v + self.v_rel.dot(self.gradients[4]),
+                )
+            } else {
+                Primitives::vacuum()
             }
         } else {
             unimplemented!()
         }
-
-        self.primitives.check_physical();
-
-        // Extrapolate volume in time
-        let r = self.radius(HydroDimension2D) + self.dr * dt_drift;
-        let volume = std::f64::consts::PI * r * r;
-        self.volume = (volume).clamp(0.5 * self.volume, 2. * self.volume);
     }
 
     pub fn update_geometry(&mut self, voronoi_cell: &VoronoiCell) {
@@ -372,6 +397,8 @@ impl Particle {
         let mut reflected = self.clone();
         reflected.loc += 2. * (around - self.loc).dot(normal) * normal;
         reflected.centroid += 2. * (around - self.centroid).dot(normal) * normal;
+        reflected.gradients_centroid +=
+            2. * (around - self.gradients_centroid).dot(normal) * normal;
         reflected.v -= 2. * reflected.v.dot(normal) * normal;
 
         reflected

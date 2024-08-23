@@ -338,7 +338,7 @@ impl Space {
     }
 
     /// Compute the fluxes for each face (if any).
-    fn compute_fluxes(&self, engine: &Engine) -> Vec<Option<FluxInfo>> {
+    fn compute_fluxes(&self, time_extrapolate_fac: f64, engine: &Engine) -> Vec<Option<FluxInfo>> {
         self.voronoi_faces
             .par_iter()
             .map(|face| {
@@ -359,7 +359,15 @@ impl Space {
                         } else {
                             return None;
                         };
-                        Some(flux_exchange(left, right, dt, face, &self.eos, engine))
+                        Some(flux_exchange(
+                            left,
+                            right,
+                            dt,
+                            face,
+                            time_extrapolate_fac,
+                            &self.eos,
+                            engine,
+                        ))
                     }
                     None => {
                         if !left_active {
@@ -369,6 +377,7 @@ impl Space {
                             left,
                             face,
                             self.boundary,
+                            time_extrapolate_fac,
                             &self.eos,
                             engine,
                         ))
@@ -401,14 +410,47 @@ impl Space {
     }
 
     /// Do flux exchange between neighbouring particles
+    /// This method will extrapolate back in time for half the duration of the timestep over which
+    /// fluxes are exchanges (depends on the neigbour).
     pub fn flux_exchange(&mut self, engine: &Engine) {
-        self.add_fluxes(self.compute_fluxes(engine), engine);
+        self.add_fluxes(self.compute_fluxes(0.5, engine), engine);
+    }
+
+    /// Do flux exchange between neighbouring particles, without extrapolating back in time
+    pub fn flux_exchange_no_back_extrapolation(&mut self, engine: &Engine) {
+        self.add_fluxes(self.compute_fluxes(0., engine), engine);
+    }
+
+    /// Do flux exchange between neighbouring particles according to pakmors hybrid Heun/MUSCL-Hankock scheme
+    ///
+    /// We first calculate the fluxes without extrapolating and then with extrapolating and take the average of the two.
+    pub fn flux_exchange_pakmor_single(&mut self, engine: &Engine) {
+        let mut fluxes = self.compute_fluxes(1., engine);
+        let fluxes_end = self.compute_fluxes(0., engine);
+        // Average the fluxes
+        fluxes
+            .par_iter_mut()
+            .zip(fluxes_end.par_iter())
+            .for_each(|(flux_start, flux_end)| {
+                if let Some(flux_start) = flux_start {
+                    let flux_end = flux_end
+                        .as_ref()
+                        .expect("Cannot be None, since flux start was not None.");
+                    *flux_start = FluxInfo {
+                        fluxes: 0.5 * (flux_end.fluxes + flux_start.fluxes),
+                        mflux: 0.5 * (flux_end.mflux + flux_start.mflux),
+                        ..*flux_end
+                    };
+                }
+            });
+        // Add fluxes to parts
+        self.add_fluxes(fluxes, engine);
     }
 
     /// Apply the (first or second) half flux (for Heun's method).
     pub fn half_flux_exchange(&mut self, engine: &Engine) {
         // Calculate the fluxes accross each face
-        let mut fluxes = self.compute_fluxes(engine);
+        let mut fluxes = self.compute_fluxes(0., engine);
 
         // Half the fluxes
         fluxes.par_iter_mut().for_each(|flux_info| {
@@ -422,7 +464,7 @@ impl Space {
     }
 
     pub fn extrapolate_flux(&mut self, engine: &Engine) {
-        let fluxes = self.compute_fluxes(engine);
+        let fluxes = self.compute_fluxes(0., engine);
 
         let mut d_conserved = vec![Conserved::vacuum(); self.parts.len()];
         for (i, part) in self.parts.iter().enumerate() {
@@ -475,11 +517,11 @@ impl Space {
     }
 
     /// drift all particles forward over the given timestep
-    pub fn drift(&mut self, dt_drift: f64, dt_extrapolate: f64, engine: &Engine) {
+    pub fn drift(&mut self, dt_drift: f64, dt_extrapolate: f64, _engine: &Engine) {
         let eos = self.eos;
         // drift all particles, including inactive particles
         self.parts.par_iter_mut().for_each(|part| {
-            part.drift(dt_drift, dt_extrapolate, &engine.particle_motion, &eos);
+            part.drift(dt_drift, dt_extrapolate, &eos, self.dimensionality);
         });
 
         // Handle particles that left the box.
@@ -568,6 +610,7 @@ impl Space {
             .for_each(|(part, gradient)| {
                 if let Some(gradient) = gradient {
                     part.gradients = *gradient;
+                    part.gradients_centroid = part.centroid;
                     debug_assert!(engine.part_is_active(part, Iact::Gradient));
                 }
             });
@@ -641,49 +684,49 @@ impl Space {
             .for_each(|(part, gradient)| {
                 if let Some(gradient) = gradient {
                     part.gradients = *gradient;
+                    part.gradients_centroid = part.centroid;
                     debug_assert!(engine.part_is_active(part, Iact::Gradient));
                 }
             });
     }
 
     pub fn volume_derivative_estimate(&mut self, engine: &Engine) {
-        let dr = self
-            .parts
-            .par_iter()
-            .map(|part| {
-                if !engine.part_is_active(part, Iact::Flux) {
-                    return None;
+        let mut dvol_dt: Vec<Option<f64>> = vec![None; self.parts.len()];
+        dvol_dt
+            .par_iter_mut()
+            .zip(self.parts.par_iter().enumerate())
+            .for_each(|(maybe_dvol, (idx, part))| {
+                if !engine.part_is_active(part, Iact::Volume) {
+                    return;
                 }
-
-                let mut dv = 0.;
-                let mut total_area = 0.;
-
                 // Loop over faces of particle
                 let offset = part.face_connections_offset;
                 let faces = &self.voronoi_cell_face_connections[offset..offset + part.face_count];
+                let mut dvol = 0.;
                 for &face_idx in faces {
                     let face = &self.voronoi_faces[face_idx];
-                    let Some(ngb_idx) = face.right() else {
-                        continue;
-                    };
-                    let ngb = &self.parts[ngb_idx];
-
-                    // Get the relative velocity of the face
-                    let v_face = 0.5 * (ngb.v - part.v);
-                    dv += face.area() * v_face.dot(face.normal());
-                    total_area += face.area();
+                    let left_idx = face.left();
+                    if let Some(right_idx) = face.right() {
+                        let ngb = if left_idx == idx {
+                            &self.parts[right_idx]
+                        } else {
+                            &self.parts[left_idx]
+                        };
+                        // Get the relative velocity of the face
+                        let v_face = 0.5 * (ngb.v - part.v);
+                        let sign = if left_idx == idx { 1. } else { -1. };
+                        dvol += sign * face.area() * v_face.dot(face.normal());
+                    }
                 }
-
-                Some(dv / total_area)
-            })
-            .collect::<Vec<_>>();
+                *maybe_dvol = Some(dvol);
+            });
 
         self.parts
             .par_iter_mut()
-            .zip(dr.into_par_iter())
-            .for_each(|(part, dr)| {
-                if let Some(dr) = dr {
-                    part.dr = dr;
+            .zip(dvol_dt)
+            .for_each(|(part, dvol)| {
+                if let Some(dvol) = dvol {
+                    part.dvdt = dvol;
                 }
             });
     }
@@ -846,13 +889,14 @@ impl Space {
     }
 
     /// Apply the first half kick (gravity) to the particles
+    /// + hydro half kick to particle velocities
     pub fn kick1(&mut self, engine: &Engine) {
-        if !engine.with_gravity() {
-            return;
-        }
         self.parts.par_iter_mut().for_each(|part| {
             if part.is_starting(engine) {
-                part.grav_kick();
+                part.hydro_kick1(&engine.particle_motion, self.dimensionality);
+                if engine.with_gravity() {
+                    part.grav_kick();
+                }
             }
         })
     }

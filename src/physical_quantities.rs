@@ -258,7 +258,7 @@ impl Primitives {
             self.values = StateVector::zeros();
         }
         if self.pressure() < 0. {
-            eprintln!("Negative density encountered, resetting to vacuum!");
+            eprintln!("Negative pressure encountered, resetting to vacuum!");
             self.values = StateVector::zeros();
         }
 

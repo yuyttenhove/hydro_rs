@@ -19,13 +19,15 @@ pub fn flux_exchange(
     right: &Particle,
     dt: f64,
     face: &VoronoiFace,
+    time_extrapolate_fac: f64,
     eos: &EquationOfState,
     engine: &Engine,
 ) -> FluxInfo {
     // We extrapolate from the centroid of the particles.
-    let dx_left = face.centroid() - left.centroid;
+    let dx_left = face.centroid() - left.gradients_centroid;
     let shift = face.shift().unwrap_or(DVec3::ZERO);
-    let dx_right = face.centroid() - right.centroid - shift;
+    let dx_right = face.centroid() - right.gradients_centroid - shift;
+    let dx_gradients = (dx_left - dx_right).length();
     let dx_centroid = right.centroid + shift - left.centroid;
     let dx = right.loc + shift - left.loc;
 
@@ -41,18 +43,27 @@ pub fn flux_exchange(
         .dot(dx_centroid)
         .min(0.);
 
-    // Gradient extrapolation
+    // Gradient + time extrapolation + pair wise limiting
+    let dt_extrapolate = -time_extrapolate_fac * dt;
+    let left_dash = left.primitives
+        + left.gradients.dot(dx_left).into()
+        + left.extrapolations
+        + left.time_extrapolations(dt_extrapolate, eos);
+    let right_dash = right.primitives
+        + right.gradients.dot(dx_right).into()
+        + right.extrapolations
+        + right.time_extrapolations(dt_extrapolate, eos);
     let primitives_left = pairwise_limiter(
         &left.primitives,
         &right.primitives,
-        &(left.primitives + left.gradients.dot(dx_left).into() + left.extrapolations),
-        dx_left.length() / dx_centroid.length(),
+        &left_dash,
+        dx_left.length() / dx_gradients,
     );
     let primitives_right = pairwise_limiter(
         &right.primitives,
         &left.primitives,
-        &(right.primitives + right.gradients.dot(dx_right).into() + right.extrapolations),
-        dx_right.length() / dx_centroid.length(),
+        &right_dash,
+        dx_right.length() / dx_gradients,
     );
 
     // Compute interface velocity (Springel (2010), eq. 33):
@@ -86,12 +97,14 @@ pub fn flux_exchange_boundary(
     part: &Particle,
     face: &VoronoiFace,
     boundary: Boundary,
+    time_extrapolate_fac: f64,
     eos: &EquationOfState,
     engine: &Engine,
 ) -> FluxInfo {
     // get reflected particle
     let mut reflected = part.reflect(face.centroid(), face.normal());
-    let dx_face = face.centroid() - part.centroid;
+    let dx_face = face.centroid() - part.gradients_centroid;
+    let dx_gradients = (reflected.gradients_centroid - part.gradients_centroid).length();
     let dx_centroid = reflected.centroid - part.centroid;
     let dx = reflected.loc - part.loc;
 
@@ -102,8 +115,11 @@ pub fn flux_exchange_boundary(
     }
 
     // Gradient extrapolation
-    let mut primitives_dash =
-        part.primitives + part.gradients.dot(dx_face).into() + part.extrapolations;
+    let dt_extraplotate = -time_extrapolate_fac * part.dt;
+    let mut primitives_dash = part.primitives
+        + part.gradients.dot(dx_face).into()
+        + part.extrapolations
+        + part.time_extrapolations(dt_extraplotate, eos);
 
     let primitives_boundary = match boundary {
         Boundary::Reflective => {
@@ -115,7 +131,7 @@ pub fn flux_exchange_boundary(
                 &part.primitives,
                 &reflected.primitives,
                 &primitives_dash,
-                dx_face.length() / dx_centroid.length(),
+                dx_face.length() / dx_gradients,
             );
             v_max -= (reflected.primitives.velocity() - part.primitives.velocity())
                 .dot(dx_centroid)
@@ -128,7 +144,7 @@ pub fn flux_exchange_boundary(
                 &part.primitives,
                 &part.primitives,
                 &primitives_dash,
-                dx_face.length() / dx_centroid.length(),
+                dx_face.length() / dx_gradients,
             );
 
             primitives_dash
@@ -139,7 +155,7 @@ pub fn flux_exchange_boundary(
                 &part.primitives,
                 &vacuum,
                 &primitives_dash,
-                dx_face.length() / dx_centroid.length(),
+                dx_face.length() / dx_gradients,
             );
             v_max += part.primitives.velocity().dot(dx_centroid).min(0.);
 

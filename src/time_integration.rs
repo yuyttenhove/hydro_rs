@@ -16,6 +16,7 @@ pub enum Runner {
     OptimalOrder,
     TwoGradient,
     Pakmor,
+    PakmorExtrapolate,
     TwoVolumeHalfDrift,
     OptimalOrderHalfDrift,
     DefaultHalfDrift,
@@ -30,6 +31,7 @@ impl Runner {
             "OptimalOrder" => Ok(Runner::OptimalOrder),
             "TwoGradient" => Ok(Runner::TwoGradient),
             "Pakmor" => Ok(Runner::Pakmor),
+            "PakmorExtrapolate" => Ok(Runner::PakmorExtrapolate),
             "TwoVolumeHalfDrift" => Ok(Runner::TwoVolumeHalfDrift),
             "OptimalOrderHalfDrift" => Ok(Runner::OptimalOrderHalfDrift),
             "DefaultHalfDrift" => Ok(Runner::DefaultHalfDrift),
@@ -42,11 +44,8 @@ impl Runner {
     pub fn drift(&self, dti: IntegerTime, engine: &Engine, space: &mut Space) {
         let dt = engine.dt(dti);
         match self {
-            Runner::MeshlessGradientHalfDrift | Runner::Pakmor | Runner::TwoVolumeHalfDrift => {
-                space.drift(dt, dt, engine)
-            }
             Runner::FluxExtrapolateHalfDrift => space.drift(dt, 0., engine),
-            _ => space.drift(dt, 0.5 * dt, engine),
+            _ => space.drift(dt, dt, engine),
         }
     }
 
@@ -100,10 +99,22 @@ impl Runner {
                 space.convert_conserved_to_primitive(engine);
                 space.gradient_estimate(engine);
                 ti_next = space.timestep(engine);
-                space.timestep_limiter(engine); // Note: this can never decrease ti_next
+                // space.timestep_limiter(engine); // Note: this can never decrease ti_next
                 space.kick1(engine);
                 // second half flux
                 space.half_flux_exchange(engine);
+            }
+            Runner::PakmorExtrapolate => {
+                space.volume_calculation(engine);
+                space.flux_exchange_pakmor_single(engine);
+                space.apply_flux(engine);
+                space.gravity(engine);
+                space.kick2(engine);
+                space.convert_conserved_to_primitive(engine);
+                space.gradient_estimate(engine);
+                ti_next = space.timestep(engine);
+                space.timestep_limiter(engine); // Note: this can never decrease ti_next
+                space.kick1(engine);
             }
             _ => {
                 panic!("{self:?} should not be run with full steps!")
@@ -118,11 +129,11 @@ impl Runner {
         match self {
             Runner::TwoVolumeHalfDrift => {
                 space.volume_calculation(engine);
-                space.flux_exchange(engine);
+                space.flux_exchange_no_back_extrapolation(engine);
             }
             Runner::OptimalOrderHalfDrift => {
                 space.volume_calculation(engine);
-                space.flux_exchange(engine);
+                space.flux_exchange_no_back_extrapolation(engine);
                 space.apply_flux(engine);
                 space.convert_conserved_to_primitive(engine);
                 space.gradient_estimate(engine);
@@ -131,17 +142,21 @@ impl Runner {
                 space.volume_calculation(engine);
                 space.convert_conserved_to_primitive(engine);
                 space.gradient_estimate(engine);
-                space.flux_exchange(engine);
+                space.flux_exchange_no_back_extrapolation(engine);
             }
             Runner::MeshlessGradientHalfDrift => {
                 space.volume_calculation(engine);
-                space.flux_exchange(engine);
-                // space.volume_derivative_estimate(engine);
+                space.volume_derivative_estimate(engine);
+                space.apply_time_extrapolations(engine);
+                space.gradient_estimate(engine);
+                space.flux_exchange_no_back_extrapolation(engine);
             }
             Runner::FluxExtrapolateHalfDrift => {
                 space.volume_calculation(engine);
                 space.extrapolate_flux(engine);
-                space.flux_exchange(engine);
+                space.convert_conserved_to_primitive(engine);
+                space.gradient_estimate(engine);
+                space.flux_exchange_no_back_extrapolation(engine);
             }
             _ => {
                 panic!("{self:?} should not be run with half steps!")
@@ -159,20 +174,20 @@ impl Runner {
                 space.convert_conserved_to_primitive(engine);
                 space.gradient_estimate(engine);
                 ti_next = space.timestep(engine);
-                space.timestep_limiter(engine); // Note: this can never decrease ti_next
+                // space.timestep_limiter(engine); // Note: this can never decrease ti_next
                 space.kick1(engine);
             }
             Runner::OptimalOrderHalfDrift => {
                 space.kick2(engine);
                 ti_next = space.timestep(engine);
-                space.timestep_limiter(engine); // Note: this can never decrease ti_next
+                // space.timestep_limiter(engine); // Note: this can never decrease ti_next
                 space.kick1(engine);
             }
             Runner::DefaultHalfDrift => {
                 space.apply_flux(engine);
                 space.kick2(engine);
                 ti_next = space.timestep(engine);
-                space.timestep_limiter(engine); // Note: this can never decrease ti_next
+                // space.timestep_limiter(engine); // Note: this can never decrease ti_next
                 space.kick1(engine);
             }
             Runner::MeshlessGradientHalfDrift => {
@@ -182,7 +197,7 @@ impl Runner {
                 space.convert_conserved_to_primitive(engine);
                 space.meshless_gradient_estimate(engine);
                 ti_next = space.timestep(engine);
-                space.meshless_timestep_limiter(engine); // Note: this can never decrease ti_next
+                // space.meshless_timestep_limiter(engine); // Note: this can never decrease ti_next
                 space.kick1(engine);
             }
             Runner::FluxExtrapolateHalfDrift => {
@@ -192,7 +207,7 @@ impl Runner {
                 space.convert_conserved_to_primitive(engine);
                 space.meshless_gradient_estimate(engine);
                 ti_next = space.timestep(engine);
-                space.meshless_timestep_limiter(engine); // Note: this can never decrease ti_next
+                // space.meshless_timestep_limiter(engine); // Note: this can never decrease ti_next
                 space.kick1(engine);
             }
             _ => {
@@ -217,9 +232,11 @@ impl Runner {
 
     pub fn part_is_active(&self, part: &Particle, iact: Iact, engine: &Engine) -> bool {
         match self {
-            Runner::Default | Runner::OptimalOrder | Runner::TwoGradient | Runner::Pakmor => {
-                part.is_ending(engine)
-            }
+            Runner::Default
+            | Runner::OptimalOrder
+            | Runner::TwoGradient
+            | Runner::Pakmor
+            | Runner::PakmorExtrapolate => part.is_ending(engine),
             Runner::OptimalOrderHalfDrift => part.is_halfway(engine),
             Runner::DefaultHalfDrift => match iact {
                 Iact::ApplyFlux => part.is_ending(engine),
@@ -232,6 +249,7 @@ impl Runner {
             },
             Runner::MeshlessGradientHalfDrift => match iact {
                 Iact::Flux | Iact::Volume => part.is_halfway(engine),
+                Iact::Gradient => part.is_halfway(engine) || part.is_ending(engine),
                 _ => part.is_ending(engine),
             },
             Runner::FluxExtrapolateHalfDrift => match iact {
