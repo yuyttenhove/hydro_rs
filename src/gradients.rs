@@ -34,7 +34,7 @@ impl<T> GradientData<T> {
 
     pub fn collect(&mut self, state_left: &State<T>, state_right: &State<T>, w: f64, ds: DVec3) {
         for i in 0..5 {
-            self.gradients[i] = w * (state_right[i] - state_left[i]) * ds;
+            self.gradients[i] += w * (state_right[i] - state_left[i]) * ds;
         }
 
         self.matrix_wls += w * DMat3::from_cols(ds.x * ds, ds.y * ds, ds.z * ds);

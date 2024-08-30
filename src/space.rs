@@ -550,9 +550,6 @@ impl Space {
             .enumerate()
             .for_each(|(idx, part)| {
                 // Loop over faces and add fluxes if any
-                if !engine.part_is_active(part, Iact::ApplyFlux) {
-                    return;
-                }
                 let offset = part.face_connections_offset;
                 let faces = &self.voronoi_cell_face_connections[offset..offset + part.face_count];
                 for &face_idx in faces {

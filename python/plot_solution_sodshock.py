@@ -38,6 +38,6 @@ if __name__ == "__main__":
         fname = sys.argv[1]
         savename = sys.argv[2]
     except IndexError:
-        fname = root / "run/output/sodshock_2D_two_volume_half_0002.hdf5"
-        savename = "test_back_volume_half.png"
+        fname = root / "run/output/sodshock_2D_optimal_0005.hdf5"
+        savename = "test_optimal.png"
     main(fname, savename)

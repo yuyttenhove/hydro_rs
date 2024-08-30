@@ -69,10 +69,10 @@ impl Runner {
                 space.volume_calculation(engine);
                 space.flux_exchange(engine);
                 space.apply_flux(engine);
-                space.convert_conserved_to_primitive(engine);
-                space.gradient_estimate(engine);
                 space.gravity(engine);
                 space.kick2(engine);
+                space.convert_conserved_to_primitive(engine);
+                space.gradient_estimate(engine);
                 ti_next = space.timestep(engine);
                 space.timestep_limiter(engine); // Note: this can never decrease ti_next
                 space.kick1(engine);
