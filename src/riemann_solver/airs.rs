@@ -1,3 +1,5 @@
+use crate::physical_quantities::{Primitive, State};
+
 use super::{ExactRiemannSolver, PVRiemannSolver, RiemannStarSolver};
 
 pub struct AIRiemannSolver {
@@ -13,8 +15,8 @@ impl AIRiemannSolver {
 impl RiemannStarSolver for AIRiemannSolver {
     fn solve_for_star_state(
         &self,
-        left: &crate::physical_quantities::Primitives,
-        right: &crate::physical_quantities::Primitives,
+        left: &State<Primitive>,
+        right: &State<Primitive>,
         v_l: f64,
         v_r: f64,
         a_l: f64,

@@ -1,7 +1,7 @@
 use glam::DVec3;
 use meshless_voronoi::VoronoiCell;
 
-use crate::physical_quantities::{Conserved, Primitives, StateGradients};
+use crate::physical_quantities::{Conserved, Gradients, Primitive, State};
 use crate::time_integration::Iact;
 use crate::utils::{box_reflect, box_wrap, contains};
 use crate::{
@@ -14,12 +14,12 @@ use crate::{
 
 #[derive(Default, Debug, Clone)]
 pub struct Particle {
-    pub primitives: Primitives,
-    pub gradients: StateGradients,
+    pub primitives: State<Primitive>,
+    pub gradients: Gradients<Primitive>,
     pub gradients_centroid: DVec3,
-    pub extrapolations: Primitives,
-    pub conserved: Conserved,
-    pub fluxes: Conserved,
+    pub extrapolations: State<Primitive>,
+    pub conserved: State<Conserved>,
+    pub fluxes: State<Conserved>,
     pub gravity_mflux: DVec3,
 
     pub volume: f64,
@@ -61,8 +61,10 @@ impl Particle {
 
         let m_inv = 1. / self.conserved.mass();
         // Fluid velocity at generator (instead of centroid)
-        let d_v =
-            Primitives::from(self.gradients.dot(self.loc - self.gradients_centroid)).velocity();
+        let d_v = self
+            .gradients
+            .dot(self.loc - self.gradients_centroid)
+            .velocity();
         let fluid_v = self.conserved.momentum() * m_inv + d_v;
         let sound_speed = eos.sound_speed(
             eos.gas_pressure_from_internal_energy(
@@ -134,7 +136,7 @@ impl Particle {
         self.volume = (volume).clamp(0.5 * self.volume, 2. * self.volume);
     }
 
-    pub fn time_extrapolations(&self, dt: f64, eos: &EquationOfState) -> Primitives {
+    pub fn time_extrapolations(&self, dt: f64, eos: &EquationOfState) -> State<Primitive> {
         if let EquationOfState::Ideal { gamma, .. } = eos {
             let rho = self.primitives.density();
             if rho > 0. {
@@ -142,13 +144,13 @@ impl Particle {
                 // Use fluid velocity in comoving frame!
                 let p = self.primitives.pressure();
                 let div_v = self.gradients.div_v();
-                -dt * Primitives::new(
+                -dt * State::<Primitive>::new(
                     rho * div_v + self.v_rel.dot(self.gradients[0]),
                     self.v_rel * div_v + rho_inv * self.gradients[4],
                     gamma * p * div_v + self.v_rel.dot(self.gradients[4]),
                 )
             } else {
-                Primitives::vacuum()
+                State::vacuum()
             }
         } else {
             unimplemented!()
@@ -189,22 +191,22 @@ impl Particle {
 
         if self.conserved.mass() < 0. {
             eprintln!("Negative mass after applying fluxes");
-            self.conserved = Conserved::vacuum();
+            self.conserved = State::vacuum();
         }
         if self.conserved.energy() < 0. {
             eprintln!("Negative energy after applying fluxes");
-            self.conserved = Conserved::vacuum();
+            self.conserved = State::vacuum();
         }
         self.reset_fluxes();
     }
 
     fn reset_fluxes(&mut self) {
-        self.fluxes = Conserved::vacuum();
+        self.fluxes = State::vacuum();
         self.gravity_mflux = DVec3::ZERO;
     }
 
     pub fn first_init(&mut self, eos: &EquationOfState) {
-        self.primitives = Primitives::from_conserved(&self.conserved, self.volume(), eos);
+        self.primitives = State::from_conserved(&self.conserved, self.volume(), eos);
         debug_assert!(self.primitives.density().is_finite());
         debug_assert!(self.primitives.velocity().is_finite());
         debug_assert!(self.primitives.pressure().is_finite());
@@ -213,7 +215,7 @@ impl Particle {
     pub fn from_ic(x: DVec3, mass: f64, velocity: DVec3, internal_energy: f64) -> Self {
         Self {
             loc: x,
-            conserved: Conserved::new(
+            conserved: State::<Conserved>::new(
                 mass,
                 mass * velocity,
                 mass * internal_energy + 0.5 * mass * velocity.length_squared(),
@@ -235,9 +237,9 @@ impl Particle {
                 0.,
                 "Zero mass, indicating vacuum, but energy != 0!"
             );
-            Primitives::vacuum()
+            State::vacuum()
         } else {
-            Primitives::from_conserved(&self.conserved, self.volume(), eos)
+            State::from_conserved(&self.conserved, self.volume(), eos)
         };
 
         // if self.primitives.density() < 1e-10 {
@@ -307,15 +309,15 @@ impl Particle {
     }
 
     pub(crate) fn reset_gradients(&mut self) {
-        self.gradients = StateGradients::zeros();
-        self.extrapolations = Primitives::vacuum();
+        self.gradients = Gradients::zeros();
+        self.extrapolations = State::vacuum();
     }
 
     pub fn grav_kick(&mut self) {
         let mass = self.conserved.mass();
         let momentum = self.conserved.momentum();
         let grav_kick_factor = 0.5 * self.dt * self.a_grav;
-        self.conserved += Conserved::new(
+        self.conserved += State::<Conserved>::new(
             0.,
             grav_kick_factor * mass,
             grav_kick_factor.dot(momentum - self.gravity_mflux),
@@ -365,12 +367,13 @@ impl Particle {
                 let abs_d = d.length();
                 let eta = 0.25;
                 let eta_r = eta * self.radius(dimensionality);
-                let xi = 1.0;
+                let xi = 0.99;
                 if abs_d > 0.9 * eta_r {
                     let mut fac = xi * sound_speed / abs_d;
                     if abs_d < 1.1 * eta_r {
                         fac *= 5. * (abs_d - 0.9 * eta_r) / eta_r;
                     }
+                    debug_assert!(fac * abs_d < sound_speed);
                     fluid_v + fac * d
                 } else {
                     fluid_v
@@ -389,6 +392,7 @@ impl Particle {
         // Set the velocity with which this particle will be drifted over the course of it's next timestep
         assert!(self.v.is_finite(), "Invalid value for v!");
         self.v_rel = fluid_v - self.v;
+        debug_assert!(self.v_rel.length() < sound_speed);
 
         // Reset max_a_over_r (not needed any more)
         self.max_a_over_r = 0.;

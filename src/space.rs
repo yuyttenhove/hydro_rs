@@ -20,7 +20,7 @@ use crate::{
     kernels::{Kernel, OneOver},
     macros::{create_attr, create_dataset},
     part::Particle,
-    physical_quantities::{Conserved, Primitives},
+    physical_quantities::State,
     time_integration::Iact,
     timeline::{
         get_integer_time_end, make_integer_timestep, make_timestep, IntegerTime, MAX_NR_TIMESTEPS,
@@ -112,6 +112,7 @@ impl Space {
         );
 
         // Initialize the cells
+        let periodic = boundary == "periodic";
         let mut cells = vec![];
         for i in 0..cdim[0] {
             for j in 0..cdim[1] {
@@ -133,8 +134,17 @@ impl Space {
                         _ => 0,
                     };
                     for ii in (i - di)..=(i + di) {
+                        if !periodic && (ii < 0 || ii >= cdim[0]) {
+                            continue;
+                        }
                         for jj in (j - dj)..=(j + dj) {
+                            if !periodic && (jj < 0 || jj >= cdim[1]) {
+                                continue;
+                            }
                             for kk in (k - dk)..=(k + dk) {
+                                if !periodic && (kk < 0 || kk >= cdim[2]) {
+                                    continue;
+                                }
                                 let mut shift = DVec3::ZERO;
                                 let mut iii = ii;
                                 if ii < 0 {
@@ -213,7 +223,7 @@ impl Space {
             Boundary::Open => part.reflect(face.centroid(), face.normal()),
             Boundary::Vacuum => {
                 let mut reflected = part.reflect(face.centroid(), face.normal());
-                reflected.primitives = Primitives::vacuum();
+                reflected.primitives = State::vacuum();
                 reflected
             }
             _ => panic!(
@@ -540,6 +550,9 @@ impl Space {
             .enumerate()
             .for_each(|(idx, part)| {
                 // Loop over faces and add fluxes if any
+                if !engine.part_is_active(part, Iact::ApplyFlux) {
+                    return;
+                }
                 let offset = part.face_connections_offset;
                 let faces = &self.voronoi_cell_face_connections[offset..offset + part.face_count];
                 for &face_idx in faces {
@@ -612,7 +625,7 @@ impl Space {
     pub fn extrapolate_flux(&mut self, engine: &Engine) {
         let fluxes = self.compute_fluxes(0., engine);
 
-        let mut d_conserved = vec![Conserved::vacuum(); self.parts.len()];
+        let mut d_conserved = vec![State::vacuum(); self.parts.len()];
         for (i, part) in self.parts.iter().enumerate() {
             if !engine.part_is_active(part, Iact::Flux) {
                 continue;
@@ -642,7 +655,7 @@ impl Space {
             .zip(d_conserved.into_iter())
             .for_each(|(part, d_conserved)| {
                 if part.conserved.mass() + d_conserved.mass() > 0. {
-                    let mut new_primitives = Primitives::from_conserved(
+                    let mut new_primitives = State::from_conserved(
                         &(part.conserved + d_conserved),
                         part.volume(),
                         &self.eos,
@@ -667,7 +680,7 @@ impl Space {
         self.parts.par_iter_mut().for_each(|part| {
             if engine.part_is_active(part, Iact::Volume) {
                 part.primitives += part.extrapolations;
-                part.extrapolations = Primitives::vacuum();
+                part.extrapolations = State::vacuum();
             }
         });
     }

@@ -10,7 +10,7 @@ use yaml_rust::Yaml;
 use crate::{
     equation_of_state::EquationOfState,
     errors::ConfigError,
-    physical_quantities::{Conserved, Primitives},
+    physical_quantities::{Conserved, Primitive, State},
 };
 
 pub use airs::AIRiemannSolver;
@@ -41,11 +41,11 @@ pub fn get_solver(cfg: &Yaml) -> Result<Box<dyn RiemannFluxSolver>, ConfigError>
 }
 
 fn flux_from_half_state(
-    half: &Primitives,
+    half: &State<Primitive>,
     interface_velocity: DVec3,
     n_unit: DVec3,
     eos: &EquationOfState,
-) -> Conserved {
+) -> State<Conserved> {
     let v_tot = interface_velocity + half.velocity();
     let mut flux = [DVec3::ZERO; 5];
 
@@ -61,7 +61,7 @@ fn flux_from_half_state(
     let roe = half.pressure() * eos.odgm1() + 0.5 * half.density() * v_tot.length_squared();
     flux[4] = roe * half.velocity() + half.pressure() * v_tot;
 
-    Conserved::new(
+    State::<Conserved>::new(
         flux[0].dot(n_unit),
         DVec3 {
             x: flux[1].dot(n_unit),
@@ -75,12 +75,12 @@ fn flux_from_half_state(
 pub trait RiemannFluxSolver: Sync {
     fn solve_for_flux(
         &self,
-        left: &Primitives,
-        right: &Primitives,
+        left: &State<Primitive>,
+        right: &State<Primitive>,
         interface_velocity: DVec3,
         n_unit: DVec3,
         eos: &EquationOfState,
-    ) -> Conserved;
+    ) -> State<Conserved>;
 }
 
 #[derive(Default)]
@@ -93,8 +93,8 @@ struct RiemannStarValues {
 trait RiemannStarSolver: RiemannFluxSolver {
     fn solve_for_star_state(
         &self,
-        left: &Primitives,
-        right: &Primitives,
+        left: &State<Primitive>,
+        right: &State<Primitive>,
         v_l: f64,
         v_r: f64,
         a_l: f64,
@@ -115,15 +115,15 @@ trait RiemannStarSolver: RiemannFluxSolver {
     }
 
     fn sample_rarefaction_fan(
-        state: &Primitives,
+        state: &State<Primitive>,
         a: f64,
         v: f64,
         n_unit: DVec3,
         eos: &EquationOfState,
-    ) -> Primitives {
+    ) -> State<Primitive> {
         let v_half = eos.tdgp1() * (a + 0.5 * (eos.gamma() - 1.) * v);
         let base = eos.tdgp1() + eos.gm1dgp1() / a * v;
-        Primitives::new(
+        State::<Primitive>::new(
             state.density() * base.powf(eos.tdgm1()),
             state.velocity() + (v_half - v) * n_unit,
             state.pressure() * base.powf(eos.gamma() * eos.tdgm1()),
@@ -134,23 +134,23 @@ trait RiemannStarSolver: RiemannFluxSolver {
         rho: f64,
         u: f64,
         p: f64,
-        state: &Primitives,
+        state: &State<Primitive>,
         v: f64,
         n_unit: DVec3,
-    ) -> Primitives {
-        Primitives::new(rho, state.velocity() + (u - v) * n_unit, p)
+    ) -> State<Primitive> {
+        State::<Primitive>::new(rho, state.velocity() + (u - v) * n_unit, p)
     }
 
     fn sample_left_rarefaction_wave(
         rho: f64,
         u: f64,
         p: f64,
-        left: &Primitives,
+        left: &State<Primitive>,
         v: f64,
         a: f64,
         n_unit: DVec3,
         eos: &EquationOfState,
-    ) -> Primitives {
+    ) -> State<Primitive> {
         if Self::rarefaction_head_speed(v, a) < 0. {
             if Self::rarefaction_tail_speed(u, a, p / left.pressure(), eos) > 0. {
                 Self::sample_rarefaction_fan(left, a, v, n_unit, eos)
@@ -166,12 +166,12 @@ trait RiemannStarSolver: RiemannFluxSolver {
         rho: f64,
         u: f64,
         p: f64,
-        right: &Primitives,
+        right: &State<Primitive>,
         v: f64,
         a: f64,
         n_unit: DVec3,
         eos: &EquationOfState,
-    ) -> Primitives {
+    ) -> State<Primitive> {
         if Self::rarefaction_head_speed(v, -a) > 0. {
             if Self::rarefaction_tail_speed(u, -a, p / right.pressure(), eos) < 0. {
                 Self::sample_rarefaction_fan(right, -a, v, n_unit, eos)
@@ -187,12 +187,12 @@ trait RiemannStarSolver: RiemannFluxSolver {
         rho: f64,
         u: f64,
         p: f64,
-        left: &Primitives,
+        left: &State<Primitive>,
         v: f64,
         a: f64,
         n_unit: DVec3,
         eos: &EquationOfState,
-    ) -> Primitives {
+    ) -> State<Primitive> {
         if Self::shock_speed(v, a, p / left.pressure(), eos) < 0. {
             Self::sample_middle_state(rho, u, p, left, v, n_unit)
         } else {
@@ -204,12 +204,12 @@ trait RiemannStarSolver: RiemannFluxSolver {
         rho: f64,
         u: f64,
         p: f64,
-        right: &Primitives,
+        right: &State<Primitive>,
         v: f64,
         a: f64,
         n_unit: DVec3,
         eos: &EquationOfState,
-    ) -> Primitives {
+    ) -> State<Primitive> {
         if Self::shock_speed(v, -a, p / right.pressure(), eos) > 0. {
             Self::sample_middle_state(rho, u, p, right, v, n_unit)
         } else {
@@ -220,15 +220,15 @@ trait RiemannStarSolver: RiemannFluxSolver {
     /// Sample the solution at x/t = 0
     fn sample(
         &self,
-        left: &Primitives,
-        right: &Primitives,
+        left: &State<Primitive>,
+        right: &State<Primitive>,
         v_l: f64,
         v_r: f64,
         a_l: f64,
         a_r: f64,
         n_unit: DVec3,
         eos: &EquationOfState,
-    ) -> Primitives {
+    ) -> State<Primitive> {
         let star = self.solve_for_star_state(left, right, v_l, v_r, a_l, a_r, eos);
         if star.u < 0. {
             if star.p > right.pressure() {
@@ -257,12 +257,12 @@ trait RiemannStarSolver: RiemannFluxSolver {
 impl<T: RiemannStarSolver> RiemannFluxSolver for T {
     fn solve_for_flux(
         &self,
-        left: &Primitives,
-        right: &Primitives,
+        left: &State<Primitive>,
+        right: &State<Primitive>,
         interface_velocity: DVec3,
         n_unit: DVec3,
         eos: &EquationOfState,
-    ) -> Conserved {
+    ) -> State<Conserved> {
         let v_l = left.velocity().dot(n_unit);
         let v_r = right.velocity().dot(n_unit);
         let a_l = eos.sound_speed(left.pressure(), 1. / left.density());

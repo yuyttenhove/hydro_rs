@@ -3,7 +3,7 @@ time_integration:
   dt_max: 0.05
   t_end: 0.2
   cfl_criterion: 0.3
-  sync_timesteps: true
+  sync_timesteps: false
 
 snapshots:
   t_between_snaps: 0.02
@@ -15,7 +15,7 @@ engine:
   particle_motion: "steer"
   # runner: "DefaultHalfDrift"
   # runner: "OptimalOrderHalfDrift"
-  runner: "TwoVolumeHalfDrift"
+  # runner: "TwoVolumeHalfDrift"
   # runner: "MeshlessGradientHalfDrift"
   # runner: "FluxExtrapolateHalfDrift"
   # runner: "OptimalOrder"
@@ -23,6 +23,7 @@ engine:
   # runner: "Default"
   # runner: "Pakmor"
   # runner: "PakmorExtrapolate"
+  runner: "VolumeBackExtrapolate"
 gravity:
   kind: "none"
   potential:

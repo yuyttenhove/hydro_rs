@@ -1,16 +1,16 @@
 use glam::{DMat3, DVec3};
 
 use crate::{
-    physical_quantities::{Primitives, StateGradients, StateVector},
+    physical_quantities::{Gradients, Primitive, State},
     utils::HydroDimension,
 };
 
-pub struct GradientData {
-    gradients: StateGradients,
+pub struct GradientData<T> {
+    gradients: Gradients<T>,
     matrix_wls: DMat3,
 }
 
-impl GradientData {
+impl<T> GradientData<T> {
     pub fn init(dimensionality: HydroDimension) -> Self {
         let matrix_wls = match dimensionality {
             HydroDimension::HydroDimension1D => {
@@ -27,141 +27,72 @@ impl GradientData {
         };
 
         Self {
-            gradients: StateGradients::zeros(),
+            gradients: Gradients::zeros(),
             matrix_wls,
         }
     }
 
-    pub fn collect(
-        &mut self,
-        primitives_left: &Primitives,
-        primitives_right: &Primitives,
-        w: f64,
-        ds: DVec3,
-    ) {
-        fn gradient_est_single_quantity(q_l: f64, q_r: f64, w: f64, ds: DVec3, grad: &mut DVec3) {
-            *grad += w * (q_r - q_l) * ds;
+    pub fn collect(&mut self, state_left: &State<T>, state_right: &State<T>, w: f64, ds: DVec3) {
+        for i in 0..5 {
+            self.gradients[i] = w * (state_right[i] - state_left[i]) * ds;
         }
-
-        gradient_est_single_quantity(
-            primitives_left.density(),
-            primitives_right.density(),
-            w,
-            ds,
-            &mut self.gradients[0],
-        );
-        gradient_est_single_quantity(
-            primitives_left.velocity().x,
-            primitives_right.velocity().x,
-            w,
-            ds,
-            &mut self.gradients[1],
-        );
-        gradient_est_single_quantity(
-            primitives_left.velocity().y,
-            primitives_right.velocity().y,
-            w,
-            ds,
-            &mut self.gradients[2],
-        );
-        gradient_est_single_quantity(
-            primitives_left.velocity().z,
-            primitives_right.velocity().z,
-            w,
-            ds,
-            &mut self.gradients[3],
-        );
-        gradient_est_single_quantity(
-            primitives_left.pressure(),
-            primitives_right.pressure(),
-            w,
-            ds,
-            &mut self.gradients[4],
-        );
 
         self.matrix_wls += w * DMat3::from_cols(ds.x * ds, ds.y * ds, ds.z * ds);
     }
 
-    pub fn finalize(mut self) -> StateGradients {
+    pub fn finalize(mut self) -> Gradients<T> {
         let matrix_wls = self.matrix_wls.inverse();
-        self.gradients[0] = matrix_wls.mul_vec3(self.gradients[0]);
-        self.gradients[1] = matrix_wls.mul_vec3(self.gradients[1]);
-        self.gradients[2] = matrix_wls.mul_vec3(self.gradients[2]);
-        self.gradients[3] = matrix_wls.mul_vec3(self.gradients[3]);
-        self.gradients[4] = matrix_wls.mul_vec3(self.gradients[4]);
+        for i in 0..5 {
+            self.gradients[i] = matrix_wls.mul_vec3(self.gradients[i]);
+        }
         self.gradients
     }
 }
 
-pub struct LimiterData {
-    pub min: Primitives,
-    pub max: Primitives,
-    pub e_min: Primitives,
-    pub e_max: Primitives,
+pub struct LimiterData<T> {
+    pub min: State<T>,
+    pub max: State<T>,
+    pub e_min: State<T>,
+    pub e_max: State<T>,
 }
 
-impl LimiterData {
-    pub fn init(primitives: &Primitives) -> Self {
+impl<T: Copy> LimiterData<T> {
+    pub fn init(state: &State<T>) -> Self {
         Self {
-            min: *primitives,
-            max: *primitives,
-            e_min: StateVector::splat(f64::INFINITY).into(),
-            e_max: StateVector::splat(f64::NEG_INFINITY).into(),
+            min: *state,
+            max: *state,
+            e_min: State::splat(f64::INFINITY).into(),
+            e_max: State::splat(f64::NEG_INFINITY).into(),
         }
     }
+}
 
-    pub fn collect(&mut self, primitives: &Primitives, extrapolated: &Primitives) {
-        self.min = self.min.pairwise_min(primitives);
-        self.max = self.max.pairwise_max(primitives);
+impl<T> LimiterData<T> {
+    pub fn collect(&mut self, state: &State<T>, extrapolated: &State<T>) {
+        self.min = self.min.pairwise_min(state);
+        self.max = self.max.pairwise_max(state);
         self.e_min = self.e_min.pairwise_min(extrapolated);
         self.e_max = self.e_max.pairwise_max(extrapolated);
     }
 
-    fn limit_single_quantity(max: f64, min: f64, e_max: f64, e_min: f64) -> f64 {
+    fn limit_single_quantity(d_max: f64, d_min: f64, e_max: f64, e_min: f64) -> f64 {
         if e_max == 0. || e_min == 0. {
             1.
         } else {
-            (1.0f64).min((max / e_max).min(min / e_min))
+            (1.0f64).min((d_max / e_max).min(d_min / e_min))
         }
     }
 
-    pub fn limit(&self, gradients: &mut StateGradients, primitives: &Primitives) {
-        let density_alpha = Self::limit_single_quantity(
-            self.max.density() - primitives.density(),
-            self.min.density() - primitives.density(),
-            self.e_max.density(),
-            self.e_min.density(),
-        );
-        let velocity_alpha_x = Self::limit_single_quantity(
-            self.max.velocity().x - primitives.velocity().x,
-            self.min.velocity().x - primitives.velocity().x,
-            self.e_max.velocity().x,
-            self.e_min.velocity().x,
-        );
-        let velocity_alpha_y = Self::limit_single_quantity(
-            self.max.velocity().y - primitives.velocity().y,
-            self.min.velocity().y - primitives.velocity().y,
-            self.e_max.velocity().y,
-            self.e_min.velocity().y,
-        );
-        let velocity_alpha_z = Self::limit_single_quantity(
-            self.max.velocity().z - primitives.velocity().z,
-            self.min.velocity().z - primitives.velocity().z,
-            self.e_max.velocity().z,
-            self.e_min.velocity().z,
-        );
-        let pressure_alpha = Self::limit_single_quantity(
-            self.max.pressure() - primitives.pressure(),
-            self.min.pressure() - primitives.pressure(),
-            self.e_max.pressure(),
-            self.e_min.pressure(),
-        );
-
-        gradients[0] *= density_alpha;
-        gradients[1] *= velocity_alpha_x;
-        gradients[2] *= velocity_alpha_y;
-        gradients[3] *= velocity_alpha_z;
-        gradients[4] *= pressure_alpha;
+    pub fn limit(&self, gradients: &mut Gradients<T>, state: &State<T>) {
+        for i in 0..5 {
+            let alpha = Self::limit_single_quantity(
+                self.max[i] - state[i],
+                self.min[i] - state[i],
+                self.e_max[i],
+                self.e_min[i],
+            );
+            gradients[i] *= alpha;
+        }
     }
 }
 
@@ -195,46 +126,20 @@ fn pairwise_limiter_single_quantity(q_l: f64, q_r: f64, q_dash: f64, dx_fac: f64
 }
 
 pub fn pairwise_limiter(
-    primitives_left: &Primitives,
-    primitives_right: &Primitives,
-    primitives_dash: &Primitives,
+    primitives_left: &State<Primitive>,
+    primitives_right: &State<Primitive>,
+    primitives_dash: &State<Primitive>,
     dx_fac: f64,
-) -> Primitives {
-    let mut limited = Primitives::new(
-        pairwise_limiter_single_quantity(
-            primitives_left.density(),
-            primitives_right.density(),
-            primitives_dash.density(),
+) -> State<Primitive> {
+    let mut limited = State::vacuum();
+    for i in 0..5 {
+        limited[i] = pairwise_limiter_single_quantity(
+            primitives_left[i],
+            primitives_right[i],
+            primitives_dash[i],
             dx_fac,
-        ),
-        DVec3 {
-            x: pairwise_limiter_single_quantity(
-                primitives_left.velocity().x,
-                primitives_right.velocity().x,
-                primitives_dash.velocity().x,
-                dx_fac,
-            ),
-            y: pairwise_limiter_single_quantity(
-                primitives_left.velocity().y,
-                primitives_right.velocity().y,
-                primitives_dash.velocity().y,
-                dx_fac,
-            ),
-            z: pairwise_limiter_single_quantity(
-                primitives_left.velocity().z,
-                primitives_right.velocity().z,
-                primitives_dash.velocity().z,
-                dx_fac,
-            ),
-        },
-        pairwise_limiter_single_quantity(
-            primitives_left.pressure(),
-            primitives_right.pressure(),
-            primitives_dash.pressure(),
-            dx_fac,
-        ),
-    );
-
+        )
+    }
     limited.check_physical();
 
     limited

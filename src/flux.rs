@@ -2,13 +2,13 @@ use crate::engine::Engine;
 use crate::equation_of_state::EquationOfState;
 use crate::gradients::pairwise_limiter;
 use crate::part::Particle;
-use crate::physical_quantities::{Conserved, Primitives};
+use crate::physical_quantities::{Conserved, State};
 use crate::space::Boundary;
 use glam::DVec3;
 use meshless_voronoi::VoronoiFace;
 
 pub struct FluxInfo {
-    pub fluxes: Conserved,
+    pub fluxes: State<Conserved>,
     pub mflux: DVec3,
     pub v_max: f64,
     pub a_over_r: f64,
@@ -150,7 +150,7 @@ pub fn flux_exchange_boundary(
             primitives_dash
         }
         Boundary::Vacuum => {
-            let vacuum = Primitives::vacuum();
+            let vacuum = State::vacuum();
             primitives_dash = pairwise_limiter(
                 &part.primitives,
                 &vacuum,

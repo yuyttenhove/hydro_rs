@@ -1,3 +1,5 @@
+use crate::physical_quantities::{Primitive, State};
+
 use super::{RiemannStarSolver, RiemannStarValues};
 
 pub struct PVRiemannSolver;
@@ -5,8 +7,8 @@ pub struct PVRiemannSolver;
 impl RiemannStarSolver for PVRiemannSolver {
     fn solve_for_star_state(
         &self,
-        left: &crate::physical_quantities::Primitives,
-        right: &crate::physical_quantities::Primitives,
+        left: &State<Primitive>,
+        right: &State<Primitive>,
         v_l: f64,
         v_r: f64,
         a_l: f64,
@@ -33,7 +35,7 @@ mod test {
 
     use crate::{
         equation_of_state::EquationOfState,
-        physical_quantities::{Conserved, Primitives},
+        physical_quantities::{Conserved, Primitive},
         riemann_solver::RiemannFluxSolver,
     };
 
@@ -48,8 +50,8 @@ mod test {
         )
         .unwrap();
 
-        let left = Primitives::new(1.5, 0.2 * DVec3::X, 1.2);
-        let right = Primitives::new(0.7, -0.4 * DVec3::X, 0.1);
+        let left = State::<Primitive>::new(1.5, 0.2 * DVec3::X, 1.2);
+        let right = State::<Primitive>::new(0.7, -0.4 * DVec3::X, 0.1);
 
         let interface_velocity = -0.17 * DVec3::X;
 
@@ -66,7 +68,7 @@ mod test {
         let roe = w_half_lab.pressure() * eos.odgm1()
             + 0.5 * w_half_lab.density() * w_half_lab.velocity().length_squared();
         let fluxes_lab = PVRiemannSolver.solve_for_flux(&left, &right, DVec3::ZERO, DVec3::X, &eos)
-            - Conserved::new(
+            - State::<Conserved>::new(
                 w_half_lab.density() * interface_velocity.x,
                 w_half_lab.density() * w_half_lab.velocity() * interface_velocity,
                 roe * interface_velocity.x,

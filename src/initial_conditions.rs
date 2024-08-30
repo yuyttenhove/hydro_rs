@@ -12,8 +12,8 @@ use crate::{
     errors::ConfigError,
     macros::{create_attr, create_dataset},
     part::Particle,
-    physical_quantities::Conserved,
-    utils::{HydroDimension, HydroDimension::*},
+    physical_quantities::{Conserved, State},
+    utils::HydroDimension::{self, *},
 };
 
 macro_rules! conv1d {
@@ -176,7 +176,7 @@ fn evrard(num_part: usize, box_size: DVec3, eos: &EquationOfState) -> Vec<Partic
 
     let correction = 1. / m_tot;
     for part in ic.iter_mut() {
-        part.conserved = Conserved::new(
+        part.conserved = State::<Conserved>::new(
             correction * part.conserved.mass(),
             part.conserved.momentum(),
             part.conserved.energy(),

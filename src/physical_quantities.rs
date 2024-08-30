@@ -1,21 +1,29 @@
-use std::ops::{Add, AddAssign, Index, IndexMut, Mul, Sub, SubAssign};
+use std::{
+    marker::PhantomData,
+    ops::{Add, AddAssign, Index, IndexMut, Mul, Sub, SubAssign},
+};
 
 use glam::DVec3;
 
 use crate::equation_of_state::EquationOfState;
 
 #[derive(Default, Debug, Clone, Copy)]
-pub struct StateVector(f64, DVec3, f64);
+pub struct Primitive;
+#[derive(Default, Debug, Clone, Copy)]
+pub struct Conserved;
 
-impl Add for StateVector {
+#[derive(Default, Debug, Clone, Copy)]
+pub struct State<T>(f64, DVec3, f64, PhantomData<T>);
+
+impl<T> Add for State<T> {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
-        StateVector(self.0 + rhs.0, self.1 + rhs.1, self.2 + rhs.2)
+        Self(self.0 + rhs.0, self.1 + rhs.1, self.2 + rhs.2, PhantomData)
     }
 }
 
-impl AddAssign for StateVector {
+impl<T> AddAssign for State<T> {
     fn add_assign(&mut self, rhs: Self) {
         self.0 += rhs.0;
         self.1 += rhs.1;
@@ -23,15 +31,15 @@ impl AddAssign for StateVector {
     }
 }
 
-impl Sub for StateVector {
+impl<T> Sub for State<T> {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        StateVector(self.0 - rhs.0, self.1 - rhs.1, self.2 - rhs.2)
+        Self(self.0 - rhs.0, self.1 - rhs.1, self.2 - rhs.2, PhantomData)
     }
 }
 
-impl SubAssign for StateVector {
+impl<T> SubAssign for State<T> {
     fn sub_assign(&mut self, rhs: Self) {
         self.0 -= rhs.0;
         self.1 -= rhs.1;
@@ -39,41 +47,43 @@ impl SubAssign for StateVector {
     }
 }
 
-impl Mul<StateVector> for f64 {
-    type Output = StateVector;
+impl<T> Mul<State<T>> for f64 {
+    type Output = State<T>;
 
-    fn mul(self, rhs: StateVector) -> Self::Output {
-        StateVector(self * rhs.0, self * rhs.1, self * rhs.2)
+    fn mul(self, rhs: State<T>) -> Self::Output {
+        State::<T>(self * rhs.0, self * rhs.1, self * rhs.2, PhantomData)
     }
 }
 
-impl StateVector {
-    pub fn zeros() -> Self {
-        StateVector(0., DVec3::ZERO, 0.)
+impl<T> State<T> {
+    pub fn vacuum() -> Self {
+        Self(0., DVec3::ZERO, 0., PhantomData)
     }
 
     pub fn splat(value: f64) -> Self {
-        Self(value, DVec3::splat(value), value)
+        Self(value, DVec3::splat(value), value, PhantomData)
     }
 
-    pub fn pairwise_max(&self, other: Self) -> Self {
-        StateVector(
+    pub fn pairwise_max(&self, other: &Self) -> Self {
+        Self(
             self.0.max(other.0),
             self.1.max(other.1),
             self.2.max(other.2),
+            PhantomData,
         )
     }
 
-    pub fn pairwise_min(&self, other: Self) -> Self {
-        StateVector(
+    pub fn pairwise_min(&self, other: &Self) -> Self {
+        Self(
             self.0.min(other.0),
             self.1.min(other.1),
             self.2.min(other.2),
+            PhantomData,
         )
     }
 }
 
-impl Index<usize> for StateVector {
+impl<T> Index<usize> for State<T> {
     type Output = f64;
 
     fn index(&self, index: usize) -> &Self::Output {
@@ -88,16 +98,29 @@ impl Index<usize> for StateVector {
     }
 }
 
-#[derive(Default, Debug, Clone, Copy)]
-pub struct StateGradients(DVec3, [DVec3; 3], DVec3);
+impl<T> IndexMut<usize> for State<T> {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        match index {
+            0 => &mut self.0,
+            1 => &mut self.1.x,
+            2 => &mut self.1.y,
+            3 => &mut self.1.z,
+            4 => &mut self.2,
+            _ => panic!("Index out of bounds for StateVector!"),
+        }
+    }
+}
 
-impl StateGradients {
+#[derive(Default, Debug, Clone, Copy)]
+pub struct Gradients<T>(DVec3, [DVec3; 3], DVec3, PhantomData<T>);
+
+impl<T> Gradients<T> {
     pub fn zeros() -> Self {
-        StateGradients(DVec3::ZERO, [DVec3::ZERO; 3], DVec3::ZERO)
+        Gradients(DVec3::ZERO, [DVec3::ZERO; 3], DVec3::ZERO, PhantomData)
     }
 
-    pub fn dot(&self, dx: DVec3) -> StateVector {
-        StateVector(
+    pub fn dot(&self, dx: DVec3) -> State<T> {
+        State::<T>(
             self.0.dot(dx),
             DVec3 {
                 x: self.1[0].dot(dx),
@@ -105,6 +128,7 @@ impl StateGradients {
                 z: self.1[2].dot(dx),
             },
             self.2.dot(dx),
+            PhantomData,
         )
     }
 
@@ -115,7 +139,9 @@ impl StateGradients {
             && self.1[2].is_finite()
             && self.2.is_finite()
     }
+}
 
+impl Gradients<Primitive> {
     pub fn div_v(&self) -> f64 {
         self.1[0].x + self.1[1].y + self.1[2].z
     }
@@ -129,7 +155,7 @@ impl StateGradients {
     }
 }
 
-impl Index<usize> for StateGradients {
+impl<T> Index<usize> for Gradients<T> {
     type Output = DVec3;
 
     fn index(&self, index: usize) -> &Self::Output {
@@ -144,7 +170,7 @@ impl Index<usize> for StateGradients {
     }
 }
 
-impl IndexMut<usize> for StateGradients {
+impl<T> IndexMut<usize> for Gradients<T> {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         match index {
             0 => &mut self.0,
@@ -157,7 +183,7 @@ impl IndexMut<usize> for StateGradients {
     }
 }
 
-impl AddAssign for StateGradients {
+impl<T> AddAssign for Gradients<T> {
     fn add_assign(&mut self, rhs: Self) {
         self.0 += rhs.0;
         self.1[0] += rhs.1[0];
@@ -167,43 +193,28 @@ impl AddAssign for StateGradients {
     }
 }
 
-#[derive(Default, Debug, Clone, Copy, Add, Sub, AddAssign, SubAssign)]
-pub struct Primitives {
-    values: StateVector,
-}
-
-impl From<StateVector> for Primitives {
-    fn from(values: StateVector) -> Self {
-        Primitives { values }
-    }
-}
-
-impl Primitives {
+impl State<Primitive> {
     pub fn density(&self) -> f64 {
-        self.values.0
+        self.0
     }
 
     pub fn velocity(&self) -> DVec3 {
-        self.values.1
+        self.1
     }
 
     pub fn pressure(&self) -> f64 {
-        self.values.2
-    }
-
-    pub fn vacuum() -> Self {
-        Primitives {
-            values: StateVector::zeros(),
-        }
+        self.2
     }
 
     pub fn new(density: f64, velocity: DVec3, pressure: f64) -> Self {
-        Primitives {
-            values: StateVector(density, velocity, pressure),
-        }
+        Self(density, velocity, pressure, PhantomData)
     }
 
-    pub fn from_conserved(conserved: &Conserved, volume: f64, eos: &EquationOfState) -> Self {
+    pub fn from_conserved(
+        conserved: &State<Conserved>,
+        volume: f64,
+        eos: &EquationOfState,
+    ) -> Self {
         if conserved.mass() > 0. {
             let m_inv = 1. / conserved.mass();
             let density = conserved.mass() / volume;
@@ -212,9 +223,7 @@ impl Primitives {
             let pressure = eos.gas_pressure_from_internal_energy(internal_energy, density);
             assert!(density >= 0.);
             assert!(pressure >= 0.);
-            Self {
-                values: StateVector(density, velocity, pressure),
-            }
+            Self::new(density, velocity, pressure)
         } else {
             Self::vacuum()
         }
@@ -233,33 +242,17 @@ impl Primitives {
     pub fn reflect(&self, normal: DVec3) -> Self {
         // Reflect fluid velocity component along normal
         let v = self.velocity() - 2. * self.velocity().dot(normal) * normal;
-        Primitives::new(self.density(), v, self.pressure())
-    }
-
-    pub fn pairwise_max(&self, other: &Self) -> Self {
-        Self {
-            values: self.values.pairwise_max(other.values),
-        }
-    }
-
-    pub fn pairwise_min(&self, other: &Self) -> Self {
-        Self {
-            values: self.values.pairwise_min(other.values),
-        }
-    }
-
-    pub fn values(&self) -> StateVector {
-        self.values
+        Self::new(self.density(), v, self.pressure())
     }
 
     pub fn check_physical(&mut self) {
         if self.density() < 0. {
             eprintln!("Negative density encountered, resetting to vacuum!");
-            self.values = StateVector::zeros();
+            *self = Self::vacuum();
         }
         if self.pressure() < 0. {
             eprintln!("Negative pressure encountered, resetting to vacuum!");
-            self.values = StateVector::zeros();
+            *self = Self::vacuum();
         }
 
         debug_assert!(
@@ -277,32 +270,17 @@ impl Primitives {
     }
 }
 
-impl Mul<Primitives> for f64 {
-    type Output = Primitives;
-
-    fn mul(self, rhs: Primitives) -> Self::Output {
-        Primitives {
-            values: self * rhs.values,
-        }
-    }
-}
-
-#[derive(Default, Debug, Clone, Copy, Add, Sub, AddAssign, SubAssign)]
-pub struct Conserved {
-    values: StateVector,
-}
-
-impl Conserved {
+impl State<Conserved> {
     pub fn mass(&self) -> f64 {
-        self.values.0
+        self.0
     }
 
     pub fn momentum(&self) -> DVec3 {
-        self.values.1
+        self.1
     }
 
     pub fn energy(&self) -> f64 {
-        self.values.2
+        self.2
     }
 
     /// returns the specific internal energy e: E = E_kin + E_therm = E_kin + m * e
@@ -312,19 +290,15 @@ impl Conserved {
         thermal_energy * m_inv
     }
 
-    pub fn vacuum() -> Self {
-        Conserved {
-            values: StateVector::zeros(),
-        }
-    }
-
     pub fn new(mass: f64, momentum: DVec3, energy: f64) -> Self {
-        Conserved {
-            values: StateVector(mass, momentum, energy),
-        }
+        Self(mass, momentum, energy, PhantomData)
     }
 
-    pub fn from_primitives(primitives: &Primitives, volume: f64, eos: &EquationOfState) -> Self {
+    pub fn from_primitives(
+        primitives: &State<Primitive>,
+        volume: f64,
+        eos: &EquationOfState,
+    ) -> Self {
         let mass = primitives.density() * volume;
         let momentum = mass * primitives.velocity();
         let energy = 0.5 * momentum.dot(primitives.velocity())
@@ -333,35 +307,7 @@ impl Conserved {
                     primitives.pressure(),
                     1. / primitives.density(),
                 );
-        Self {
-            values: StateVector(mass, momentum, energy),
-        }
-    }
-
-    pub fn pairwise_max(&self, other: Self) -> Self {
-        Self {
-            values: self.values.pairwise_max(other.values),
-        }
-    }
-
-    pub fn pairwise_min(&self, other: Self) -> Self {
-        Self {
-            values: self.values.pairwise_min(other.values),
-        }
-    }
-
-    pub fn values(&self) -> StateVector {
-        self.values
-    }
-}
-
-impl Mul<Conserved> for f64 {
-    type Output = Conserved;
-
-    fn mul(self, rhs: Conserved) -> Self::Output {
-        Conserved {
-            values: self * rhs.values,
-        }
+        Self::new(mass, momentum, energy)
     }
 }
 
@@ -371,12 +317,12 @@ mod test {
     use glam::DVec3;
     use yaml_rust::YamlLoader;
 
-    use super::{Conserved, Primitives};
-    use crate::equation_of_state::EquationOfState;
+    use super::{Conserved, Primitive};
+    use crate::{equation_of_state::EquationOfState, physical_quantities::State};
 
     #[test]
     fn test_conversions() {
-        let primitives = Primitives::new(
+        let primitives = State::<Primitive>::new(
             0.75,
             DVec3 {
                 x: 0.4,
@@ -388,8 +334,8 @@ mod test {
         let volume = 0.1;
         let eos = EquationOfState::new(&YamlLoader::load_from_str("gamma: 1.666667").unwrap()[0])
             .unwrap();
-        let conserved = Conserved::from_primitives(&primitives, volume, &eos);
-        let primitives_new = Primitives::from_conserved(&conserved, volume, &eos);
+        let conserved = State::<Conserved>::from_primitives(&primitives, volume, &eos);
+        let primitives_new = State::<Primitive>::from_conserved(&conserved, volume, &eos);
 
         assert_approx_eq!(f64, primitives.density(), primitives_new.density());
         assert_approx_eq!(f64, primitives.velocity().x, primitives_new.velocity().x);

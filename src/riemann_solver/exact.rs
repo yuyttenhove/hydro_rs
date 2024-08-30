@@ -1,4 +1,7 @@
-use crate::{equation_of_state::EquationOfState, physical_quantities::Primitives};
+use crate::{
+    equation_of_state::EquationOfState,
+    physical_quantities::{Primitive, State},
+};
 
 use super::{RiemannStarSolver, RiemannStarValues};
 
@@ -6,7 +9,7 @@ pub struct ExactRiemannSolver;
 
 impl ExactRiemannSolver {
     /// Functions (4.6) and (4.7) in Toro.
-    fn fb(p: f64, state: &Primitives, a: f64, eos: &EquationOfState) -> f64 {
+    fn fb(p: f64, state: &State<Primitive>, a: f64, eos: &EquationOfState) -> f64 {
         if p > state.pressure() {
             let cap_a = eos.tdgp1() / state.density();
             let cap_b = eos.gm1dgp1() * state.pressure();
@@ -19,8 +22,8 @@ impl ExactRiemannSolver {
     /// Function (4.5) in Toro
     fn f(
         p: f64,
-        left: &Primitives,
-        right: &Primitives,
+        left: &State<Primitive>,
+        right: &State<Primitive>,
         v_l: f64,
         v_r: f64,
         a_l: f64,
@@ -31,7 +34,7 @@ impl ExactRiemannSolver {
     }
 
     /// Function (4.37) in Toro
-    fn fprimeb(p: f64, state: &Primitives, a: f64, eos: &EquationOfState) -> f64 {
+    fn fprimeb(p: f64, state: &State<Primitive>, a: f64, eos: &EquationOfState) -> f64 {
         if p > state.pressure() {
             let cap_a = eos.tdgp1() / state.density();
             let cap_b = eos.gm1dgp1() * state.pressure();
@@ -44,8 +47,8 @@ impl ExactRiemannSolver {
     /// The derivative of riemann_f w.r.t. p
     fn fprime(
         p: f64,
-        left: &Primitives,
-        right: &Primitives,
+        left: &State<Primitive>,
+        right: &State<Primitive>,
         a_l: f64,
         a_r: f64,
         eos: &EquationOfState,
@@ -54,7 +57,7 @@ impl ExactRiemannSolver {
     }
 
     /// Bottom function of (4.48) in Toro
-    fn gb(p: f64, state: &Primitives, eos: &EquationOfState) -> f64 {
+    fn gb(p: f64, state: &State<Primitive>, eos: &EquationOfState) -> f64 {
         let cap_a = eos.tdgp1() / state.density();
         let cap_b = eos.gm1dgp1() * state.pressure();
         (cap_a / (p + cap_b)).sqrt()
@@ -65,8 +68,8 @@ impl ExactRiemannSolver {
     /// This function is based on (4.47) and (4.48) in Toro and on the
     /// FORTRAN code provided in Toro p.156-157
     fn guess_p(
-        left: &Primitives,
-        right: &Primitives,
+        left: &State<Primitive>,
+        right: &State<Primitive>,
         v_l: f64,
         v_r: f64,
         a_l: f64,
@@ -106,8 +109,8 @@ impl ExactRiemannSolver {
         low_f: f64,
         up_f: f64,
         error_tol: f64,
-        left: &Primitives,
-        right: &Primitives,
+        left: &State<Primitive>,
+        right: &State<Primitive>,
         v_l: f64,
         v_r: f64,
         a_l: f64,
@@ -187,15 +190,19 @@ impl ExactRiemannSolver {
         b
     }
 
-    fn shock_middle_density(pdps: f64, state: &Primitives, eos: &EquationOfState) -> f64 {
+    fn shock_middle_density(pdps: f64, state: &State<Primitive>, eos: &EquationOfState) -> f64 {
         state.density() * (pdps + eos.gm1dgp1()) / (eos.gm1dgp1() * pdps + 1.)
     }
 
-    fn rarefaction_middle_density(pdps: f64, state: &Primitives, eos: &EquationOfState) -> f64 {
+    fn rarefaction_middle_density(
+        pdps: f64,
+        state: &State<Primitive>,
+        eos: &EquationOfState,
+    ) -> f64 {
         state.density() * (pdps).powf(1. / eos.gamma())
     }
 
-    fn middle_density(p: f64, state: &Primitives, eos: &EquationOfState) -> f64 {
+    fn middle_density(p: f64, state: &State<Primitive>, eos: &EquationOfState) -> f64 {
         let pdps = p / state.pressure();
         if pdps > 1. {
             Self::shock_middle_density(pdps, state, eos)
@@ -208,8 +215,8 @@ impl ExactRiemannSolver {
 impl RiemannStarSolver for ExactRiemannSolver {
     fn solve_for_star_state(
         &self,
-        left: &Primitives,
-        right: &Primitives,
+        left: &State<Primitive>,
+        right: &State<Primitive>,
         v_l: f64,
         v_r: f64,
         a_l: f64,
@@ -267,7 +274,10 @@ impl RiemannStarSolver for ExactRiemannSolver {
 
 #[cfg(test)]
 mod test {
-    use crate::{physical_quantities::Conserved, riemann_solver::RiemannFluxSolver};
+    use crate::{
+        physical_quantities::{Conserved, State},
+        riemann_solver::RiemannFluxSolver,
+    };
 
     use super::*;
 
@@ -285,10 +295,10 @@ mod test {
     #[test]
     fn test_symmetry() {
         let interface_velocity = -3e-1 * DVec3::X;
-        let left = Primitives::new(1., DVec3::ZERO, 1.);
-        let left_reversed = Primitives::new(1., DVec3::ZERO, 1.);
-        let right = Primitives::new(1., -6e-1 * DVec3::X, 1.);
-        let right_reversed = Primitives::new(1., 6e-1 * DVec3::X, 1.);
+        let left = State::<Primitive>::new(1., DVec3::ZERO, 1.);
+        let left_reversed = State::<Primitive>::new(1., DVec3::ZERO, 1.);
+        let right = State::<Primitive>::new(1., -6e-1 * DVec3::X, 1.);
+        let right_reversed = State::<Primitive>::new(1., 6e-1 * DVec3::X, 1.);
         let eos = get_eos(GAMMA);
         let solver = ExactRiemannSolver;
 
@@ -316,9 +326,16 @@ mod test {
 
     #[test]
     fn test_half_state() {
-        fn get_half(rho_l: f64, v_l: f64, p_l: f64, rho_r: f64, v_r: f64, p_r: f64) -> Primitives {
-            let left = Primitives::new(rho_l, v_l * DVec3::X, p_l);
-            let right = Primitives::new(rho_r, v_r * DVec3::X, p_r);
+        fn get_half(
+            rho_l: f64,
+            v_l: f64,
+            p_l: f64,
+            rho_r: f64,
+            v_r: f64,
+            p_r: f64,
+        ) -> State<Primitive> {
+            let left = State::<Primitive>::new(rho_l, v_l * DVec3::X, p_l);
+            let right = State::<Primitive>::new(rho_r, v_r * DVec3::X, p_r);
             let eos = get_eos(GAMMA);
             let a_l = eos.sound_speed(left.pressure(), 1. / left.density());
             let a_r = eos.sound_speed(right.pressure(), 1. / right.density());
@@ -370,8 +387,8 @@ mod test {
         )
         .unwrap();
 
-        let left = Primitives::new(1.5, 0.2 * DVec3::X, 1.2);
-        let right = Primitives::new(0.7, -0.4 * DVec3::X, 0.1);
+        let left = State::<Primitive>::new(1.5, 0.2 * DVec3::X, 1.2);
+        let right = State::<Primitive>::new(0.7, -0.4 * DVec3::X, 0.1);
 
         let interface_velocity = -0.1 * DVec3::X;
 
@@ -389,7 +406,7 @@ mod test {
             + 0.5 * w_half_lab.density() * w_half_lab.velocity().length_squared();
         let fluxes_lab =
             ExactRiemannSolver.solve_for_flux(&left, &right, DVec3::ZERO, DVec3::X, &eos)
-                - Conserved::new(
+                - State::<Conserved>::new(
                     w_half_lab.density() * interface_velocity.x,
                     w_half_lab.density() * w_half_lab.velocity() * interface_velocity,
                     roe * interface_velocity.x,
@@ -408,12 +425,12 @@ mod test {
 
     #[test]
     fn test_problem_swift() {
-        let left = Primitives::new(
+        let left = State::<Primitive>::new(
             2.1669723793e-9,
             DVec3::new(-2.9266309738e+00, 7.4537420273e+00, 1.4240785599e+01),
             1.4698121886e-10,
         );
-        let right = Primitives::new(
+        let right = State::<Primitive>::new(
             1.7172516742e-09,
             DVec3::new(1.8704223633e+00, -7.5396900177e+00, -1.4482626915e+01),
             1.1778487907e-10,

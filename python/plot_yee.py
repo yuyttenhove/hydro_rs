@@ -159,7 +159,7 @@ def plot_comparison(entries, info, savename_base=None, half_drift=None):
 if __name__ == "__main__":
     high_cfl = False
     low_cfl = False
-    res = 50
+    res = 100
     if high_cfl:
         entries = {
             f"yee_{res}_optimal_high_cfl": dict(title="Optimal", half_drift=False),
@@ -171,13 +171,13 @@ if __name__ == "__main__":
     else:
         entries = {
             # f"yee_{res}_default": dict(title="Default", half_drift=False),
-            f"yee_{res}_optimal": dict(title="Optimal", half_drift=False),
+            # f"yee_{res}_optimal": dict(title="Optimal", half_drift=False),
             f"yee_{res}_pakmor": dict(title="Pakmor", half_drift=False),
             # f"yee_{res}_pakmor_extrapolate": dict(title="PakmorExtrapolate", half_drift=False),
             # f"yee_{res}_optimal_half": dict(title="Optimal, half drift", half_drift=True),
             f"yee_{res}_meshless_gradient_half": dict(title="Meshless gradient", half_drift=True),
-            f"yee_{res}_flux_extrapolate_half": dict(title="Flux extrapolate", half_drift=True),
-            f"yee_{res}_two_volume_half": dict(title="Two Voronoi", half_drift=True),
+            # f"yee_{res}_flux_extrapolate_half": dict(title="Flux extrapolate", half_drift=True),
+            # f"yee_{res}_two_volume_half": dict(title="Two Voronoi", half_drift=True),
             # f"yee_{res}_two_volume_flux_ext_half": dict(title="Two Voronoi, flux extrapolate", half_drift=True),
         }
 

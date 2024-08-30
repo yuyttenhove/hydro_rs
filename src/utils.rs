@@ -1,7 +1,6 @@
 use glam::DVec3;
 use meshless_voronoi::Dimensionality;
 
-
 #[derive(Clone, Copy, PartialEq, Eq, num_enum::IntoPrimitive, num_enum::TryFromPrimitive)]
 #[repr(usize)]
 pub enum HydroDimension {

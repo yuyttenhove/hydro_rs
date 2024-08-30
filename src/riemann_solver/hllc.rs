@@ -2,7 +2,7 @@ use glam::DVec3;
 
 use crate::{
     equation_of_state::EquationOfState,
-    physical_quantities::{Conserved, Primitives},
+    physical_quantities::{Conserved, Primitive},
 };
 
 use super::*;
@@ -14,12 +14,12 @@ impl RiemannFluxSolver for HLLCRiemannSolver {
     /// See Section 10.4, 10.5 and 10.6 in Toro (2009)
     fn solve_for_flux(
         &self,
-        left: &Primitives,
-        right: &Primitives,
+        left: &State<Primitive>,
+        right: &State<Primitive>,
         interface_velocity: DVec3,
         n_unit: DVec3,
         eos: &EquationOfState,
-    ) -> Conserved {
+    ) -> State<Conserved> {
         // Inverse densities
         let rho_l_inv = 1. / left.density();
         let rho_r_inv = 1. / right.density();
@@ -84,7 +84,7 @@ impl RiemannFluxSolver for HLLCRiemannSolver {
         debug_assert!(!(flux.mass().is_nan() || flux.mass().is_infinite()));
 
         // Deboost to lab frame
-        flux += Conserved::new(
+        flux += State::<Conserved>::new(
             0.,
             interface_velocity * flux.mass(),
             interface_velocity.dot(flux.momentum())
@@ -96,9 +96,9 @@ impl RiemannFluxSolver for HLLCRiemannSolver {
 
 impl HLLCRiemannSolver {
     /// See (10.5) in Toro.
-    fn flux(state: &Primitives, v: f64, e: f64, n_unit: DVec3) -> Conserved {
+    fn flux(state: &State<Primitive>, v: f64, e: f64, n_unit: DVec3) -> State<Conserved> {
         let rho_v = state.density() * v;
-        Conserved::new(
+        State::<Conserved>::new(
             rho_v,
             rho_v * state.velocity() + state.pressure() * n_unit,
             ((state.density() * e) + state.pressure()) * v,
@@ -107,20 +107,20 @@ impl HLLCRiemannSolver {
 
     /// See (10.38), (10.39) in Toro 2009.
     fn flux_star(
-        state: &Primitives,
+        state: &State<Primitive>,
         v: f64,
         e: f64,
         s: f64,
         s_star: f64,
         n_unit: DVec3,
-    ) -> Conserved {
+    ) -> State<Conserved> {
         let s_m_v = s - v;
         let rho = state.density();
         let starfac = rho * s_m_v / (s - s_star);
         let v_star = (s_star - v) * n_unit + state.velocity();
         let e_star = e + (s_star - v) * (s_star + state.pressure() / (rho * s_m_v));
-        let u_star = starfac * Conserved::new(1., v_star, e_star);
-        let u_l = Conserved::new(rho, rho * state.velocity(), rho * e);
+        let u_star = starfac * State::<Conserved>::new(1., v_star, e_star);
+        let u_l = State::<Conserved>::new(rho, rho * state.velocity(), rho * e);
         s * (u_star - u_l)
     }
 }
@@ -142,10 +142,10 @@ mod tests {
     fn test_hllc_solver_symmetry() {
         let interface_velocity = -3e-1 * DVec3::X;
         let eos = get_eos();
-        let left = Primitives::new(1., DVec3::ZERO, 1.);
-        let left_reversed = Primitives::new(1., DVec3::ZERO, 1.);
-        let right = Primitives::new(1., -6e-1 * DVec3::X, 1.);
-        let right_reversed = Primitives::new(1., 6e-1 * DVec3::X, 1.);
+        let left = State::<Primitive>::new(1., DVec3::ZERO, 1.);
+        let left_reversed = State::<Primitive>::new(1., DVec3::ZERO, 1.);
+        let right = State::<Primitive>::new(1., -6e-1 * DVec3::X, 1.);
+        let right_reversed = State::<Primitive>::new(1., 6e-1 * DVec3::X, 1.);
 
         let fluxes = HLLCRiemannSolver.solve_for_flux(
             &left.boost(-interface_velocity),
@@ -171,8 +171,8 @@ mod tests {
     fn test_hllc_solver() {
         let interface_velocity = 0.15 * DVec3::X;
         let eos = get_eos();
-        let left = Primitives::new(1., 0.2 * DVec3::X, 0.5);
-        let right = Primitives::new(0.5, 0.1 * DVec3::X, 0.1);
+        let left = State::<Primitive>::new(1., 0.2 * DVec3::X, 0.5);
+        let right = State::<Primitive>::new(0.5, 0.1 * DVec3::X, 0.1);
         let fluxes = HLLCRiemannSolver.solve_for_flux(
             &left.boost(-interface_velocity),
             &right.boost(-interface_velocity),
