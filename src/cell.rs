@@ -4,7 +4,7 @@ use rstar::{primitives::GeomWithData, RTree};
 use crate::part::Particle;
 
 pub struct Cell {
-    loc: DVec3,
+    _loc: DVec3,
     pub part_offset: usize,
     pub part_count: usize,
     ngb_cid: Vec<usize>,
@@ -19,7 +19,7 @@ impl Cell {
             part_count: 0,
             ngb_cid,
             ngb_shift,
-            loc,
+            _loc: loc,
             tree: RTree::new(),
         }
     }

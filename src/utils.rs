@@ -30,6 +30,7 @@ impl From<HydroDimension> for Dimensionality {
 }
 
 pub trait Round {
+    #[allow(dead_code)]
     fn round_to(&self, decimal_places: u8) -> Self;
 }
 

@@ -1,6 +1,4 @@
 extern crate yaml_rust;
-#[macro_use]
-extern crate derive_more;
 
 pub use engine::Engine;
 pub use equation_of_state::EquationOfState;
