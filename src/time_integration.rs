@@ -43,6 +43,22 @@ impl Runner {
         }
     }
 
+    pub fn label(&self) -> &str {
+        match self {
+            Runner::Default => "default",
+            Runner::OptimalOrder => "optimal",
+            Runner::TwoGradient => "two_gradient",
+            Runner::Pakmor => "pakmor",
+            Runner::PakmorExtrapolate => "pakmor_end",
+            Runner::VolumeBackExtrapolate => "volume_back_extrapolate",
+            Runner::TwoVolumeHalfDrift => "two_volume_half",
+            Runner::OptimalOrderHalfDrift => "optimal_half",
+            Runner::DefaultHalfDrift => "default_half",
+            Runner::MeshlessGradientHalfDrift => "meshless_gradient_half",
+            Runner::FluxExtrapolateHalfDrift => "flux_extrapolate_half",
+        }
+    }
+
     pub fn drift(&self, dti: IntegerTime, engine: &Engine, space: &mut Space) {
         let dt = engine.dt(dti);
         match self {
@@ -125,6 +141,7 @@ impl Runner {
                 // Todo: flux extrapolate (godunov) to half timestep? Or keep gradient extrapolation?
                 // Todo: Recompute spatial gradients at half timestep in back extrapolated coordinates?
                 // Todo: Do flux calculation in back extrapolated coordinates as well
+                space.gradient_estimate(engine);
                 space.flux_exchange(engine);
                 space.apply_flux(engine);
                 space.drift_centroids_to_current_time(engine);

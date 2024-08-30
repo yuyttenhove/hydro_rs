@@ -7,7 +7,7 @@ time_integration:
 
 snapshots:
   t_between_snaps: 20.
-  prefix: "yee_50_meshless_gradient_half_"
+  prefix: "yee_50"
   save_faces: false
 
 engine:

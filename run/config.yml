@@ -3,11 +3,11 @@ time_integration:
   dt_max: 0.05
   t_end: 0.2
   cfl_criterion: 0.3
-  sync_timesteps: false
+  sync_timesteps: true
 
 snapshots:
   t_between_snaps: 0.02
-  prefix: "sodshock_2D_optimal_"
+  prefix: "sodshock_2D"
   save_faces: false
 
 engine:
@@ -18,12 +18,12 @@ engine:
   # runner: "TwoVolumeHalfDrift"
   # runner: "MeshlessGradientHalfDrift"
   # runner: "FluxExtrapolateHalfDrift"
-  runner: "OptimalOrder"
+  # runner: "OptimalOrder"
   # runner: "TwoGradient"
   # runner: "Default"
   # runner: "Pakmor"
   # runner: "PakmorExtrapolate"
-  # runner: "VolumeBackExtrapolate"
+  runner: "VolumeBackExtrapolate"
 gravity:
   kind: "none"
   potential:

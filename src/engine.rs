@@ -247,7 +247,12 @@ impl Engine {
 
     fn dump(&mut self, space: &mut Space) -> Result<(), hdf5::Error> {
         println!("Writing snapshot at t={}!", self.t_current);
-        let filename = format!("output/{}{:04}.hdf5", self.snapshot_prefix, self.snap);
+        let filename = format!(
+            "output/{}_{}_{:04}.hdf5",
+            self.snapshot_prefix,
+            self.runner.label(),
+            self.snap
+        );
         space.dump(&self, &filename)?;
         self.snap += 1;
 
