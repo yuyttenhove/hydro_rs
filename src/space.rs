@@ -5,7 +5,7 @@ use std::{
 };
 
 use glam::DVec3;
-use meshless_voronoi::{Voronoi, VoronoiFace};
+use meshless_voronoi::{Voronoi, VoronoiCell, VoronoiFace};
 use rayon::prelude::*;
 use yaml_rust::Yaml;
 
@@ -224,6 +224,10 @@ impl Space {
     }
 
     /// Do the volume calculation for all the active parts in the space
+    ///
+    /// NOTE: the face counts and offsets of inactive particles are also updated by this method!
+    /// This information is used e.g. in the timestep limiter, where we might want to loop over
+    /// the active neighbours of an inactive particle
     pub fn volume_calculation(&mut self, engine: &Engine) {
         let generators = self.parts.iter().map(|p| p.loc()).collect::<Vec<_>>();
         let mask = self
@@ -263,6 +267,148 @@ impl Space {
                 debug_assert!(face.normal().z == 0.);
             }
         }
+    }
+
+    /// Compute voronoi cells of particles using back extrapolated neighbours
+    ///
+    /// NOTE: Just like the normal volume calculation, we also update the offset and count of
+    /// all inactive particles, even if they have no faces
+    ///
+    /// WARNING: slow, doesnt work with periodic boundary conditions
+    pub fn volume_calculation_back_extrapolate(&mut self, engine: &Engine) {
+        if self.periodic() {
+            panic!("Periodic boundary conditions are not supported for back extrapolation volume calculation!")
+        }
+        // Loop over the parts and construct the back extrapolated positions of its neighbours
+        // Construct the voronoi cell of the neigbours
+        let cells_faces: Vec<Option<(VoronoiCell, Vec<VoronoiFace>)>> = self
+            .parts
+            .par_iter()
+            .enumerate()
+            .map(|(idx, part)| {
+                if !engine.part_is_active(part, Iact::Volume) {
+                    return None;
+                }
+                let cell = &self.cells[part.cell_id];
+                let dt_ext = -0.5 * part.dt;
+                let mut positions = vec![part.loc + dt_ext * part.v];
+                let mut ids = vec![idx];
+
+                // Collect back extrapolated positions
+                for (ngb_pos, ngb_idx) in cell.nn_iter(part.loc) {
+                    if (part.loc - ngb_pos).length_squared()
+                        > 4. * part.search_radius * part.search_radius
+                    {
+                        break;
+                    }
+                    positions.push(ngb_pos + dt_ext * self.parts[ngb_idx].v);
+                    ids.push(ngb_idx);
+                }
+
+                // Construct single voronoi cell around central particle
+                let mut mask = vec![false; positions.len()];
+                mask[0] = true;
+                let anchor = DVec3::ZERO;
+                let width = self.box_size;
+                let vortess = Voronoi::build_partial(
+                    &positions,
+                    &mask,
+                    anchor,
+                    width,
+                    self.dimensionality.into(),
+                    false,
+                );
+
+                let cell = vortess.cells()[0].clone();
+                let faces = cell
+                    .faces(&vortess)
+                    .filter_map(|face| {
+                        let left = ids[face.left()];
+                        let right = face.right().map(|idx| ids[idx]);
+                        if let Some(right) = right {
+                            // Only keep a single face between particles.
+                            // Prefer the face of the particle with the smallest timestep.
+                            // If the timesteps are equal, prefer the particle with the smalles id.
+                            match part
+                                .dt
+                                .partial_cmp(&self.parts[right].dt)
+                                .expect("dt should not be NaN!")
+                            {
+                                std::cmp::Ordering::Greater => return None,
+                                std::cmp::Ordering::Equal => {
+                                    if idx > right {
+                                        return None;
+                                    }
+                                }
+                                std::cmp::Ordering::Less => (),
+                            }
+                        }
+                        Some(VoronoiFace::new(
+                            left,
+                            right,
+                            face.area(),
+                            face.centroid(),
+                            face.normal(),
+                            None,
+                        ))
+                    })
+                    .collect();
+
+                Some((cell, faces))
+            })
+            .collect();
+
+        // Loop over the cells and faces and set the particles properties,
+        // and set update the voronoi faces
+        self.voronoi_faces = self
+            .parts
+            .par_iter_mut()
+            .zip(cells_faces.into_par_iter())
+            .filter_map(|(part, maybe_cell_faces)| {
+                if let Some((cell, faces)) = maybe_cell_faces {
+                    part.centroid = cell.centroid();
+                    part.volume = cell.volume();
+                    Some(faces)
+                } else {
+                    None
+                }
+            })
+            .flatten()
+            .collect::<Vec<_>>();
+
+        // Finally, compute the cell_face_connections
+        let mut cell_face_connections: Vec<Vec<usize>> = vec![vec![]; self.parts.len()];
+        for (i, face) in self.voronoi_faces.iter().enumerate() {
+            let left = face.left();
+            cell_face_connections[left].push(i);
+            if let Some(right) = face.right() {
+                cell_face_connections[right].push(i);
+            }
+        }
+        let mut offset = 0;
+        self.voronoi_cell_face_connections = cell_face_connections
+            .into_iter()
+            .zip(self.parts.iter_mut())
+            .map(|(connections, part)| {
+                part.face_count = connections.len();
+                part.face_connections_offset = offset;
+                offset += part.face_count;
+
+                connections
+            })
+            .flatten()
+            .collect();
+    }
+
+    /// Drift the particles centroid back to the end of the timestep
+    /// This needs to happen after flux exchange, before gradient calculation
+    /// in schemes using the back extrapolated volume calculation.
+    pub fn drift_centroids_to_current_time(&mut self, engine: &Engine) {
+        self.parts.par_iter_mut().for_each(|part| {
+            if engine.part_is_active(part, Iact::Flux) {
+                part.centroid += 0.5 * part.v * part.dt;
+            }
+        })
     }
 
     pub fn regrid(&mut self) {
@@ -1131,12 +1277,17 @@ mod test {
 
     use crate::equation_of_state::EquationOfState;
     use crate::initial_conditions::InitialConditions;
+    use crate::Engine;
 
     use super::Space;
 
     const GAMMA: f64 = 5. / 3.;
-    const CFG_STR: &'_ str = "boundary: \"reflective\"";
-    const IC_CFG: &'_ str = r###"type: "config"
+    const CFG_STR: &'_ str = r#"
+boundary: "reflective"
+max_top_level_cells: 3
+"#;
+    const IC_CFG: &'_ str = r###"
+type: "config"
 num_part: 4
 box_size: [1., 1., 1.]
 particles:
@@ -1245,5 +1396,133 @@ particles:
             assert!(area > 4. * f64::consts::PI * radius * radius);
         }
         assert_approx_eq!(f64, volume_total, 8., ulps = 8);
+    }
+
+    #[test]
+    fn test_back_extrapolate_volume() {
+        let box_size = DVec3::splat(1.);
+        let num_part = 16;
+        let dimensionality = 2;
+
+        let eos = EquationOfState::new(
+            &YamlLoader::load_from_str(&format!("gamma: {:}", GAMMA)).unwrap()[0],
+        )
+        .unwrap();
+
+        let xvel = 0.5;
+        let mapper = |_| (1., xvel * DVec3::X, 1.);
+        let ics =
+            InitialConditions::from_fn(box_size, num_part, dimensionality, &eos, Some(0.5), mapper);
+
+        let space_config = &YamlLoader::load_from_str(
+            r#"
+boundary: "reflective"
+max_top_level_cells: 1
+"#,
+        )
+        .unwrap()[0];
+        let mut space = Space::from_ic(ics, space_config, eos).expect("Config should be valid");
+
+        // Save ICs for later reference
+        let parts_old = space.parts.clone();
+        let faces_old = space.voronoi_faces.clone();
+        let cell_face_connections_old = space.voronoi_cell_face_connections.clone();
+        assert_eq!(parts_old.len(), num_part);
+
+        // Compute timesteps...
+        let time_integration_cfg = &YamlLoader::load_from_str(
+            r##"
+dt_min: 1e-11
+dt_max: 1e-2
+t_min: 1e-8
+t_end: 0.5
+cfl_criterion: 0.3
+sync_timesteps: true
+"##,
+        )
+        .unwrap()[0];
+        let snapshots_cfg = &YamlLoader::load_from_str(
+            r##"
+t_between_snaps: 0.05
+prefix: "sedov_2D_"
+"##,
+        )
+        .unwrap()[0];
+        let engine_cfg = &YamlLoader::load_from_str(
+            r##"
+t_status: 0.005
+particle_motion: "fluid"
+runner: "OptimalOrder"
+"##,
+        )
+        .unwrap()[0];
+        let hydro_solver_cfg = &YamlLoader::load_from_str(
+            r##"
+solver: "Exact"
+"##,
+        )
+        .unwrap()[0];
+        let gravity_cfg = &YamlLoader::load_from_str(
+            r##"
+kind: "none"
+"##,
+        )
+        .unwrap()[0];
+        let engine = Engine::init(
+            engine_cfg,
+            time_integration_cfg,
+            snapshots_cfg,
+            hydro_solver_cfg,
+            gravity_cfg,
+        )
+        .unwrap();
+        let ti_end = space.timestep(&engine);
+        let dt = engine.dt(ti_end - engine.ti_current());
+
+        // ... and drift
+        // (only for half the timestep, so that the back extrapolation in
+        // the volume calculation moves the particles back to their original positions).
+        space.drift(0.5 * dt, 0.5 * dt, &engine);
+
+        // Do back extrapolation volume calculation
+        space.regrid();
+        space.volume_calculation_back_extrapolate(&engine);
+        for (part_old, part) in parts_old.iter().zip(space.parts.iter()) {
+            assert_approx_eq!(f64, part_old.volume, part.volume);
+            assert_eq!(
+                part_old.face_count, part.face_count,
+                "Number of faces does not match!"
+            );
+            assert_eq!(
+                part_old.face_connections_offset, part.face_connections_offset,
+                "Face connections offset does not match!"
+            );
+            let faces_part_old = &cell_face_connections_old[part_old.face_connections_offset
+                ..part_old.face_connections_offset + part_old.face_count];
+            let faces_part = &space.voronoi_cell_face_connections
+                [part.face_connections_offset..part.face_connections_offset + part.face_count];
+            'outer: for &idx in faces_part_old {
+                let face_old = &faces_old[idx];
+                let left = face_old.left();
+                if let Some(right) = face_old.right() {
+                    // loop over new faces to find the same face:
+                    for &idx in faces_part {
+                        let face = &space.voronoi_faces[idx];
+                        if face.left() == left
+                            && face.right().is_some()
+                            && face.right().unwrap() == right
+                        {
+                            assert_approx_eq!(f64, face_old.area(), face.area());
+                            assert_approx_eq!(f64, face_old.centroid().x, face.centroid().x);
+                            assert_approx_eq!(f64, face_old.centroid().y, face.centroid().y);
+                            assert_approx_eq!(f64, face_old.centroid().z, face.centroid().z);
+                            // found face, continue with next old face
+                            continue 'outer;
+                        }
+                    }
+                    panic!("No matching face found!");
+                }
+            }
+        }
     }
 }

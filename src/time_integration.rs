@@ -17,6 +17,7 @@ pub enum Runner {
     TwoGradient,
     Pakmor,
     PakmorExtrapolate,
+    VolumeBackExtrapolate,
     TwoVolumeHalfDrift,
     OptimalOrderHalfDrift,
     DefaultHalfDrift,
@@ -31,6 +32,7 @@ impl Runner {
             "OptimalOrder" => Ok(Runner::OptimalOrder),
             "TwoGradient" => Ok(Runner::TwoGradient),
             "Pakmor" => Ok(Runner::Pakmor),
+            "VolumeBackExtrapolate" => Ok(Runner::VolumeBackExtrapolate),
             "PakmorExtrapolate" => Ok(Runner::PakmorExtrapolate),
             "TwoVolumeHalfDrift" => Ok(Runner::TwoVolumeHalfDrift),
             "OptimalOrderHalfDrift" => Ok(Runner::OptimalOrderHalfDrift),
@@ -112,6 +114,24 @@ impl Runner {
                 space.kick2(engine);
                 space.convert_conserved_to_primitive(engine);
                 space.gradient_estimate(engine);
+                ti_next = space.timestep(engine);
+                space.timestep_limiter(engine); // Note: this can never decrease ti_next
+                space.kick1(engine);
+            }
+            Runner::VolumeBackExtrapolate => {
+                space.regrid();
+                space.volume_calculation_back_extrapolate(engine);
+                // Todo: update primitives using new volumes?
+                // Todo: flux extrapolate (godunov) to half timestep? Or keep gradient extrapolation?
+                // Todo: Recompute spatial gradients at half timestep in back extrapolated coordinates?
+                // Todo: Do flux calculation in back extrapolated coordinates as well
+                space.flux_exchange(engine);
+                space.apply_flux(engine);
+                space.drift_centroids_to_current_time(engine);
+                space.gravity(engine);
+                space.kick2(engine);
+                space.convert_conserved_to_primitive(engine);
+                space.meshless_gradient_estimate(engine);
                 ti_next = space.timestep(engine);
                 space.timestep_limiter(engine); // Note: this can never decrease ti_next
                 space.kick1(engine);
@@ -236,7 +256,8 @@ impl Runner {
             | Runner::OptimalOrder
             | Runner::TwoGradient
             | Runner::Pakmor
-            | Runner::PakmorExtrapolate => part.is_ending(engine),
+            | Runner::PakmorExtrapolate
+            | Runner::VolumeBackExtrapolate => part.is_ending(engine),
             Runner::OptimalOrderHalfDrift => part.is_halfway(engine),
             Runner::DefaultHalfDrift => match iact {
                 Iact::ApplyFlux => part.is_ending(engine),
