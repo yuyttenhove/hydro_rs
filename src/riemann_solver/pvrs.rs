@@ -31,7 +31,7 @@ impl RiemannStarSolver for PVRiemannSolver {
         v_r: f64,
         a_l: f64,
         a_r: f64,
-        _eos: &crate::equation_of_state::EquationOfState,
+        _eos: &crate::gas_law::AdiabaticIndex,
     ) -> RiemannStarValues {
         let rho_bar = Self::rho_bar(left.density(), right.density());
         let p_bar = Self::p_bar(left.pressure(), right.pressure());
@@ -50,10 +50,9 @@ impl RiemannStarSolver for PVRiemannSolver {
 mod test {
     use float_cmp::assert_approx_eq;
     use glam::DVec3;
-    use yaml_rust::YamlLoader;
 
     use crate::{
-        equation_of_state::EquationOfState,
+        gas_law::{EquationOfState, GasLaw},
         physical_quantities::{Conserved, Primitive},
         riemann_solver::RiemannFluxSolver,
     };
@@ -64,10 +63,7 @@ mod test {
 
     #[test]
     fn test_invariance() {
-        let eos = EquationOfState::new(
-            &YamlLoader::load_from_str(&format!("gamma: {:}", GAMMA)).unwrap()[0],
-        )
-        .unwrap();
+        let eos = GasLaw::new(GAMMA, EquationOfState::Ideal);
 
         let left = State::<Primitive>::new(1.5, 0.2 * DVec3::X, 1.2);
         let right = State::<Primitive>::new(0.7, -0.4 * DVec3::X, 0.1);
@@ -82,9 +78,9 @@ mod test {
             eos.sound_speed(left.pressure(), 1. / left.density()),
             eos.sound_speed(right.pressure(), 1. / right.density()),
             DVec3::X,
-            &eos,
+            eos.gamma(),
         );
-        let roe = w_half_lab.pressure() * eos.odgm1()
+        let roe = w_half_lab.pressure() * eos.gamma().odgm1()
             + 0.5 * w_half_lab.density() * w_half_lab.velocity().length_squared();
         let fluxes_lab = PVRiemannSolver.solve_for_flux(&left, &right, DVec3::ZERO, DVec3::X, &eos)
             - State::<Conserved>::new(

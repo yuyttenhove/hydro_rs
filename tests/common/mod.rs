@@ -1,4 +1,4 @@
-use hydro_rs::{Engine, EquationOfState, InitialConditions, Space};
+use hydro_rs::{gas_law::GasLaw, Engine, InitialConditions, Space};
 use yaml_rust::YamlLoader;
 
 pub const _CONFIG: &'static str = r###"
@@ -74,7 +74,9 @@ kind: "none"
 "##;
 
 pub const EOS_CONFIG: &'static str = r##"
-gamma: 1.66666666667
+gamma: 1.66666667
+equation_of_state: 
+  kind: "Ideal"
 "##;
 
 pub const _IC_CONFIG: &'static str = r##"
@@ -84,20 +86,20 @@ num_part: 200
 filename: "ICs/sedov_2D.hdf5"
 "##;
 
-pub fn get_eos(cfg: &str) -> EquationOfState {
-    EquationOfState::new(&YamlLoader::load_from_str(cfg).expect("Error loading EOS cfg!")[0])
-        .expect("Error creating EquationOfState!")
+pub fn get_eos(cfg: &str) -> GasLaw {
+    GasLaw::init(&YamlLoader::load_from_str(cfg).expect("Error loading EOS cfg!")[0])
+        .expect("Error creating GasLaw!")
 }
 
-pub fn _get_ic(cfg: &str, eos: &EquationOfState) -> InitialConditions {
-    InitialConditions::new(
+pub fn _get_ic(cfg: &str, eos: &GasLaw) -> InitialConditions {
+    InitialConditions::init(
         &YamlLoader::load_from_str(cfg).expect("Error loading ICs cfg!")[0],
         eos,
     )
     .expect("Error creating Initial conditions")
 }
 
-pub fn get_space(cfg: &str, ic: InitialConditions, eos: EquationOfState) -> Space {
+pub fn get_space(cfg: &str, ic: InitialConditions, eos: GasLaw) -> Space {
     Space::from_ic(
         ic,
         &YamlLoader::load_from_str(cfg).expect("Error loading space cfg!")[0],

@@ -1,5 +1,5 @@
 use crate::{
-    equation_of_state::EquationOfState,
+    gas_law::AdiabaticIndex,
     physical_quantities::{Primitive, State},
 };
 
@@ -9,13 +9,13 @@ pub struct ExactRiemannSolver;
 
 impl ExactRiemannSolver {
     /// Functions (4.6) and (4.7) in Toro.
-    fn fb(p: f64, state: &State<Primitive>, a: f64, eos: &EquationOfState) -> f64 {
+    fn fb(p: f64, state: &State<Primitive>, a: f64, gamma: &AdiabaticIndex) -> f64 {
         if p > state.pressure() {
-            let cap_a = eos.tdgp1() / state.density();
-            let cap_b = eos.gm1dgp1() * state.pressure();
+            let cap_a = gamma.tdgp1() / state.density();
+            let cap_b = gamma.gm1dgp1() * state.pressure();
             (p - state.pressure()) * (cap_a / (p + cap_b)).sqrt()
         } else {
-            eos.tdgm1() * a * ((p / state.pressure()).powf(eos.gm1d2g()) - 1.)
+            gamma.tdgm1() * a * ((p / state.pressure()).powf(gamma.gm1d2g()) - 1.)
         }
     }
 
@@ -28,19 +28,19 @@ impl ExactRiemannSolver {
         v_r: f64,
         a_l: f64,
         a_r: f64,
-        eos: &EquationOfState,
+        gamma: &AdiabaticIndex,
     ) -> f64 {
-        Self::fb(p, left, a_l, eos) + Self::fb(p, right, a_r, eos) + (v_r - v_l)
+        Self::fb(p, left, a_l, gamma) + Self::fb(p, right, a_r, gamma) + (v_r - v_l)
     }
 
     /// Function (4.37) in Toro
-    fn fprimeb(p: f64, state: &State<Primitive>, a: f64, eos: &EquationOfState) -> f64 {
+    fn fprimeb(p: f64, state: &State<Primitive>, a: f64, gamma: &AdiabaticIndex) -> f64 {
         if p > state.pressure() {
-            let cap_a = eos.tdgp1() / state.density();
-            let cap_b = eos.gm1dgp1() * state.pressure();
+            let cap_a = gamma.tdgp1() / state.density();
+            let cap_b = gamma.gm1dgp1() * state.pressure();
             (1. - 0.5 * (p - state.pressure()) / (cap_b + p)) * (cap_a / (p + cap_b)).sqrt()
         } else {
-            1. / state.density() / a * (p / state.pressure()).powf(-eos.gm1d2g())
+            1. / state.density() / a * (p / state.pressure()).powf(-gamma.gm1d2g())
         }
     }
 
@@ -51,15 +51,15 @@ impl ExactRiemannSolver {
         right: &State<Primitive>,
         a_l: f64,
         a_r: f64,
-        eos: &EquationOfState,
+        gamma: &AdiabaticIndex,
     ) -> f64 {
-        Self::fprimeb(p, left, a_l, eos) + Self::fprimeb(p, right, a_r, eos)
+        Self::fprimeb(p, left, a_l, gamma) + Self::fprimeb(p, right, a_r, gamma)
     }
 
     /// Bottom function of (4.48) in Toro
-    fn gb(p: f64, state: &State<Primitive>, eos: &EquationOfState) -> f64 {
-        let cap_a = eos.tdgp1() / state.density();
-        let cap_b = eos.gm1dgp1() * state.pressure();
+    fn gb(p: f64, state: &State<Primitive>, gamma: &AdiabaticIndex) -> f64 {
+        let cap_a = gamma.tdgp1() / state.density();
+        let cap_b = gamma.gm1dgp1() * state.pressure();
         (cap_a / (p + cap_b)).sqrt()
     }
 
@@ -74,7 +74,7 @@ impl ExactRiemannSolver {
         v_r: f64,
         a_l: f64,
         a_r: f64,
-        eos: &EquationOfState,
+        gamma: &AdiabaticIndex,
     ) -> f64 {
         let p_min = left.pressure().min(right.pressure());
         let p_max = left.pressure().max(right.pressure());
@@ -86,17 +86,17 @@ impl ExactRiemannSolver {
             ppv
         } else if ppv < p_min {
             // two rarefactions
-            let base = (a_l + a_r - 0.5 * (eos.gamma() - 1.) * (v_r - v_l))
-                / (a_l / left.pressure().powf(eos.gm1d2g())
-                    + a_r / right.pressure().powf(eos.gm1d2g()));
-            base.powf(eos.gamma() * eos.tdgm1())
+            let base = (a_l + a_r - 0.5 * (gamma.gamma() - 1.) * (v_r - v_l))
+                / (a_l / left.pressure().powf(gamma.gm1d2g())
+                    + a_r / right.pressure().powf(gamma.gm1d2g()));
+            base.powf(gamma.gamma() * gamma.tdgm1())
         } else {
             // two shocks
-            (Self::gb(ppv, left, eos) * left.pressure()
-                + Self::gb(ppv, right, eos) * right.pressure()
+            (Self::gb(ppv, left, gamma) * left.pressure()
+                + Self::gb(ppv, right, gamma) * right.pressure()
                 - v_r
                 + v_l)
-                / (Self::gb(ppv, left, eos) + Self::gb(ppv, right, eos))
+                / (Self::gb(ppv, left, gamma) + Self::gb(ppv, right, gamma))
         };
 
         p_guess.max(1e-8)
@@ -115,7 +115,7 @@ impl ExactRiemannSolver {
         v_r: f64,
         a_l: f64,
         a_r: f64,
-        eos: &EquationOfState,
+        gamma: &AdiabaticIndex,
     ) -> f64 {
         let mut a = lower_lim;
         let mut b = upper_lim;
@@ -168,7 +168,7 @@ impl ExactRiemannSolver {
                 mflag = false;
             }
 
-            fs = Self::f(s, left, right, v_l, v_r, a_l, a_r, eos);
+            fs = Self::f(s, left, right, v_l, v_r, a_l, a_r, gamma);
             d = c;
             c = b;
             fc = fb;
@@ -190,24 +190,24 @@ impl ExactRiemannSolver {
         b
     }
 
-    fn shock_middle_density(pdps: f64, state: &State<Primitive>, eos: &EquationOfState) -> f64 {
-        state.density() * (pdps + eos.gm1dgp1()) / (eos.gm1dgp1() * pdps + 1.)
+    fn shock_middle_density(pdps: f64, state: &State<Primitive>, gamma: &AdiabaticIndex) -> f64 {
+        state.density() * (pdps + gamma.gm1dgp1()) / (gamma.gm1dgp1() * pdps + 1.)
     }
 
     fn rarefaction_middle_density(
         pdps: f64,
         state: &State<Primitive>,
-        eos: &EquationOfState,
+        gamma: &AdiabaticIndex,
     ) -> f64 {
-        state.density() * (pdps).powf(1. / eos.gamma())
+        state.density() * (pdps).powf(1. / gamma.gamma())
     }
 
-    fn middle_density(p: f64, state: &State<Primitive>, eos: &EquationOfState) -> f64 {
+    fn middle_density(p: f64, state: &State<Primitive>, gamma: &AdiabaticIndex) -> f64 {
         let pdps = p / state.pressure();
         if pdps > 1. {
-            Self::shock_middle_density(pdps, state, eos)
+            Self::shock_middle_density(pdps, state, gamma)
         } else {
-            Self::rarefaction_middle_density(pdps, state, eos)
+            Self::rarefaction_middle_density(pdps, state, gamma)
         }
     }
 
@@ -219,15 +219,15 @@ impl ExactRiemannSolver {
         v_r: f64,
         a_l: f64,
         a_r: f64,
-        eos: &EquationOfState,
+        gamma: &AdiabaticIndex,
     ) -> RiemannStarValues {
         // calculate the velocity in the intermediate state
         let u = 0.5 * (v_l + v_r)
-            + 0.5 * (Self::fb(pstar, right, a_r, eos) - Self::fb(pstar, left, a_l, eos));
+            + 0.5 * (Self::fb(pstar, right, a_r, gamma) - Self::fb(pstar, left, a_l, gamma));
 
         // calculate the left and right intermediate densities
-        let rho_l = Self::middle_density(pstar, left, eos);
-        let rho_r = Self::middle_density(pstar, right, eos);
+        let rho_l = Self::middle_density(pstar, left, gamma);
+        let rho_r = Self::middle_density(pstar, right, gamma);
 
         RiemannStarValues {
             rho_l,
@@ -247,7 +247,7 @@ impl RiemannStarSolver for ExactRiemannSolver {
         v_r: f64,
         a_l: f64,
         a_r: f64,
-        eos: &EquationOfState,
+        gamma: &AdiabaticIndex,
     ) -> RiemannStarValues {
         /* We normally use a Newton-Raphson iteration to find the zeropoint
         of riemann_f(p), but if pstar is close to 0, we risk negative p values.
@@ -257,17 +257,17 @@ impl RiemannStarSolver for ExactRiemannSolver {
         value. -5 makes the iteration fail safe while almost never invoking
         the expensive Brent solver. */
         let mut p = 0.;
-        let mut p_guess = Self::guess_p(left, right, v_l, v_r, a_l, a_r, eos);
-        let mut fp = Self::f(p, left, right, v_l, v_r, a_l, a_r, eos);
-        let mut fp_guess = Self::f(p_guess, left, right, v_l, v_r, a_l, a_r, eos);
+        let mut p_guess = Self::guess_p(left, right, v_l, v_r, a_l, a_r, gamma);
+        let mut fp = Self::f(p, left, right, v_l, v_r, a_l, a_r, gamma);
+        let mut fp_guess = Self::f(p_guess, left, right, v_l, v_r, a_l, a_r, gamma);
         if fp * fp_guess >= 0. {
             // Newton-Raphson until convergence or until suitable interval is found
             // to use Brent's method
             let mut counter = 0;
             while (p - p_guess).abs() > 1e-6 * 0.5 * (p + p_guess) && fp_guess < 0.0 {
                 p = p_guess;
-                p_guess = p_guess - fp_guess / Self::fprime(p_guess, left, right, a_l, a_r, eos);
-                fp_guess = Self::f(p_guess, left, right, v_l, v_r, a_l, a_r, eos);
+                p_guess = p_guess - fp_guess / Self::fprime(p_guess, left, right, a_l, a_r, gamma);
+                fp_guess = Self::f(p_guess, left, right, v_l, v_r, a_l, a_r, gamma);
                 counter += 1;
                 if counter > 1000 {
                     panic!("Stuck in Newton-Raphson iteration!");
@@ -278,21 +278,22 @@ impl RiemannStarSolver for ExactRiemannSolver {
         // As soon as there is a suitable interval: use Brent's method
         if (p - p_guess).abs() > 1e-6 * 0.5 * (p + p_guess) && fp_guess > 0. {
             p = 0.;
-            fp = Self::f(p, left, right, v_l, v_r, a_l, a_r, eos);
+            fp = Self::f(p, left, right, v_l, v_r, a_l, a_r, gamma);
             p = Self::solve_brent(
-                p, p_guess, fp, fp_guess, 1e-6, left, right, v_l, v_r, a_l, a_r, eos,
+                p, p_guess, fp, fp_guess, 1e-6, left, right, v_l, v_r, a_l, a_r, gamma,
             );
         } else {
             p = p_guess;
         }
 
-        Self::star_state_from_pstar(p, left, right, v_l, v_r, a_l, a_r, eos)
+        Self::star_state_from_pstar(p, left, right, v_l, v_r, a_l, a_r, gamma)
     }
 }
 
 #[cfg(test)]
 mod test {
     use crate::{
+        gas_law::{EquationOfState, GasLaw},
         physical_quantities::{Conserved, State},
         riemann_solver::RiemannFluxSolver,
     };
@@ -301,13 +302,11 @@ mod test {
 
     use float_cmp::assert_approx_eq;
     use glam::DVec3;
-    use yaml_rust::YamlLoader;
 
     const GAMMA: f64 = 5. / 3.;
 
-    fn get_eos(gamma: f64) -> EquationOfState {
-        EquationOfState::new(&YamlLoader::load_from_str(&format!("gamma: {:}", gamma)).unwrap()[0])
-            .unwrap()
+    fn get_eos(gamma: f64) -> GasLaw {
+        GasLaw::new(gamma, EquationOfState::Ideal)
     }
 
     #[test]
@@ -358,7 +357,7 @@ mod test {
             let a_l = eos.sound_speed(left.pressure(), 1. / left.density());
             let a_r = eos.sound_speed(right.pressure(), 1. / right.density());
 
-            ExactRiemannSolver.sample(&left, &right, v_l, v_r, a_l, a_r, DVec3::X, &eos)
+            ExactRiemannSolver.sample(&left, &right, v_l, v_r, a_l, a_r, DVec3::X, eos.gamma())
         }
 
         // Left shock
@@ -400,10 +399,7 @@ mod test {
 
     #[test]
     fn test_invariance() {
-        let eos = EquationOfState::new(
-            &YamlLoader::load_from_str(&format!("gamma: {:}", GAMMA)).unwrap()[0],
-        )
-        .unwrap();
+        let eos: GasLaw = get_eos(GAMMA);
 
         let left = State::<Primitive>::new(1.5, 0.2 * DVec3::X, 1.2);
         let right = State::<Primitive>::new(0.7, -0.4 * DVec3::X, 0.1);
@@ -418,9 +414,9 @@ mod test {
             eos.sound_speed(left.pressure(), 1. / left.density()),
             eos.sound_speed(right.pressure(), 1. / right.density()),
             DVec3::X,
-            &eos,
+            eos.gamma(),
         );
-        let roe = w_half_lab.pressure() * eos.odgm1()
+        let roe = w_half_lab.pressure() * eos.gamma().odgm1()
             + 0.5 * w_half_lab.density() * w_half_lab.velocity().length_squared();
         let fluxes_lab =
             ExactRiemannSolver.solve_for_flux(&left, &right, DVec3::ZERO, DVec3::X, &eos)
@@ -460,6 +456,6 @@ mod test {
 
         let eos = get_eos(GAMMA);
 
-        ExactRiemannSolver.solve_for_star_state(&left, &right, v_l, v_r, a_l, a_r, &eos);
+        ExactRiemannSolver.solve_for_star_state(&left, &right, v_l, v_r, a_l, a_r, eos.gamma());
     }
 }

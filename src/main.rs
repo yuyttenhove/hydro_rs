@@ -2,7 +2,7 @@ use std::fs;
 
 use clap::Parser;
 use cli::Cli;
-use hydro_rs::{Engine, EquationOfState, InitialConditions, Space};
+use hydro_rs::{gas_law::GasLaw, Engine, InitialConditions, Space};
 use yaml_rust::YamlLoader;
 
 mod cli;
@@ -16,15 +16,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = &docs[0];
 
     // Setup simulation
-    let eos = EquationOfState::new(&config["equation_of_state"])?;
+    let eos = GasLaw::init(&config["hydrodynamics"])?;
     let mut engine = Engine::init(
         &config["engine"],
         &config["time_integration"],
         &config["snapshots"],
-        &config["hydrodynamics"],
+        &config["riemann_solver"],
         &config["gravity"],
     )?;
-    let ic = InitialConditions::new(&config["initial_conditions"], &eos)?;
+    let ic = InitialConditions::init(&config["initial_conditions"], &eos)?;
     let mut space = Space::from_ic(ic, &config["space"], eos)?;
 
     // run

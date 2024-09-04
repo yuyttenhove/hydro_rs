@@ -5,7 +5,7 @@ use std::{
 
 use glam::DVec3;
 
-use crate::equation_of_state::EquationOfState;
+use crate::gas_law::GasLaw;
 
 #[derive(Default, Debug, Clone, Copy)]
 pub struct Primitive;
@@ -56,12 +56,12 @@ impl<T> Mul<State<T>> for f64 {
 }
 
 impl<T> State<T> {
-    pub fn vacuum() -> Self {
-        Self(0., DVec3::ZERO, 0., PhantomData)
+    pub(crate) fn splat(value: f64) -> Self {
+        Self(value, DVec3::splat(value), value, PhantomData)
     }
 
-    pub fn splat(value: f64) -> Self {
-        Self(value, DVec3::splat(value), value, PhantomData)
+    pub fn vacuum() -> Self {
+        Self(0., DVec3::ZERO, 0., PhantomData)
     }
 
     pub fn pairwise_max(&self, other: &Self) -> Self {
@@ -194,6 +194,10 @@ impl<T> AddAssign for Gradients<T> {
 }
 
 impl State<Primitive> {
+    pub fn new(density: f64, velocity: DVec3, pressure: f64) -> Self {
+        Self(density, velocity, pressure, PhantomData)
+    }
+
     pub fn density(&self) -> f64 {
         self.0
     }
@@ -206,15 +210,7 @@ impl State<Primitive> {
         self.2
     }
 
-    pub fn new(density: f64, velocity: DVec3, pressure: f64) -> Self {
-        Self(density, velocity, pressure, PhantomData)
-    }
-
-    pub fn from_conserved(
-        conserved: &State<Conserved>,
-        volume: f64,
-        eos: &EquationOfState,
-    ) -> Self {
+    pub fn from_conserved(conserved: &State<Conserved>, volume: f64, eos: &GasLaw) -> Self {
         if conserved.mass() > 0. {
             let m_inv = 1. / conserved.mass();
             let density = conserved.mass() / volume;
@@ -239,12 +235,13 @@ impl State<Primitive> {
         }
     }
 
+    /// Reflect velocity component along normal
     pub fn reflect(&self, normal: DVec3) -> Self {
-        // Reflect fluid velocity component along normal
         let v = self.velocity() - 2. * self.velocity().dot(normal) * normal;
         Self::new(self.density(), v, self.pressure())
     }
 
+    /// Resets unphysical values to vacuum and prints an error.
     pub fn check_physical(&mut self) {
         if self.density() < 0. {
             eprintln!("Negative density encountered, resetting to vacuum!");
@@ -271,6 +268,10 @@ impl State<Primitive> {
 }
 
 impl State<Conserved> {
+    pub fn new(mass: f64, momentum: DVec3, energy: f64) -> Self {
+        Self(mass, momentum, energy, PhantomData)
+    }
+
     pub fn mass(&self) -> f64 {
         self.0
     }
@@ -283,22 +284,14 @@ impl State<Conserved> {
         self.2
     }
 
-    /// returns the specific internal energy e: E = E_kin + E_therm = E_kin + m * e
+    /// returns the specific internal energy e defined by: E = E_kin + E_therm = E_kin + m * e
     pub fn internal_energy(&self) -> f64 {
         let m_inv = 1. / self.mass();
         let thermal_energy = self.energy() - 0.5 * self.momentum().length_squared() * m_inv;
         thermal_energy * m_inv
     }
 
-    pub fn new(mass: f64, momentum: DVec3, energy: f64) -> Self {
-        Self(mass, momentum, energy, PhantomData)
-    }
-
-    pub fn from_primitives(
-        primitives: &State<Primitive>,
-        volume: f64,
-        eos: &EquationOfState,
-    ) -> Self {
+    pub fn from_primitives(primitives: &State<Primitive>, volume: f64, eos: &GasLaw) -> Self {
         let mass = primitives.density() * volume;
         let momentum = mass * primitives.velocity();
         let energy = 0.5 * momentum.dot(primitives.velocity())
@@ -315,10 +308,9 @@ impl State<Conserved> {
 mod test {
     use float_cmp::assert_approx_eq;
     use glam::DVec3;
-    use yaml_rust::YamlLoader;
 
     use super::{Conserved, Primitive};
-    use crate::{equation_of_state::EquationOfState, physical_quantities::State};
+    use crate::{gas_law::{EquationOfState, GasLaw}, physical_quantities::State};
 
     #[test]
     fn test_conversions() {
@@ -332,8 +324,7 @@ mod test {
             0.8,
         );
         let volume = 0.1;
-        let eos = EquationOfState::new(&YamlLoader::load_from_str("gamma: 1.666667").unwrap()[0])
-            .unwrap();
+        let eos = GasLaw::new(5. / 3., EquationOfState::Ideal);
         let conserved = State::<Conserved>::from_primitives(&primitives, volume, &eos);
         let primitives_new = State::<Primitive>::from_conserved(&conserved, volume, &eos);
 

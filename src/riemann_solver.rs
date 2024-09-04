@@ -10,8 +10,8 @@ use glam::DVec3;
 use yaml_rust::Yaml;
 
 use crate::{
-    equation_of_state::EquationOfState,
     errors::ConfigError,
+    gas_law::{AdiabaticIndex, GasLaw},
     physical_quantities::{Conserved, Primitive, State},
 };
 
@@ -25,9 +25,9 @@ pub use tsrs::TSRiemannSolver;
 use self::vacuum::VacuumRiemannSolver;
 
 pub fn get_solver(cfg: &Yaml) -> Result<Box<dyn RiemannFluxSolver>, ConfigError> {
-    let kind = cfg["solver"]
+    let kind = cfg["kind"]
         .as_str()
-        .ok_or(ConfigError::MissingParameter("solver:kind".to_string()))?;
+        .ok_or(ConfigError::MissingParameter("riemann_solver:kind".to_string()))?;
     match kind {
         "HLLC" => Ok(Box::new(HLLCRiemannSolver)),
         "Exact" => Ok(Box::new(ExactRiemannSolver)),
@@ -50,7 +50,7 @@ fn flux_from_half_state(
     half: &State<Primitive>,
     interface_velocity: DVec3,
     n_unit: DVec3,
-    eos: &EquationOfState,
+    gamma: &AdiabaticIndex,
 ) -> State<Conserved> {
     let v_tot = interface_velocity + half.velocity();
     let mut flux = [DVec3::ZERO; 5];
@@ -64,7 +64,7 @@ fn flux_from_half_state(
     flux[3] = half.density() * v_tot.z * half.velocity();
     flux[3].z += half.pressure();
 
-    let roe = half.pressure() * eos.odgm1() + 0.5 * half.density() * v_tot.length_squared();
+    let roe = half.pressure() * gamma.odgm1() + 0.5 * half.density() * v_tot.length_squared();
     flux[4] = roe * half.velocity() + half.pressure() * v_tot;
 
     State::<Conserved>::new(
@@ -85,7 +85,7 @@ pub trait RiemannFluxSolver: Sync {
         right: &State<Primitive>,
         interface_velocity: DVec3,
         n_unit: DVec3,
-        eos: &EquationOfState,
+        eos: &GasLaw,
     ) -> State<Conserved>;
 }
 
@@ -105,19 +105,19 @@ trait RiemannStarSolver: RiemannFluxSolver {
         v_r: f64,
         a_l: f64,
         a_r: f64,
-        eos: &EquationOfState,
+        gamma: &AdiabaticIndex,
     ) -> RiemannStarValues;
 
-    fn shock_speed(v: f64, a: f64, pdps: f64, eos: &EquationOfState) -> f64 {
-        v - a * (0.5 * eos.gp1dg() * pdps + eos.gm1d2g()).sqrt()
+    fn shock_speed(v: f64, a: f64, pdps: f64, gamma: &AdiabaticIndex) -> f64 {
+        v - a * (0.5 * gamma.gp1dg() * pdps + gamma.gm1d2g()).sqrt()
     }
 
     fn rarefaction_head_speed(v: f64, a: f64) -> f64 {
         v - a
     }
 
-    fn rarefaction_tail_speed(u: f64, a: f64, pdps: f64, eos: &EquationOfState) -> f64 {
-        u - a * pdps.powf(eos.gm1d2g())
+    fn rarefaction_tail_speed(u: f64, a: f64, pdps: f64, gamma: &AdiabaticIndex) -> f64 {
+        u - a * pdps.powf(gamma.gm1d2g())
     }
 
     fn sample_rarefaction_fan(
@@ -125,14 +125,14 @@ trait RiemannStarSolver: RiemannFluxSolver {
         a: f64,
         v: f64,
         n_unit: DVec3,
-        eos: &EquationOfState,
+        gamma: &AdiabaticIndex,
     ) -> State<Primitive> {
-        let v_half = eos.tdgp1() * (a + 0.5 * (eos.gamma() - 1.) * v);
-        let base = eos.tdgp1() + eos.gm1dgp1() / a * v;
+        let v_half = gamma.tdgp1() * (a + 0.5 * (gamma.gamma() - 1.) * v);
+        let base = gamma.tdgp1() + gamma.gm1dgp1() / a * v;
         State::<Primitive>::new(
-            state.density() * base.powf(eos.tdgm1()),
+            state.density() * base.powf(gamma.tdgm1()),
             state.velocity() + (v_half - v) * n_unit,
-            state.pressure() * base.powf(eos.gamma() * eos.tdgm1()),
+            state.pressure() * base.powf(gamma.gamma() * gamma.tdgm1()),
         )
     }
 
@@ -155,11 +155,11 @@ trait RiemannStarSolver: RiemannFluxSolver {
         v: f64,
         a: f64,
         n_unit: DVec3,
-        eos: &EquationOfState,
+        gamma: &AdiabaticIndex,
     ) -> State<Primitive> {
         if Self::rarefaction_head_speed(v, a) < 0. {
-            if Self::rarefaction_tail_speed(u, a, p / left.pressure(), eos) > 0. {
-                Self::sample_rarefaction_fan(left, a, v, n_unit, eos)
+            if Self::rarefaction_tail_speed(u, a, p / left.pressure(), gamma) > 0. {
+                Self::sample_rarefaction_fan(left, a, v, n_unit, gamma)
             } else {
                 Self::sample_middle_state(rho, u, p, left, v, n_unit)
             }
@@ -176,11 +176,11 @@ trait RiemannStarSolver: RiemannFluxSolver {
         v: f64,
         a: f64,
         n_unit: DVec3,
-        eos: &EquationOfState,
+        gamma: &AdiabaticIndex,
     ) -> State<Primitive> {
         if Self::rarefaction_head_speed(v, -a) > 0. {
-            if Self::rarefaction_tail_speed(u, -a, p / right.pressure(), eos) < 0. {
-                Self::sample_rarefaction_fan(right, -a, v, n_unit, eos)
+            if Self::rarefaction_tail_speed(u, -a, p / right.pressure(), gamma) < 0. {
+                Self::sample_rarefaction_fan(right, -a, v, n_unit, gamma)
             } else {
                 Self::sample_middle_state(rho, u, p, right, v, n_unit)
             }
@@ -197,9 +197,9 @@ trait RiemannStarSolver: RiemannFluxSolver {
         v: f64,
         a: f64,
         n_unit: DVec3,
-        eos: &EquationOfState,
+        gamma: &AdiabaticIndex,
     ) -> State<Primitive> {
-        if Self::shock_speed(v, a, p / left.pressure(), eos) < 0. {
+        if Self::shock_speed(v, a, p / left.pressure(), gamma) < 0. {
             Self::sample_middle_state(rho, u, p, left, v, n_unit)
         } else {
             *left
@@ -214,9 +214,9 @@ trait RiemannStarSolver: RiemannFluxSolver {
         v: f64,
         a: f64,
         n_unit: DVec3,
-        eos: &EquationOfState,
+        gamma: &AdiabaticIndex,
     ) -> State<Primitive> {
-        if Self::shock_speed(v, -a, p / right.pressure(), eos) > 0. {
+        if Self::shock_speed(v, -a, p / right.pressure(), gamma) > 0. {
             Self::sample_middle_state(rho, u, p, right, v, n_unit)
         } else {
             *right
@@ -233,27 +233,27 @@ trait RiemannStarSolver: RiemannFluxSolver {
         a_l: f64,
         a_r: f64,
         n_unit: DVec3,
-        eos: &EquationOfState,
+        gamma: &AdiabaticIndex,
     ) -> State<Primitive> {
-        let star = self.solve_for_star_state(left, right, v_l, v_r, a_l, a_r, eos);
+        let star = self.solve_for_star_state(left, right, v_l, v_r, a_l, a_r, gamma);
         if star.u < 0. {
             if star.p > right.pressure() {
                 Self::sample_right_shock_wave(
-                    star.rho_r, star.u, star.p, right, v_r, a_r, n_unit, eos,
+                    star.rho_r, star.u, star.p, right, v_r, a_r, n_unit, gamma,
                 )
             } else {
                 Self::sample_right_rarefaction_wave(
-                    star.rho_r, star.u, star.p, right, v_r, a_r, n_unit, eos,
+                    star.rho_r, star.u, star.p, right, v_r, a_r, n_unit, gamma,
                 )
             }
         } else {
             if star.p > left.pressure() {
                 Self::sample_left_shock_wave(
-                    star.rho_l, star.u, star.p, left, v_l, a_l, n_unit, eos,
+                    star.rho_l, star.u, star.p, left, v_l, a_l, n_unit, gamma,
                 )
             } else {
                 Self::sample_left_rarefaction_wave(
-                    star.rho_l, star.u, star.p, left, v_l, a_l, n_unit, eos,
+                    star.rho_l, star.u, star.p, left, v_l, a_l, n_unit, gamma,
                 )
             }
         }
@@ -267,7 +267,7 @@ impl<T: RiemannStarSolver> RiemannFluxSolver for T {
         right: &State<Primitive>,
         interface_velocity: DVec3,
         n_unit: DVec3,
-        eos: &EquationOfState,
+        eos: &GasLaw,
     ) -> State<Conserved> {
         let v_l = left.velocity().dot(n_unit);
         let v_r = right.velocity().dot(n_unit);
@@ -278,14 +278,15 @@ impl<T: RiemannStarSolver> RiemannFluxSolver for T {
         let v_r_m_v_l = v_r - v_l;
 
         // handle vacuum
-        let w_half = if VacuumRiemannSolver::is_vacuum(left, right, a_l, a_r, v_r_m_v_l, eos) {
-            VacuumRiemannSolver.sample(left, right, v_l, v_r, a_l, a_r, n_unit, eos)
-        } else {
-            // Sample the solution.
-            // This corresponds to the flow chart in Fig. 4.14 in Toro
-            self.sample(left, right, v_l, v_r, a_l, a_r, n_unit, eos)
-        };
+        let w_half =
+            if VacuumRiemannSolver::is_vacuum(left, right, a_l, a_r, v_r_m_v_l, eos.gamma()) {
+                VacuumRiemannSolver.sample(left, right, v_l, v_r, a_l, a_r, n_unit, eos.gamma())
+            } else {
+                // Sample the solution.
+                // This corresponds to the flow chart in Fig. 4.14 in Toro
+                self.sample(left, right, v_l, v_r, a_l, a_r, n_unit, eos.gamma())
+            };
 
-        flux_from_half_state(&w_half, interface_velocity, n_unit, eos)
+        flux_from_half_state(&w_half, interface_velocity, n_unit, eos.gamma())
     }
 }

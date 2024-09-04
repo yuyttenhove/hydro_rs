@@ -4,7 +4,7 @@ use common::{
 };
 use float_cmp::{approx_eq, assert_approx_eq};
 use glam::DVec3;
-use hydro_rs::{Engine, EquationOfState, InitialConditions, Space};
+use hydro_rs::{gas_law::GasLaw, Engine, InitialConditions, Space};
 
 mod common;
 
@@ -12,8 +12,8 @@ const SPACE_CONFIG: &'static str = r##"
 boundary: "periodic"
 "##;
 
-fn get_ic_2d(v: DVec3, eos: &EquationOfState) -> InitialConditions {
-    InitialConditions::from_fn(DVec3::ONE, 9, 2, eos, None, |position| {
+fn get_ic_2d(v: DVec3, eos: &GasLaw) -> InitialConditions {
+    InitialConditions::from_fn(DVec3::ONE, 9, 2.try_into().expect("2 <= 3"), true, eos, None, |position| {
         let pressure = if approx_eq!(f64, position.x, 0.5) && approx_eq!(f64, position.y, 0.5) {
             100.
         } else {

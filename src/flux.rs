@@ -1,5 +1,5 @@
 use crate::engine::Engine;
-use crate::equation_of_state::EquationOfState;
+use crate::gas_law::GasLaw;
 use crate::gradients::pairwise_limiter;
 use crate::part::Particle;
 use crate::physical_quantities::{Conserved, State};
@@ -20,7 +20,7 @@ pub fn flux_exchange(
     dt: f64,
     face: &VoronoiFace,
     time_extrapolate_fac: f64,
-    eos: &EquationOfState,
+    eos: &GasLaw,
     engine: &Engine,
 ) -> FluxInfo {
     // We extrapolate from the centroid of the particles.
@@ -73,7 +73,7 @@ pub fn flux_exchange(
 
     // Calculate fluxes
     let fluxes = face.area()
-        * engine.hydro_solver.solve_for_flux(
+        * engine.riemann_solver.solve_for_flux(
             &primitives_left.boost(-v_face),
             &primitives_right.boost(-v_face),
             v_face,
@@ -98,7 +98,7 @@ pub fn flux_exchange_boundary(
     face: &VoronoiFace,
     boundary: Boundary,
     time_extrapolate_fac: f64,
-    eos: &EquationOfState,
+    eos: &GasLaw,
     engine: &Engine,
 ) -> FluxInfo {
     // get reflected particle
@@ -168,7 +168,7 @@ pub fn flux_exchange_boundary(
 
     // Solve for flux
     let fluxes = face.area()
-        * engine.hydro_solver.solve_for_flux(
+        * engine.riemann_solver.solve_for_flux(
             &primitives_dash,
             &primitives_boundary,
             DVec3::ZERO,

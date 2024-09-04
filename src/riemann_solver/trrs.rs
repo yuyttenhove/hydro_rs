@@ -1,3 +1,5 @@
+use crate::gas_law::AdiabaticIndex;
+
 use super::{ExactRiemannSolver, RiemannStarSolver};
 
 /// Two-rarefaction Riemann solver.
@@ -18,7 +20,7 @@ impl RiemannStarSolver for TRRiemannSolver {
         v_r: f64,
         a_l: f64,
         a_r: f64,
-        eos: &crate::EquationOfState,
+        eos: &AdiabaticIndex,
     ) -> super::RiemannStarValues {
         let beta = eos.gm1d2g();
         let gm1d2 = 0.5 * (eos.gamma() - 1.);

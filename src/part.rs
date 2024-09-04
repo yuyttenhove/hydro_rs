@@ -1,12 +1,12 @@
 use glam::DVec3;
 use meshless_voronoi::VoronoiCell;
 
+use crate::gas_law::GasLaw;
 use crate::physical_quantities::{Conserved, Gradients, Primitive, State};
 use crate::time_integration::Iact;
 use crate::utils::{box_reflect, box_wrap, contains};
 use crate::{
     engine::{Engine, ParticleMotion},
-    equation_of_state::EquationOfState,
     flux::FluxInfo,
     timeline::*,
     utils::{HydroDimension, HydroDimension::*},
@@ -48,7 +48,7 @@ impl Particle {
         &mut self,
         cfl_criterion: f64,
         particle_motion: &ParticleMotion,
-        eos: &EquationOfState,
+        eos: &GasLaw,
         dimensionality: HydroDimension,
     ) -> f64 {
         if self.conserved.mass() == 0. {
@@ -115,7 +115,7 @@ impl Particle {
         &mut self,
         dt_drift: f64,
         dt_extrapolate: f64,
-        eos: &EquationOfState,
+        eos: &GasLaw,
         dimensionality: HydroDimension,
     ) {
         for i in 0..dimensionality.into() {
@@ -136,24 +136,20 @@ impl Particle {
         self.volume = (volume).clamp(0.5 * self.volume, 2. * self.volume);
     }
 
-    pub fn time_extrapolations(&self, dt: f64, eos: &EquationOfState) -> State<Primitive> {
-        if let EquationOfState::Ideal { gamma, .. } = eos {
-            let rho = self.primitives.density();
-            if rho > 0. {
-                let rho_inv = 1. / rho;
-                // Use fluid velocity in comoving frame!
-                let p = self.primitives.pressure();
-                let div_v = self.gradients.div_v();
-                -dt * State::<Primitive>::new(
-                    rho * div_v + self.v_rel.dot(self.gradients[0]),
-                    self.v_rel * div_v + rho_inv * self.gradients[4],
-                    gamma * p * div_v + self.v_rel.dot(self.gradients[4]),
-                )
-            } else {
-                State::vacuum()
-            }
+    pub fn time_extrapolations(&self, dt: f64, eos: &GasLaw) -> State<Primitive> {
+        let rho = self.primitives.density();
+        if rho > 0. {
+            let rho_inv = 1. / rho;
+            // Use fluid velocity in comoving frame!
+            let p = self.primitives.pressure();
+            let div_v = self.gradients.div_v();
+            -dt * State::<Primitive>::new(
+                rho * div_v + self.v_rel.dot(self.gradients[0]),
+                self.v_rel * div_v + rho_inv * self.gradients[4],
+                eos.gamma().gamma() * p * div_v + self.v_rel.dot(self.gradients[4]),
+            )
         } else {
-            unimplemented!()
+            State::vacuum()
         }
     }
 
@@ -205,7 +201,7 @@ impl Particle {
         self.gravity_mflux = DVec3::ZERO;
     }
 
-    pub fn first_init(&mut self, eos: &EquationOfState) {
+    pub fn first_init(&mut self, eos: &GasLaw) {
         self.primitives = State::from_conserved(&self.conserved, self.volume(), eos);
         debug_assert!(self.primitives.density().is_finite());
         debug_assert!(self.primitives.velocity().is_finite());
@@ -224,7 +220,7 @@ impl Particle {
         }
     }
 
-    pub fn convert_conserved_to_primitive(&mut self, eos: &EquationOfState) {
+    pub fn convert_conserved_to_primitive(&mut self, eos: &GasLaw) {
         debug_assert!(self.conserved.mass() >= 0., "Encountered negative mass!");
         debug_assert!(
             self.conserved.energy() >= 0.,

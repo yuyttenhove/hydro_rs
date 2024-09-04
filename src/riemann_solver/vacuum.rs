@@ -1,7 +1,7 @@
 use glam::DVec3;
 
 use crate::{
-    equation_of_state::EquationOfState,
+    gas_law::AdiabaticIndex,
     physical_quantities::{Primitive, State},
 };
 
@@ -17,14 +17,14 @@ impl VacuumRiemannSolver {
         a_l: f64,
         a_r: f64,
         v_r_m_v_l: f64,
-        eos: &EquationOfState,
+        gamma: &AdiabaticIndex,
     ) -> bool {
         /* vacuum */
         if left.density() == 0. || right.density() == 0. {
             true
         }
         /* vacuum generation */
-        else if eos.tdgm1() * (a_l + a_r) <= v_r_m_v_l {
+        else if gamma.tdgm1() * (a_l + a_r) <= v_r_m_v_l {
             true
         }
         /* no vacuum */
@@ -43,13 +43,13 @@ impl VacuumRiemannSolver {
         a_l: f64,
         s_l: f64,
         n_unit: DVec3,
-        eos: &EquationOfState,
+        gamma: &AdiabaticIndex,
     ) -> State<Primitive> {
         if 0. <= v_l - a_l {
             *left
         } else if 0. < s_l {
             // v_l - a_l < 0. < s_l
-            Self::sample_rarefaction_fan(left, a_l, v_l, n_unit, eos)
+            Self::sample_rarefaction_fan(left, a_l, v_l, n_unit, gamma)
         } else {
             // s_l <= 0.
             Self::sample_vacuum()
@@ -62,13 +62,13 @@ impl VacuumRiemannSolver {
         a_r: f64,
         s_r: f64,
         n_unit: DVec3,
-        eos: &EquationOfState,
+        gamma: &AdiabaticIndex,
     ) -> State<Primitive> {
         if 0. <= s_r {
             Self::sample_vacuum()
         } else if 0. < v_r + a_r {
             // s_r < 0. < v_r + a_r
-            Self::sample_rarefaction_fan(right, -a_r, v_r, n_unit, eos)
+            Self::sample_rarefaction_fan(right, -a_r, v_r, n_unit, gamma)
         } else {
             // v_r + a_r <= 0.
             *right
@@ -83,18 +83,18 @@ impl VacuumRiemannSolver {
         a_l: f64,
         a_r: f64,
         n_unit: DVec3,
-        eos: &EquationOfState,
+        gamma: &AdiabaticIndex,
     ) -> State<Primitive> {
-        let s_l = v_l + eos.tdgm1() * a_l;
-        let s_r = v_r - eos.tdgm1() * a_r;
+        let s_l = v_l + gamma.tdgm1() * a_l;
+        let s_r = v_r - gamma.tdgm1() * a_r;
         if 0. <= s_l {
-            Self::sample_right_vacuum(left, v_l, a_l, s_l, n_unit, eos)
+            Self::sample_right_vacuum(left, v_l, a_l, s_l, n_unit, gamma)
         } else if 0. < s_r {
             // s_l < 0. < s_r
             Self::sample_vacuum()
         } else {
             // s_r <= 0.
-            Self::sample_left_vacuum(right, v_r, a_r, s_r, n_unit, eos)
+            Self::sample_left_vacuum(right, v_r, a_r, s_r, n_unit, gamma)
         }
     }
 }
@@ -108,7 +108,7 @@ impl RiemannStarSolver for VacuumRiemannSolver {
         _v_r: f64,
         _a_l: f64,
         _a_r: f64,
-        _eos: &EquationOfState,
+        _eos: &AdiabaticIndex,
     ) -> RiemannStarValues {
         panic!("The vacuum riemann solver should sample the half state immediately!");
     }
@@ -122,40 +122,36 @@ impl RiemannStarSolver for VacuumRiemannSolver {
         a_l: f64,
         a_r: f64,
         n_unit: DVec3,
-        eos: &EquationOfState,
+        gamma: &AdiabaticIndex,
     ) -> State<Primitive> {
-        debug_assert!(Self::is_vacuum(left, right, a_l, a_r, v_r - v_l, eos));
+        debug_assert!(Self::is_vacuum(left, right, a_l, a_r, v_r - v_l, gamma));
 
         if right.density() == 0. {
-            let s_l = v_l + eos.tdgm1() * a_l;
-            Self::sample_right_vacuum(left, v_l, a_l, s_l, n_unit, eos)
+            let s_l = v_l + gamma.tdgm1() * a_l;
+            Self::sample_right_vacuum(left, v_l, a_l, s_l, n_unit, gamma)
         } else if left.density() == 0. {
-            let s_r = v_r - eos.tdgm1() * a_r;
-            Self::sample_left_vacuum(right, v_r, a_r, s_r, n_unit, eos)
+            let s_r = v_r - gamma.tdgm1() * a_r;
+            Self::sample_left_vacuum(right, v_r, a_r, s_r, n_unit, gamma)
         } else {
-            Self::sample_vacuum_creation(left, right, v_l, v_r, a_l, a_r, n_unit, eos)
+            Self::sample_vacuum_creation(left, right, v_l, v_r, a_l, a_r, n_unit, gamma)
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::gas_law::{EquationOfState, GasLaw};
     use crate::physical_quantities::Conserved;
 
     use super::super::RiemannFluxSolver;
     use super::*;
     use float_cmp::assert_approx_eq;
-    use yaml_rust::YamlLoader;
-
     const GAMMA: f64 = 5. / 3.;
 
     #[test]
     fn test_vacuum_solver_symmetry() {
         let interface_velocity = 0.15 * DVec3::X;
-        let eos = EquationOfState::new(
-            &YamlLoader::load_from_str(&format!("gamma: {:}", GAMMA)).unwrap()[0],
-        )
-        .unwrap();
+        let eos = GasLaw::new(GAMMA, EquationOfState::Ideal);
         let vel_l = DVec3 {
             x: 0.3,
             y: 0.,
@@ -189,10 +185,7 @@ mod tests {
     #[test]
     fn test_vacuum_solver_half_state() {
         let interface_velocity = 0.15 * DVec3::X;
-        let eos = EquationOfState::new(
-            &YamlLoader::load_from_str(&format!("gamma: {:}", GAMMA)).unwrap()[0],
-        )
-        .unwrap();
+        let eos = GasLaw::new(GAMMA, EquationOfState::Ideal);
         let rho_l = 1.;
         let v_l = 0.3;
         let p_l = 0.5;
@@ -211,7 +204,7 @@ mod tests {
             a_l,
             a_r,
             DVec3::X,
-            &eos,
+            eos.gamma(),
         );
 
         // Reference solution
@@ -228,10 +221,7 @@ mod tests {
 
     #[test]
     fn test_vacuum_solver_invariance() {
-        let eos = EquationOfState::new(
-            &YamlLoader::load_from_str(&format!("gamma: {:}", GAMMA)).unwrap()[0],
-        )
-        .unwrap();
+        let eos = GasLaw::new(GAMMA, EquationOfState::Ideal);
 
         let left = State::<Primitive>::new(1.5, -0.2 * DVec3::X, 1.2);
         let right = State::vacuum();
@@ -246,9 +236,9 @@ mod tests {
             eos.sound_speed(left.pressure(), 1. / left.density()),
             0.,
             DVec3::X,
-            &eos,
+            eos.gamma(),
         );
-        let roe = w_half_lab.pressure() * eos.odgm1()
+        let roe = w_half_lab.pressure() * eos.gamma().odgm1()
             + 0.5 * w_half_lab.density() * w_half_lab.velocity().length_squared();
         let fluxes_lab =
             VacuumRiemannSolver.solve_for_flux(&left, &right, DVec3::ZERO, DVec3::X, &eos)

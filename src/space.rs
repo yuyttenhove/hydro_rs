@@ -12,9 +12,9 @@ use yaml_rust::Yaml;
 use crate::{
     cell::Cell,
     engine::Engine,
-    equation_of_state::EquationOfState,
     errors::ConfigError,
     flux::FluxInfo,
+    gas_law::GasLaw,
     gradients::GradientData,
     initial_conditions::InitialConditions,
     kernels::{Kernel, OneOver},
@@ -66,7 +66,7 @@ pub struct Space {
     cell_dim: [usize; 3],
     voronoi_faces: Vec<VoronoiFace>,
     voronoi_cell_face_connections: Vec<usize>,
-    eos: EquationOfState,
+    eos: GasLaw,
     dimensionality: HydroDimension,
 }
 
@@ -78,7 +78,7 @@ impl Space {
     pub fn from_ic(
         initial_conditions: InitialConditions,
         space_cfg: &Yaml,
-        eos: EquationOfState,
+        eos: GasLaw,
     ) -> Result<Self, ConfigError> {
         // read config
         print!("Initializing Space...");
@@ -113,6 +113,9 @@ impl Space {
 
         // Initialize the cells
         let periodic = boundary == "periodic";
+        if periodic != initial_conditions.periodic {
+            eprintln!("Warning! Running periodic initial conditions with {:} boundaries", boundary);
+        }
         let mut cells = vec![];
         for i in 0..cdim[0] {
             for j in 0..cdim[1] {
@@ -1284,8 +1287,9 @@ mod test {
     use glam::DVec3;
     use yaml_rust::YamlLoader;
 
-    use crate::equation_of_state::EquationOfState;
+    use crate::gas_law::{EquationOfState, GasLaw};
     use crate::initial_conditions::InitialConditions;
+    use crate::utils::HydroDimension;
     use crate::Engine;
 
     use super::Space;
@@ -1299,6 +1303,7 @@ max_top_level_cells: 3
 type: "config"
 num_part: 4
 box_size: [1., 1., 1.]
+dimensionality: 1
 particles:
     x: [0.25, 0.65, 0.75, 0.85]
     mass: [1., 1.125, 1.125, 1.125]
@@ -1307,13 +1312,10 @@ particles:
 
     #[test]
     fn test_init_1d() {
-        let eos = EquationOfState::new(
-            &YamlLoader::load_from_str(&format!("gamma: {:}", GAMMA)).unwrap()[0],
-        )
-        .unwrap();
+        let eos = GasLaw::new(GAMMA, EquationOfState::Ideal);
         let space_config = &YamlLoader::load_from_str(CFG_STR).unwrap()[0];
         let ic_config = &YamlLoader::load_from_str(IC_CFG).unwrap()[0];
-        let ics = InitialConditions::new(ic_config, &eos).unwrap();
+        let ics = InitialConditions::init(ic_config, &eos).unwrap();
         let space = Space::from_ic(ics, space_config, eos).expect("Config should be valid!");
         assert_eq!(space.parts.len(), 4);
         // Check volumes
@@ -1339,15 +1341,19 @@ particles:
     fn test_init_2d() {
         let box_size = DVec3::new(2., 2., 1.);
         let num_part = 256;
-        let dimensionality = 2;
-        let eos = EquationOfState::new(
-            &YamlLoader::load_from_str(&format!("gamma: {:}", GAMMA)).unwrap()[0],
-        )
-        .unwrap();
+        let dimensionality = HydroDimension::HydroDimension2D;
+        let eos = GasLaw::new(GAMMA, EquationOfState::Ideal);
 
         let mapper = |_| (1., DVec3::ZERO, 1.);
-        let ics =
-            InitialConditions::from_fn(box_size, num_part, dimensionality, &eos, Some(0.1), mapper);
+        let ics = InitialConditions::from_fn(
+            box_size,
+            num_part,
+            dimensionality,
+            false,
+            &eos,
+            Some(0.1),
+            mapper,
+        );
 
         let space_config = &YamlLoader::load_from_str(CFG_STR).unwrap()[0];
         let space = Space::from_ic(ics, space_config, eos).expect("Config should be valid");
@@ -1375,15 +1381,19 @@ particles:
     fn test_init_3d() {
         let box_size = DVec3::new(2., 2., 2.);
         let num_part = 512;
-        let dimensionality = 3;
-        let eos = EquationOfState::new(
-            &YamlLoader::load_from_str(&format!("gamma: {:}", GAMMA)).unwrap()[0],
-        )
-        .unwrap();
+        let dimensionality = HydroDimension::HydroDimension3D;
+        let eos = GasLaw::new(GAMMA, EquationOfState::Ideal);
 
         let mapper = |_| (1., DVec3::ZERO, 1.);
-        let ics =
-            InitialConditions::from_fn(box_size, num_part, dimensionality, &eos, Some(0.1), mapper);
+        let ics = InitialConditions::from_fn(
+            box_size,
+            num_part,
+            dimensionality,
+            false,
+            &eos,
+            Some(0.1),
+            mapper,
+        );
 
         let space_config = &YamlLoader::load_from_str(CFG_STR).unwrap()[0];
         let space = Space::from_ic(ics, space_config, eos).expect("Config should be valid");
@@ -1411,17 +1421,21 @@ particles:
     fn test_back_extrapolate_volume() {
         let box_size = DVec3::splat(1.);
         let num_part = 16;
-        let dimensionality = 2;
+        let dimensionality = HydroDimension::HydroDimension2D;
 
-        let eos = EquationOfState::new(
-            &YamlLoader::load_from_str(&format!("gamma: {:}", GAMMA)).unwrap()[0],
-        )
-        .unwrap();
+        let eos = GasLaw::new(GAMMA, EquationOfState::Ideal);
 
         let xvel = 0.5;
         let mapper = |_| (1., xvel * DVec3::X, 1.);
-        let ics =
-            InitialConditions::from_fn(box_size, num_part, dimensionality, &eos, Some(0.5), mapper);
+        let ics = InitialConditions::from_fn(
+            box_size,
+            num_part,
+            dimensionality,
+            false,
+            &eos,
+            Some(0.5),
+            mapper,
+        );
 
         let space_config = &YamlLoader::load_from_str(
             r#"
@@ -1467,7 +1481,7 @@ runner: "OptimalOrder"
         .unwrap()[0];
         let hydro_solver_cfg = &YamlLoader::load_from_str(
             r##"
-solver: "Exact"
+kind: "Exact"
 "##,
         )
         .unwrap()[0];

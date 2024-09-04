@@ -50,8 +50,8 @@ impl ParticleMotion {
 
 pub struct Engine {
     runner: Runner,
-    pub hydro_solver: Box<dyn RiemannFluxSolver>,
-    pub gravity_solver: Option<GravitySolver>,
+    pub(crate) riemann_solver: Box<dyn RiemannFluxSolver>,
+    pub(crate) gravity_solver: Option<GravitySolver>,
     t_end: f64,
     t_current: f64,
     ti_old: IntegerTime,
@@ -81,7 +81,7 @@ impl Engine {
         engine_cfg: &Yaml,
         time_integration_cfg: &Yaml,
         snapshots_cfg: &Yaml,
-        hydro_solver_cfg: &Yaml,
+        riemann_solver_cfg: &Yaml,
         gravity_solver_cfg: &Yaml,
     ) -> Result<Self, ConfigError> {
         // Read config
@@ -136,7 +136,7 @@ impl Engine {
 
         // Setup members
         let runner = Runner::new(runner_kind)?;
-        let hydro_solver = get_solver(hydro_solver_cfg)?;
+        let riemann_solver = get_solver(riemann_solver_cfg)?;
         let gravity_solver = GravitySolver::init(gravity_solver_cfg)?;
         let particle_motion = ParticleMotion::new(particle_motion)?;
         let time_base = t_end / MAX_NR_TIMESTEPS as f64;
@@ -154,7 +154,7 @@ impl Engine {
         println!("✅");
         Ok(Self {
             runner,
-            hydro_solver,
+            riemann_solver,
             gravity_solver,
             t_end,
             t_current: 0.0,
@@ -286,7 +286,7 @@ impl Engine {
         self.sync_points.push_back(SyncPoint::new(ti, kind));
     }
 
-    pub fn update_ti_next(&mut self, ti_next: IntegerTime, space: &Space) {
+    fn update_ti_next(&mut self, ti_next: IntegerTime, space: &Space) {
         debug_assert_eq!(
             self.ti_current, self.ti_next,
             "Updating ti_next while not at the end of a timestep!"
@@ -297,55 +297,55 @@ impl Engine {
         self.status(space);
     }
 
-    pub fn part_is_active(&self, part: &Particle, iact: Iact) -> bool {
+    pub(crate) fn part_is_active(&self, part: &Particle, iact: Iact) -> bool {
         self.runner.part_is_active(part, iact, self)
     }
 
-    pub fn ti_current(&self) -> IntegerTime {
+    pub(crate) fn ti_current(&self) -> IntegerTime {
         self.ti_current
     }
 
-    pub fn ti_old(&self) -> IntegerTime {
+    pub(crate) fn ti_old(&self) -> IntegerTime {
         self.ti_old
     }
 
-    pub fn runner(&self) -> &Runner {
+    pub(crate) fn runner(&self) -> &Runner {
         &self.runner
     }
 
-    pub fn time_base_inv(&self) -> f64 {
+    pub(crate) fn time_base_inv(&self) -> f64 {
         self.time_base_inv
     }
 
-    pub fn time_base(&self) -> f64 {
+    pub(crate) fn time_base(&self) -> f64 {
         self.time_base
     }
 
-    pub fn dt(&self, dti: IntegerTime) -> f64 {
+    pub(crate) fn dt(&self, dti: IntegerTime) -> f64 {
         make_timestep(dti, self.time_base)
     }
 
-    pub fn cfl_criterion(&self) -> f64 {
+    pub(crate) fn cfl_criterion(&self) -> f64 {
         self.cfl_criterion
     }
 
-    pub fn dt_min(&self) -> f64 {
+    pub(crate) fn dt_min(&self) -> f64 {
         self.dt_min
     }
 
-    pub fn dt_max(&self) -> f64 {
+    pub(crate) fn dt_max(&self) -> f64 {
         self.dt_max
     }
 
-    pub fn with_gravity(&self) -> bool {
+    pub(crate) fn with_gravity(&self) -> bool {
         self.gravity_solver.is_some()
     }
 
-    pub fn save_faces(&self) -> bool {
+    pub(crate) fn save_faces(&self) -> bool {
         self.save_faces
     }
 
-    pub fn sync_all(&self) -> bool {
+    pub(crate) fn sync_all(&self) -> bool {
         self.sync_all
     }
 }

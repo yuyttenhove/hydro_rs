@@ -1,6 +1,6 @@
 use crate::{
+    gas_law::AdiabaticIndex,
     physical_quantities::{Primitive, State},
-    EquationOfState,
 };
 
 use super::{ExactRiemannSolver, PVRiemannSolver, RiemannStarSolver};
@@ -15,7 +15,7 @@ use super::{ExactRiemannSolver, PVRiemannSolver, RiemannStarSolver};
 pub struct TSRiemannSolver;
 
 impl TSRiemannSolver {
-    fn g(p: f64, rho_state: f64, p_state: f64, eos: &EquationOfState) -> f64 {
+    fn g(p: f64, rho_state: f64, p_state: f64, eos: &AdiabaticIndex) -> f64 {
         let a = eos.tdgp1() / rho_state;
         let b = eos.gm1dgp1() * p_state;
         f64::sqrt(a / (p + b))
@@ -31,7 +31,7 @@ impl RiemannStarSolver for TSRiemannSolver {
         v_r: f64,
         a_l: f64,
         a_r: f64,
-        eos: &EquationOfState,
+        eos: &AdiabaticIndex,
     ) -> super::RiemannStarValues {
         let p_guess = PVRiemannSolver::p_star(
             PVRiemannSolver::rho_bar(left.density(), right.density()),

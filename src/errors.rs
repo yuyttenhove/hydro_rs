@@ -14,6 +14,7 @@ pub enum ConfigError {
     UnknownGravity(String),
     UnknownParticleMotion(String),
     UnknownBoundaryConditions(String),
+    UnknownEOS(String),
     IllegalBoxSize(String),
     InvalidArrayFormat(Yaml),
     InvalidArrayLength(usize, usize),
@@ -42,6 +43,9 @@ impl Display for ConfigError {
             }
             ConfigError::UnknownBoundaryConditions(name) => {
                 write!(f, "Unknown type of boundary condition configured: {}", name)
+            }
+            ConfigError::UnknownEOS(name) => {
+                write!(f, "Unknown type of equation of stated configured: {}", name)
             }
             ConfigError::IllegalBoxSize(name) => {
                 write!(f, "Illegal box_size format: {}!", name)

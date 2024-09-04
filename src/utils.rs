@@ -9,6 +9,12 @@ pub enum HydroDimension {
     HydroDimension3D = 3,
 }
 
+impl Default for HydroDimension {
+    fn default() -> Self {
+        HydroDimension::HydroDimension3D
+    }
+}
+
 impl From<Dimensionality> for HydroDimension {
     fn from(d: Dimensionality) -> Self {
         match d {

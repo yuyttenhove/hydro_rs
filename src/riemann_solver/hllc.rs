@@ -1,9 +1,6 @@
 use glam::DVec3;
 
-use crate::{
-    equation_of_state::EquationOfState,
-    physical_quantities::{Conserved, Primitive},
-};
+use crate::physical_quantities::{Conserved, Primitive};
 
 use super::*;
 
@@ -18,7 +15,7 @@ impl RiemannFluxSolver for HLLCRiemannSolver {
         right: &State<Primitive>,
         interface_velocity: DVec3,
         n_unit: DVec3,
-        eos: &EquationOfState,
+        eos: &GasLaw,
     ) -> State<Conserved> {
         // Inverse densities
         let rho_l_inv = 1. / left.density();
@@ -32,9 +29,10 @@ impl RiemannFluxSolver for HLLCRiemannSolver {
         let v_r_m_v_l = v_r - v_l;
 
         // handle vacuum
-        if VacuumRiemannSolver::is_vacuum(left, right, a_l, a_r, v_r_m_v_l, eos) {
-            let w_half = VacuumRiemannSolver.sample(left, right, v_l, v_r, a_l, a_r, n_unit, eos);
-            return flux_from_half_state(&w_half, interface_velocity, n_unit, eos);
+        if VacuumRiemannSolver::is_vacuum(left, right, a_l, a_r, v_r_m_v_l, eos.gamma()) {
+            let w_half =
+                VacuumRiemannSolver.sample(left, right, v_l, v_r, a_l, a_r, n_unit, eos.gamma());
+            return flux_from_half_state(&w_half, interface_velocity, n_unit, eos.gamma());
         }
 
         // STEP 1: Pressure estimate
@@ -45,11 +43,11 @@ impl RiemannFluxSolver for HLLCRiemannSolver {
         // STEP 2: wave speed estimates
         let mut q_l = 1.;
         if p_star > left.pressure() && left.pressure() > 0. {
-            q_l = (1. + 0.5 * eos.gp1dg() * (p_star / left.pressure() - 1.)).sqrt();
+            q_l = (1. + 0.5 * eos.gamma().gp1dg() * (p_star / left.pressure() - 1.)).sqrt();
         }
         let mut q_r = 1.;
         if p_star > right.pressure() && right.pressure() > 0. {
-            q_r = (1. + 0.5 * eos.gp1dg() * (p_star / right.pressure() - 1.)).sqrt();
+            q_r = (1. + 0.5 * eos.gamma().gp1dg() * (p_star / right.pressure() - 1.)).sqrt();
         }
 
         let s_l_m_v_l = -a_l * q_l;
@@ -127,15 +125,15 @@ impl HLLCRiemannSolver {
 
 #[cfg(test)]
 mod tests {
+    use crate::gas_law::EquationOfState;
+
     use super::*;
     use float_cmp::assert_approx_eq;
-    use yaml_rust::YamlLoader;
 
     const GAMMA: f64 = 5. / 3.;
 
-    fn get_eos() -> EquationOfState {
-        EquationOfState::new(&YamlLoader::load_from_str(&format!("gamma: {:}", GAMMA)).unwrap()[0])
-            .unwrap()
+    fn get_eos() -> GasLaw {
+        GasLaw::new(GAMMA, EquationOfState::Ideal)
     }
 
     #[test]

@@ -1,4 +1,7 @@
-use crate::physical_quantities::{Primitive, State};
+use crate::{
+    gas_law::AdiabaticIndex,
+    physical_quantities::{Primitive, State},
+};
 
 use super::{ExactRiemannSolver, PVRiemannSolver, RiemannStarSolver};
 
@@ -21,7 +24,7 @@ impl RiemannStarSolver for AIRiemannSolver {
         v_r: f64,
         a_l: f64,
         a_r: f64,
-        eos: &crate::equation_of_state::EquationOfState,
+        eos: &AdiabaticIndex,
     ) -> super::RiemannStarValues {
         let star = PVRiemannSolver.solve_for_star_state(left, right, v_l, v_r, a_l, a_r, eos);
         let p_max = left.pressure().max(right.pressure());
