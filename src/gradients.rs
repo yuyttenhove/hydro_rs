@@ -45,6 +45,12 @@ impl<T> GradientData<T> {
         for i in 0..5 {
             self.gradients[i] = matrix_wls.mul_vec3(self.gradients[i]);
         }
+        if !self.gradients.is_finite() {
+            eprintln!(
+                "Gradient calculation failed! Falling back to first order for this particle..."
+            );
+            self.gradients = Gradients::zeros();
+        }
         self.gradients
     }
 }

@@ -815,7 +815,6 @@ impl Space {
                     );
                 }
                 let mut gradients = gradient_data.finalize();
-                debug_assert!(gradients.is_finite());
 
                 // Loop over the nearest neighbours of this particle until we reach the safety radius
                 // to limit the gradients
