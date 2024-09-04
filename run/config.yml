@@ -3,7 +3,7 @@ time_integration:
   dt_max: 0.05
   t_end: 0.2
   cfl_criterion: 0.3
-  sync_timesteps: true
+  sync_timesteps: false
 
 snapshots:
   t_between_snaps: 0.02

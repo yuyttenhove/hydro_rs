@@ -141,6 +141,7 @@ impl Runner {
                 // Todo: flux extrapolate (godunov) to half timestep? Or keep gradient extrapolation?
                 // Todo: Recompute spatial gradients at half timestep in back extrapolated coordinates?
                 // Todo: Do flux calculation in back extrapolated coordinates as well
+                // space.convert_conserved_to_primitive(engine);
                 space.gradient_estimate(engine);
                 space.flux_exchange(engine);
                 space.apply_flux(engine);
