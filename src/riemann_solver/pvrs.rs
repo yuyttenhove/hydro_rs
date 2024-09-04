@@ -4,6 +4,24 @@ use super::{RiemannStarSolver, RiemannStarValues};
 
 pub struct PVRiemannSolver;
 
+impl PVRiemannSolver {
+    pub(super) fn rho_bar(rho_l: f64, rho_r: f64) -> f64 {
+        0.5 * (rho_l + rho_r)
+    }
+
+    pub(super) fn p_bar(p_l: f64, p_r: f64) -> f64 {
+        0.5 * (p_l + p_r)
+    }
+
+    pub(super) fn a_bar(a_l: f64, a_r: f64) -> f64 {
+        0.5 * (a_l + a_r)
+    }
+
+    pub(super) fn p_star(rho_bar: f64, p_bar: f64, a_bar: f64, v_l: f64, v_r: f64) -> f64 {
+        p_bar + 0.5 * (v_l - v_r) * rho_bar * a_bar
+    }
+}
+
 impl RiemannStarSolver for PVRiemannSolver {
     fn solve_for_star_state(
         &self,
@@ -15,10 +33,11 @@ impl RiemannStarSolver for PVRiemannSolver {
         a_r: f64,
         _eos: &crate::equation_of_state::EquationOfState,
     ) -> RiemannStarValues {
-        let rho_bar = 0.5 * (left.density() + right.density());
-        let a_bar = 0.5 * (a_l + a_r);
+        let rho_bar = Self::rho_bar(left.density(), right.density());
+        let p_bar = Self::p_bar(left.pressure(), right.pressure());
+        let a_bar = Self::a_bar(a_l, a_r);
 
-        let p = 0.5 * ((left.pressure() + right.pressure()) + (v_l - v_r) * rho_bar * a_bar);
+        let p = Self::p_star(rho_bar, p_bar, a_bar, v_l, v_r);
         let u = 0.5 * ((v_l + v_r) + (left.pressure() - right.pressure()) / (rho_bar * a_bar));
         let rho_l = left.density() + (v_l - u) * rho_bar / a_bar;
         let rho_r = right.density() + (u - v_r) * rho_bar / a_bar;

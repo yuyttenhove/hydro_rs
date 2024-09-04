@@ -2,6 +2,8 @@ mod airs;
 mod exact;
 mod hllc;
 mod pvrs;
+mod tsrs;
+mod trrs;
 mod vacuum;
 
 use glam::DVec3;
@@ -17,6 +19,8 @@ pub use airs::AIRiemannSolver;
 pub use exact::ExactRiemannSolver;
 pub use hllc::HLLCRiemannSolver;
 pub use pvrs::PVRiemannSolver;
+pub use tsrs::TSRiemannSolver;
+pub use trrs::TRRiemannSolver;
 
 use self::vacuum::VacuumRiemannSolver;
 
@@ -36,6 +40,8 @@ pub fn get_solver(cfg: &Yaml) -> Result<Box<dyn RiemannFluxSolver>, ConfigError>
                 ))?;
             Ok(Box::new(AIRiemannSolver::new(threshold)))
         }
+        "TSRS" => Ok(Box::new(TSRiemannSolver)),
+        "TRRS" => Ok(Box::new(TRRiemannSolver)),
         _ => Err(ConfigError::UnknownRiemannSolver(kind.to_string())),
     }
 }

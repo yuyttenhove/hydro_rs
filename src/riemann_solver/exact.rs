@@ -210,6 +210,32 @@ impl ExactRiemannSolver {
             Self::rarefaction_middle_density(pdps, state, eos)
         }
     }
+
+    pub(super) fn star_state_from_pstar(
+        pstar: f64,
+        left: &State<Primitive>,
+        right: &State<Primitive>,
+        v_l: f64,
+        v_r: f64,
+        a_l: f64,
+        a_r: f64,
+        eos: &EquationOfState,
+    ) -> RiemannStarValues {
+        // calculate the velocity in the intermediate state
+        let u = 0.5 * (v_l + v_r)
+            + 0.5 * (Self::fb(pstar, right, a_r, eos) - Self::fb(pstar, left, a_l, eos));
+
+        // calculate the left and right intermediate densities
+        let rho_l = Self::middle_density(pstar, left, eos);
+        let rho_r = Self::middle_density(pstar, right, eos);
+
+        RiemannStarValues {
+            rho_l,
+            rho_r,
+            u,
+            p: pstar,
+        }
+    }
 }
 
 impl RiemannStarSolver for ExactRiemannSolver {
@@ -260,15 +286,7 @@ impl RiemannStarSolver for ExactRiemannSolver {
             p = p_guess;
         }
 
-        // calculate the velocity in the intermediate state
-        let u =
-            0.5 * (v_l + v_r) + 0.5 * (Self::fb(p, right, a_r, eos) - Self::fb(p, left, a_l, eos));
-
-        // calculate the left and right intermediate densities
-        let rho_l = Self::middle_density(p, left, eos);
-        let rho_r = Self::middle_density(p, right, eos);
-
-        RiemannStarValues { rho_l, rho_r, u, p }
+        Self::star_state_from_pstar(p, left, right, v_l, v_r, a_l, a_r, eos)
     }
 }
 
