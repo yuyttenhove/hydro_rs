@@ -1,19 +1,21 @@
-use crate::{physical_quantities::{Primitive, State}, EquationOfState};
+use crate::{
+    physical_quantities::{Primitive, State},
+    EquationOfState,
+};
 
 use super::{ExactRiemannSolver, PVRiemannSolver, RiemannStarSolver};
 
-
 /// Two-shock Riemann solver.
-/// 
-/// This Riemann solver computes an estimate for the pressure in the star region 
+///
+/// This Riemann solver computes an estimate for the pressure in the star region
 /// by assuming both the left and right waves are shock waves.
-/// 
-/// The relations of the exact Riemann solver are then used to compute the other 
+///
+/// The relations of the exact Riemann solver are then used to compute the other
 /// quantities in the star region.
 pub struct TSRiemannSolver;
 
 impl TSRiemannSolver {
-    fn g(p: f64, rho_state: f64, p_state: f64,  eos: &EquationOfState) -> f64 {
+    fn g(p: f64, rho_state: f64, p_state: f64, eos: &EquationOfState) -> f64 {
         let a = eos.tdgp1() / rho_state;
         let b = eos.gm1dgp1() * p_state;
         f64::sqrt(a / (p + b))
@@ -31,8 +33,13 @@ impl RiemannStarSolver for TSRiemannSolver {
         a_r: f64,
         eos: &EquationOfState,
     ) -> super::RiemannStarValues {
-
-        let p_guess = PVRiemannSolver::p_star(PVRiemannSolver::rho_bar(left.density(), right.density()), PVRiemannSolver::p_bar(left.pressure(), right.pressure()), PVRiemannSolver::a_bar(a_l, a_r), v_l, v_r);
+        let p_guess = PVRiemannSolver::p_star(
+            PVRiemannSolver::rho_bar(left.density(), right.density()),
+            PVRiemannSolver::p_bar(left.pressure(), right.pressure()),
+            PVRiemannSolver::a_bar(a_l, a_r),
+            v_l,
+            v_r,
+        );
 
         let g_l = Self::g(p_guess, left.density(), left.pressure(), eos);
         let g_r = Self::g(p_guess, right.density(), right.pressure(), eos);

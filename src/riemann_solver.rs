@@ -2,8 +2,8 @@ mod airs;
 mod exact;
 mod hllc;
 mod pvrs;
-mod tsrs;
 mod trrs;
+mod tsrs;
 mod vacuum;
 
 use glam::DVec3;
@@ -19,8 +19,8 @@ pub use airs::AIRiemannSolver;
 pub use exact::ExactRiemannSolver;
 pub use hllc::HLLCRiemannSolver;
 pub use pvrs::PVRiemannSolver;
-pub use tsrs::TSRiemannSolver;
 pub use trrs::TRRiemannSolver;
+pub use tsrs::TSRiemannSolver;
 
 use self::vacuum::VacuumRiemannSolver;
 

@@ -1,12 +1,11 @@
 use super::{ExactRiemannSolver, RiemannStarSolver};
 
-
 /// Two-rarefaction Riemann solver.
-/// 
-/// This Riemann solver computes an estimate for the pressure in the star region 
+///
+/// This Riemann solver computes an estimate for the pressure in the star region
 /// by assuming both the left and right waves are rarefaction waves.
-/// 
-/// The relations of the exact Riemann solver are then used to compute the other 
+///
+/// The relations of the exact Riemann solver are then used to compute the other
 /// quantities in the star region.
 pub struct TRRiemannSolver;
 
