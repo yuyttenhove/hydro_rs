@@ -22,4 +22,4 @@ if __name__ == "__main__":
     u = internal_energy_ideal_gas(P, rho, gamma) * np.ones_like(m)
 
     fname = Path(__file__).parent.parent / "run/ICs/constant_2D.hdf5"
-    write_file(fname, box_size, num_part, coords, m, v, u, dimension)
+    write_file(fname, box_size, num_part, dimension, coords, m, v, u)

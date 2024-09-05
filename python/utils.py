@@ -20,18 +20,27 @@ def read_particle_data(fname: str) -> Tuple[pd.DataFrame, float]:
         try:
             centroids = data["PartType0/Centroids"][:]
         except KeyError:
-            centroids = np.zeros_like(coordinates)
+            print("Warning, no centroids found, substituting with coordinates!")
+            centroids = np.array(coordinates)
         velocities = data["PartType0/Velocities"][:]
         densities = data["PartType0/Densities"][:]
         pressures = data["PartType0/Pressures"][:]
         try:
             internal_energy = data["PartType0/InternalEnergy"][:]
         except KeyError:
-            internal_energy = np.zeros_like(pressures)
+            try:
+                internal_energy = data["PartType0/InternalEnergies"][:]
+            except KeyError:
+                print("Warning! No internal energies found! Setting them to zero...")
+                internal_energy = np.zeros_like(pressures)
         try:
             entropy = data["PartType0/Entropy"][:]
         except KeyError:
-            entropy = np.zeros_like(pressures)
+            try:
+                entropy = data["PartType0/Entropies"][:]
+            except KeyError:
+                print("Warning! No internal energies found! Setting them to zero...")
+                entropy = np.zeros_like(pressures)
         try:
             timestep = data["PartType0/Timestep"][:]
         except KeyError:
@@ -160,7 +169,7 @@ def plot_quantity(ax: plt.Axes, xdata: np.ndarray, ydata: np.ndarray, xlim: Tupl
             ax.semilogx()
 
 
-def write_file(fname, box_size, num_part, coords, m, v, u, dimension):
+def write_file(fname, box_size, num_part, dimension, coords, m, v, u, smoothing_length=None):
     with h5py.File(fname, 'w') as file:
         # Header
         grp = file.create_group("/Header")
@@ -191,6 +200,8 @@ def write_file(fname, box_size, num_part, coords, m, v, u, dimension):
         grp.create_dataset('InternalEnergy', data=u, dtype='f')
         ids = np.arange(len(m)) + 1
         grp.create_dataset('ParticleIDs', data=ids, dtype='L')
+        if smoothing_length is not None:
+            grp.create_dataset('SmoothingLength', data=smoothing_length, dtype='d')
 
 
 def get_plane(width, height, nx, ny, pert=0):

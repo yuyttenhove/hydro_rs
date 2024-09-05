@@ -172,7 +172,8 @@ if __name__ == "__main__":
         entries = {
             # f"yee_{res}_default": dict(title="Default", half_drift=False),
             # f"yee_{res}_optimal": dict(title="Optimal", half_drift=False),
-            f"yee_{res}_pakmor": dict(title="Pakmor", half_drift=False),
+            # f"yee_{res}_pakmor": dict(title="Pakmor", half_drift=False),
+            f"yee_{res}_swift": dict(title="SWIFT", half_drift=False),
             # f"yee_{res}_pakmor_extrapolate": dict(title="PakmorExtrapolate", half_drift=False),
             f"yee_{res}_pakmor": dict(title="Volume Back", half_drift=False),
             # f"yee_{res}_optimal_half": dict(title="Optimal, half drift", half_drift=True),

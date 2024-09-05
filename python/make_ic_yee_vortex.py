@@ -47,8 +47,9 @@ def gen_ic_from_coords(generators: np.ndarray, centroids: np.ndarray, volumes: n
     generators = np.concatenate([generators, np.zeros((num_part, 1))], axis=1)
     velocity = np.concatenate([velocity, np.zeros((num_part, 1))], axis=1)
     mass = volumes * density
-    write_file(save_name, box_size, num_part, generators,
-               mass, velocity, internal_energy, 2)
+    smoothing_lengths = np.sqrt(volumes / math.pi)
+    write_file(save_name, box_size, num_part, 2, generators,
+               mass, velocity, internal_energy, smoothing_length=smoothing_lengths)
 
 
 def gen_ic(box_size: float, n_1D: int, save_name: Path):
@@ -72,7 +73,7 @@ def gen_ic_from_file(fname: Path, save_name: Path):
 
 def main():
     root = get_root()
-    n = 400
+    n = 10
     # gen_ic(10, n, root / f"run/ICs/yee_{n}.hdf5")
     gen_ic_from_file(root / f"run/output/yee_{n}_0000.hdf5", root / f"run/ICs/yee_{n}.hdf5")
 

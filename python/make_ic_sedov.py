@@ -24,4 +24,4 @@ if __name__ == "__main__":
     u[(nx // 2) * ny + ny // 2] *= 100
 
     fname = Path(__file__).parent.parent / "run/ICs/sedov_2D.hdf5"
-    write_file(fname, box_size, num_part, coords, m, v, u, dimension)
+    write_file(fname, box_size, num_part, dimension, coords, m, v, u)
