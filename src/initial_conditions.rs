@@ -635,6 +635,12 @@ impl InitialConditions {
             .new_dataset_builder()
             .with_data(ids)
             .create("ParticleIDs")?;
+        if let Some(volumes) = self.volumes.as_ref() {
+            part_data
+                .new_dataset_builder()
+                .with_data(volumes)
+                .create("Volumes")?;
+        }
 
         Ok(())
     }

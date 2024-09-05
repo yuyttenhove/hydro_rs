@@ -1159,7 +1159,7 @@ impl Space {
             self.parts
                 .iter()
                 .map(|part| part.conserved.momentum().to_array()),
-            "Momentum"
+            "Momenta"
         )?;
         create_dataset!(
             part_data,
@@ -1176,12 +1176,12 @@ impl Space {
         create_dataset!(
             part_data,
             self.parts.iter().map(|part| part.conserved.energy()),
-            "Energy"
+            "TotalEnergies"
         )?;
         create_dataset!(
             part_data,
             self.parts.iter().map(|part| part.internal_energy()),
-            "InternalEnergy"
+            "InternalEnergies"
         )?;
         create_dataset!(
             part_data,
@@ -1191,7 +1191,7 @@ impl Space {
                     part.internal_energy(),
                     part.primitives.density()
                 )),
-            "Entropy"
+            "Entropies"
         )?;
         create_dataset!(
             part_data,
@@ -1211,7 +1211,7 @@ impl Space {
         create_dataset!(
             part_data,
             self.parts.iter().map(|part| part.a_grav.to_array()),
-            "GravitationalAcceleration"
+            "GravitationalAccelerations"
         )?;
         create_dataset!(part_data, self.parts.iter().map(|part| part.dt), "Timestep")?;
 
