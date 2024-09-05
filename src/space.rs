@@ -114,7 +114,10 @@ impl Space {
         // Initialize the cells
         let periodic = boundary == "periodic";
         if periodic != initial_conditions.periodic {
-            eprintln!("Warning! Running periodic initial conditions with {:} boundaries", boundary);
+            eprintln!(
+                "Warning! Running periodic initial conditions with {:} boundaries",
+                boundary
+            );
         }
         let mut cells = vec![];
         for i in 0..cdim[0] {

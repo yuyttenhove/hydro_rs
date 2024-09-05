@@ -13,14 +13,22 @@ boundary: "periodic"
 "##;
 
 fn get_ic_2d(v: DVec3, eos: &GasLaw) -> InitialConditions {
-    InitialConditions::from_fn(DVec3::ONE, 9, 2.try_into().expect("2 <= 3"), true, eos, None, |position| {
-        let pressure = if approx_eq!(f64, position.x, 0.5) && approx_eq!(f64, position.y, 0.5) {
-            100.
-        } else {
-            1.
-        };
-        (1., v, pressure)
-    })
+    InitialConditions::from_fn(
+        DVec3::ONE,
+        9,
+        2.try_into().expect("2 <= 3"),
+        true,
+        eos,
+        None,
+        |position| {
+            let pressure = if approx_eq!(f64, position.x, 0.5) && approx_eq!(f64, position.y, 0.5) {
+                100.
+            } else {
+                1.
+            };
+            (1., v, pressure)
+        },
+    )
 }
 
 macro_rules! assert_approx_eq_dvec3 {

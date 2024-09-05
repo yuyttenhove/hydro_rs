@@ -25,9 +25,9 @@ pub use tsrs::TSRiemannSolver;
 use self::vacuum::VacuumRiemannSolver;
 
 pub fn get_solver(cfg: &Yaml) -> Result<Box<dyn RiemannFluxSolver>, ConfigError> {
-    let kind = cfg["kind"]
-        .as_str()
-        .ok_or(ConfigError::MissingParameter("riemann_solver:kind".to_string()))?;
+    let kind = cfg["kind"].as_str().ok_or(ConfigError::MissingParameter(
+        "riemann_solver:kind".to_string(),
+    ))?;
     match kind {
         "HLLC" => Ok(Box::new(HLLCRiemannSolver)),
         "Exact" => Ok(Box::new(ExactRiemannSolver)),

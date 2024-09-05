@@ -310,7 +310,10 @@ mod test {
     use glam::DVec3;
 
     use super::{Conserved, Primitive};
-    use crate::{gas_law::{EquationOfState, GasLaw}, physical_quantities::State};
+    use crate::{
+        gas_law::{EquationOfState, GasLaw},
+        physical_quantities::State,
+    };
 
     #[test]
     fn test_conversions() {
