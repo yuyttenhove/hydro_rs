@@ -428,7 +428,7 @@ impl InitialConditions {
                 z: (k as f64 + 0.5 + z_pert) / num_part_z as f64 * box_size.z,
             };
 
-            let (density, velocity, pressure) = mapper(coordinate);
+            let (density, velocity, pressure) = mapper(coordinate / box_size);
             ics.coordinates.push(coordinate);
             ics.masses.push(density * volume_per_part);
             ics.velocities.push(velocity);

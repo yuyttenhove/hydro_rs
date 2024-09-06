@@ -156,7 +156,7 @@ def plot_quantity(ax: plt.Axes, xdata: np.ndarray, ydata: np.ndarray, xlim: Tupl
     if not logx:
         ax.set_xlim(*xlim)
         if not logy:
-            mask = (xdata <= xlim[1]) & (xdata >= xlim[0])
+            mask = (xdata <= xlim[1]) & (xdata >= xlim[0]) & np.isfinite(ydata)
             ylim = [ydata[mask].min(), ydata[mask].max()]
             y_delta = ylim[1] - ylim[0]
             ax.set_ylim(ylim[0] - 0.1 * y_delta, ylim[1] + 0.1 * y_delta)

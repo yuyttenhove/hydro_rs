@@ -33,10 +33,11 @@ gravity:
 
 hydrodynamics:
   gamma: 1.66666667
-  equation_of_state: "Ideal"
-  solver: 
-    kind: "AIRS"
-    threshold: 2.
+  equation_of_state: 
+    kind: "Ideal"
+riemann_solver: 
+  kind: "Exact"
+  threshold: 2.
 
 space:
   boundary: "reflective"

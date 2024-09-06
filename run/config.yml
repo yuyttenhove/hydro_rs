@@ -40,10 +40,12 @@ riemann_solver:
 
 space:
   boundary: "reflective"
-  max_top_level_cells: 12
+  max_top_level_cells: 8
 
 initial_conditions:
   type: "file"
-  box_size: [2., 1., 1.]
-  num_part: 250
+  dimensionality: 2
+  box_size: [4., 1., 1.]
+  num_part: 4096
+  perturbations: 0.01
   filename: "ICs/sodshock_2D.hdf5"

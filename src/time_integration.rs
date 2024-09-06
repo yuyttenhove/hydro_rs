@@ -82,6 +82,7 @@ impl Runner {
                 space.kick1(engine);
             }
             Runner::OptimalOrder => {
+                // space.regrid();
                 space.volume_calculation(engine);
                 space.flux_exchange(engine);
                 space.apply_flux(engine);
@@ -89,6 +90,7 @@ impl Runner {
                 space.kick2(engine);
                 space.convert_conserved_to_primitive(engine);
                 space.gradient_estimate(engine);
+                // space.meshless_gradient_estimate(engine);
                 ti_next = space.timestep(engine);
                 space.timestep_limiter(engine); // Note: this can never decrease ti_next
                 space.kick1(engine);
@@ -142,7 +144,7 @@ impl Runner {
                 // Todo: Recompute spatial gradients at half timestep in back extrapolated coordinates?
                 // Todo: Do flux calculation in back extrapolated coordinates as well
                 // space.convert_conserved_to_primitive(engine);
-                space.gradient_estimate(engine);
+                // space.gradient_estimate(engine);
                 space.flux_exchange(engine);
                 space.apply_flux(engine);
                 space.drift_centroids_to_current_time(engine);
@@ -150,6 +152,7 @@ impl Runner {
                 space.kick2(engine);
                 space.convert_conserved_to_primitive(engine);
                 space.meshless_gradient_estimate(engine);
+                // space.gradient_estimate(engine);
                 ti_next = space.timestep(engine);
                 space.timestep_limiter(engine); // Note: this can never decrease ti_next
                 space.kick1(engine);
