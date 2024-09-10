@@ -1,8 +1,8 @@
-use crate::engine::Engine;
 use crate::gas_law::GasLaw;
 use crate::gradients::pairwise_limiter;
 use crate::part::Particle;
 use crate::physical_quantities::{Conserved, State};
+use crate::riemann_solver::RiemannFluxSolver;
 use crate::space::Boundary;
 use glam::DVec3;
 use meshless_voronoi::VoronoiFace;
@@ -14,14 +14,14 @@ pub struct FluxInfo {
     pub a_over_r: f64,
 }
 
-pub fn flux_exchange(
+pub fn flux_exchange<RiemannSolver: RiemannFluxSolver>(
     left: &Particle,
     right: &Particle,
     dt: f64,
     face: &VoronoiFace,
     time_extrapolate_fac: f64,
     eos: &GasLaw,
-    engine: &Engine,
+    riemann_solver: &RiemannSolver,
 ) -> FluxInfo {
     // We extrapolate from the centroid of the particles.
     let dx_left = face.centroid() - left.gradients_centroid;
@@ -73,7 +73,7 @@ pub fn flux_exchange(
 
     // Calculate fluxes
     let fluxes = face.area()
-        * engine.riemann_solver.solve_for_flux(
+        * riemann_solver.solve_for_flux(
             &primitives_left.boost(-v_face),
             &primitives_right.boost(-v_face),
             v_face,
@@ -93,13 +93,13 @@ pub fn flux_exchange(
     }
 }
 
-pub fn flux_exchange_boundary(
+pub fn flux_exchange_boundary<RiemannSolver: RiemannFluxSolver>(
     part: &Particle,
     face: &VoronoiFace,
     boundary: Boundary,
     time_extrapolate_fac: f64,
     eos: &GasLaw,
-    engine: &Engine,
+    riemann_solver: &RiemannSolver,
 ) -> FluxInfo {
     // get reflected particle
     let mut reflected = part.reflect(face.centroid(), face.normal());
@@ -168,7 +168,7 @@ pub fn flux_exchange_boundary(
 
     // Solve for flux
     let fluxes = face.area()
-        * engine.riemann_solver.solve_for_flux(
+        * riemann_solver.solve_for_flux(
             &primitives_dash,
             &primitives_boundary,
             DVec3::ZERO,

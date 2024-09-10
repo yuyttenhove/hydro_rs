@@ -2,9 +2,12 @@ use clap::Parser;
 use glam::DVec3;
 use mvmm_hydro::{
     gas_law::{EquationOfState, GasLaw},
-    riemann_solver::riemann_solver,
-    Engine, GravitySolver, InitialConditions, KeplerianPotential, ParticleMotion, Potential,
-    Runner, Space,
+    riemann_solver::{
+        riemann_solver, AIRiemannSolver, ExactRiemannSolver, HLLCRiemannSolver, PVRiemannSolver,
+        TRRiemannSolver, TSRiemannSolver,
+    },
+    Engine, EngineTrait, GravitySolver, InitialConditions, KeplerianPotential, ParticleMotion,
+    Potential, Runner, Space,
 };
 use std::path;
 
@@ -203,6 +206,7 @@ pub enum ConfigError {
     UnknownParticleMotion(String),
     UnknownBoundaryConditions(String),
     UnknownEOS(String),
+    UnknownRiemannSolver(String),
     IllegalDVec3(String),
     InvalidArrayFormat(Yaml),
     InvalidArrayLength(usize, usize),
@@ -231,6 +235,9 @@ impl Display for ConfigError {
             }
             ConfigError::UnknownEOS(name) => {
                 write!(f, "Unknown type of equation of stated configured: {}", name)
+            }
+            ConfigError::UnknownRiemannSolver(name) => {
+                write!(f, "Unknown type of Riemann solver configured: {}", name)
             }
             ConfigError::IllegalDVec3(name) => {
                 write!(f, "Illegal DVec3 format: {}!", name)
@@ -376,16 +383,22 @@ impl GasLawCfg {
             "hydrodynamics: gamma".to_string(),
         ))?;
         let equation_of_state = yaml["equation_of_state"]
-        .as_str()
-        .ok_or(ConfigError::MissingParameter(
-            "hydrodynamics: equation_of_state".to_string(),
-        ))?
-        .to_string();
+            .as_str()
+            .ok_or(ConfigError::MissingParameter(
+                "hydrodynamics: equation_of_state".to_string(),
+            ))?
+            .to_string();
         let equation_of_state = match equation_of_state.as_str() {
             "Ideal" => EquationOfState::Ideal,
             "Isothermal" => {
-                let isothermal_internal_energy = yaml["isothermal_internal_energy"].as_f64().ok_or(ConfigError::MissingParameter("hydrodynamics: isothermal_internal_energy".to_string()))?;
-                EquationOfState::Isothermal { isothermal_internal_energy }
+                let isothermal_internal_energy = yaml["isothermal_internal_energy"]
+                    .as_f64()
+                    .ok_or(ConfigError::MissingParameter(
+                        "hydrodynamics: isothermal_internal_energy".to_string(),
+                    ))?;
+                EquationOfState::Isothermal {
+                    isothermal_internal_energy,
+                }
             }
             _ => return Err(ConfigError::UnknownEOS(equation_of_state)),
         };
@@ -619,27 +632,115 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::parse(args.config)?;
 
     // Setup simulation
-    let eos = GasLaw::new(
-        config.gas_law.gamma,
-        config.gas_law.equation_of_state,
-    );
+    let eos = GasLaw::new(config.gas_law.gamma, config.gas_law.equation_of_state);
     let riemann_solver =
         riemann_solver(&config.riemann_solver.kind, config.riemann_solver.threshold)?;
-    let mut engine = Engine::new(
-        config.engine.runner,
-        riemann_solver,
-        config.gravity.solver,
-        config.engine.t_end,
-        config.engine.dt_min,
-        config.engine.dt_max,
-        config.engine.sync_timesteps,
-        config.engine.cfl_criterion,
-        config.engine.dt_snap,
-        &config.engine.prefix,
-        config.engine.dt_status,
-        config.engine.save_faces,
-        config.engine.particle_motion,
-    );
+
+    // Construct engine as a trait object to erase the type of the riemann solver
+    let mut engine: Box<dyn EngineTrait> = match config.riemann_solver.kind.as_str() {
+        "HLLC" => Box::new(Engine::new(
+            config.engine.runner,
+            HLLCRiemannSolver,
+            config.gravity.solver,
+            config.engine.t_end,
+            config.engine.dt_min,
+            config.engine.dt_max,
+            config.engine.sync_timesteps,
+            config.engine.cfl_criterion,
+            config.engine.dt_snap,
+            &config.engine.prefix,
+            config.engine.dt_status,
+            config.engine.save_faces,
+            config.engine.particle_motion,
+        )),
+        "Exact" => Box::new(Engine::new(
+            config.engine.runner,
+            ExactRiemannSolver,
+            config.gravity.solver,
+            config.engine.t_end,
+            config.engine.dt_min,
+            config.engine.dt_max,
+            config.engine.sync_timesteps,
+            config.engine.cfl_criterion,
+            config.engine.dt_snap,
+            &config.engine.prefix,
+            config.engine.dt_status,
+            config.engine.save_faces,
+            config.engine.particle_motion,
+        )),
+        "PVRS" => Box::new(Engine::new(
+            config.engine.runner,
+            PVRiemannSolver,
+            config.gravity.solver,
+            config.engine.t_end,
+            config.engine.dt_min,
+            config.engine.dt_max,
+            config.engine.sync_timesteps,
+            config.engine.cfl_criterion,
+            config.engine.dt_snap,
+            &config.engine.prefix,
+            config.engine.dt_status,
+            config.engine.save_faces,
+            config.engine.particle_motion,
+        )),
+        "AIRS" => {
+            let threshold =
+                config
+                    .riemann_solver
+                    .threshold
+                    .ok_or(ConfigError::MissingParameter(
+                        "riemann_solver:threshold".to_string(),
+                    ))?;
+            Box::new(Engine::new(
+                config.engine.runner,
+                AIRiemannSolver::new(threshold),
+                config.gravity.solver,
+                config.engine.t_end,
+                config.engine.dt_min,
+                config.engine.dt_max,
+                config.engine.sync_timesteps,
+                config.engine.cfl_criterion,
+                config.engine.dt_snap,
+                &config.engine.prefix,
+                config.engine.dt_status,
+                config.engine.save_faces,
+                config.engine.particle_motion,
+            ))
+        }
+        "TSRS" => Box::new(Engine::new(
+            config.engine.runner,
+            TSRiemannSolver,
+            config.gravity.solver,
+            config.engine.t_end,
+            config.engine.dt_min,
+            config.engine.dt_max,
+            config.engine.sync_timesteps,
+            config.engine.cfl_criterion,
+            config.engine.dt_snap,
+            &config.engine.prefix,
+            config.engine.dt_status,
+            config.engine.save_faces,
+            config.engine.particle_motion,
+        )),
+        "TRRS" => Box::new(Engine::new(
+            config.engine.runner,
+            TRRiemannSolver,
+            config.gravity.solver,
+            config.engine.t_end,
+            config.engine.dt_min,
+            config.engine.dt_max,
+            config.engine.sync_timesteps,
+            config.engine.cfl_criterion,
+            config.engine.dt_snap,
+            &config.engine.prefix,
+            config.engine.dt_status,
+            config.engine.save_faces,
+            config.engine.particle_motion,
+        )),
+        _ => Err(ConfigError::UnknownRiemannSolver(
+            config.riemann_solver.kind,
+        ))?,
+    };
 
     // Setup ICs and construct space
     let ic = match config.initial_conditions {
@@ -675,7 +776,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &eos,
         )?,
     };
-    let mut space = Space::from_ic(
+    let mut space = Space::initialize(
         ic,
         config.space.max_top_level_cells,
         config.space.boundary,

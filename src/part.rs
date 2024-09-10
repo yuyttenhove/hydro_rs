@@ -1,16 +1,11 @@
 use glam::DVec3;
 use meshless_voronoi::VoronoiCell;
 
+use crate::engine::TimestepInfo;
 use crate::gas_law::GasLaw;
 use crate::physical_quantities::{Conserved, Gradients, Primitive, State};
-use crate::time_integration::Iact;
 use crate::utils::{box_reflect, box_wrap, contains};
-use crate::{
-    engine::{Engine, ParticleMotion},
-    flux::FluxInfo,
-    timeline::*,
-    Dimensionality,
-};
+use crate::{engine::ParticleMotion, flux::FluxInfo, timeline::*, Dimensionality};
 
 #[derive(Default, Debug, Clone)]
 pub struct Particle {
@@ -162,20 +157,21 @@ impl Particle {
         debug_assert!(self.volume >= 0.);
     }
 
-    pub fn update_fluxes_left(&mut self, flux_info: &FluxInfo, engine: &Engine) {
+    pub fn update_fluxes_left(&mut self, flux_info: &FluxInfo, part_is_active: bool) {
         self.fluxes -= flux_info.fluxes;
         self.gravity_mflux -= flux_info.mflux;
-        if engine.part_is_active(self, Iact::Flux) {
+        if part_is_active {
             self.max_signal_velocity = flux_info.v_max.max(self.max_signal_velocity);
             self.max_a_over_r = self.max_a_over_r.max(flux_info.a_over_r);
         }
     }
 
-    pub fn update_fluxes_right(&mut self, flux_info: &FluxInfo, engine: &Engine) {
+    pub fn update_fluxes_right(&mut self, flux_info: &FluxInfo, part_is_active: bool) {
         self.fluxes += flux_info.fluxes;
         self.gravity_mflux -= flux_info.mflux;
-        if engine.part_is_active(self, Iact::Flux) {
+        if part_is_active {
             self.max_signal_velocity = flux_info.v_max.max(self.max_signal_velocity);
+            self.max_a_over_r = self.max_a_over_r.max(flux_info.a_over_r);
         }
     }
 
@@ -264,44 +260,40 @@ impl Particle {
         );
     }
 
-    pub fn timestep_limit(&mut self, wakeup: i8, engine: &Engine) {
+    pub fn timestep_limit(&mut self, wakeup: i8, timestep_info: &TimestepInfo) {
         // Anything to do here?
         if wakeup >= self.timebin {
             return;
         }
 
-        if self.is_starting(engine) {
+        if timestep_info.bin_is_starting(self.timebin) {
             // Particle was active/starting anyway, so just updating the timestep/timebin suffices.
             self.timebin = wakeup;
-            self.dt = make_timestep(get_integer_timestep(self.timebin), engine.time_base());
+            self.dt = timestep_info.dt_from_bin(self.timebin);
         } else {
             // Wake this particle up
-            let ti_current = engine.ti_current();
-            let ti_end_old = get_integer_time_end(ti_current, self.timebin);
+            let ti_end_old = timestep_info.get_integer_time_end(self.timebin);
+            let ti_current = timestep_info.ti_current;
             debug_assert_ne!(ti_end_old, ti_current);
             // Substract the remainder of this particles old timestep from its dt
-            self.dt -= make_timestep(ti_end_old - ti_current, engine.time_base());
+            self.dt -= timestep_info.dt_from_dti(ti_end_old - ti_current);
             // Update the timebin
             self.timebin = wakeup;
             let dti_new = get_integer_timestep(self.timebin);
-            let ti_end = get_integer_time_end(ti_current, self.timebin);
+            let ti_end = timestep_info.get_integer_time_end(self.timebin);
             // Add the remainder of the new timestep to the particle's dt
             self.dt += if ti_end == ti_current {
-                make_timestep(dti_new, engine.time_base())
+                timestep_info.dt_from_dti(dti_new)
                 // Part is now active/starting, so the remaining KICK1 will be applied automatically
             } else {
-                make_timestep(ti_end - ti_current, engine.time_base())
+                timestep_info.dt_from_dti(ti_end - ti_current)
                 // TODO: reapply second part of KICK1 if neccessary
             };
 
             // TODO this might still not be correct for particles that have a longer timestep then this particles new timestep, but shorter than this particles old timestep
         }
 
-        if engine.with_gravity() {
-            todo!()
-            // TODO: Rewind kick1 if necessary
-            // TODO: Reapply kick1 if necessary
-        }
+        // TODO: Handle gravity (rewind kick1 and reapply)
     }
 
     pub(crate) fn reset_gradients(&mut self) {
@@ -323,20 +315,6 @@ impl Particle {
     pub fn internal_energy(&self) -> f64 {
         (self.conserved.energy() - 0.5 * self.conserved.momentum().dot(self.primitives.velocity()))
             / self.conserved.mass()
-    }
-
-    pub fn is_ending(&self, engine: &Engine) -> bool {
-        return self.timebin <= get_max_active_bin(engine.ti_current());
-    }
-
-    pub fn is_halfway(&self, engine: &Engine) -> bool {
-        let dti = engine.ti_current() - engine.ti_old();
-        return !self.is_ending(engine)
-            && self.timebin <= get_max_active_bin(engine.ti_old() + 2 * dti);
-    }
-
-    pub fn is_starting(&self, engine: &Engine) -> bool {
-        return self.timebin <= get_max_active_bin(engine.ti_current());
     }
 
     pub fn set_timestep(&mut self, dt: f64, new_dti: IntegerTime) {

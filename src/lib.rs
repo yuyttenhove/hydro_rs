@@ -2,7 +2,7 @@
 //!
 //! The library also provides access to a variety of Riemann Solvers for the Euler equations.
 
-pub use engine::{Engine, ParticleMotion};
+pub use engine::{Engine, EngineTrait, TimestepInfo, ParticleMotion};
 pub use gravity::{GravitySolver, KeplerianPotential, Potential};
 pub use initial_conditions::InitialConditions;
 pub use space::{Boundary, Space};

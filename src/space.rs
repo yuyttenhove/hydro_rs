@@ -13,7 +13,7 @@ use rayon::prelude::*;
 
 use crate::{
     cell::Cell,
-    engine::Engine,
+    engine::{Engine, TimestepInfo},
     flux::FluxInfo,
     gas_law::GasLaw,
     gradients::GradientData,
@@ -22,13 +22,14 @@ use crate::{
     macros::{create_attr, create_dataset},
     part::Particle,
     physical_quantities::State,
+    riemann_solver::RiemannFluxSolver,
     time_integration::Iact,
     timeline::{
         get_integer_time_end, make_integer_timestep, make_timestep, IntegerTime, MAX_NR_TIMESTEPS,
         NUM_TIME_BINS, TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN,
     },
     utils::contains,
-    Dimensionality,
+    Dimensionality, GravitySolver, ParticleMotion, Runner,
 };
 use crate::{
     flux::{flux_exchange, flux_exchange_boundary},
@@ -41,6 +42,15 @@ pub enum Boundary {
     Reflective,
     Open,
     Vacuum,
+}
+
+impl Boundary {
+    fn periodic(&self) -> bool {
+        match self {
+            Boundary::Periodic => true,
+            _ => false,
+        }
+    }
 }
 
 impl Display for Boundary {
@@ -88,7 +98,7 @@ impl Space {
     /// boundary conditions.
     ///
     /// Particles typically will only have conserved quantities and coordinates set at this point.
-    pub fn from_ic(
+    pub fn initialize(
         initial_conditions: InitialConditions,
         max_top_level_cells: usize,
         boundary: Boundary,
@@ -118,18 +128,7 @@ impl Space {
         );
 
         // Initialize the cells
-        let periodic = match boundary {
-            Boundary::Periodic => {
-                if !initial_conditions.periodic {
-                    eprintln!(
-                        "Warning! Running periodic initial conditions with {:} boundaries",
-                        boundary
-                    );
-                }
-                true
-            }
-            _ => false,
-        };
+        let periodic = boundary.periodic();
         let mut cells = vec![];
         for i in 0..cdim[0] {
             for j in 0..cdim[1] {
@@ -247,12 +246,12 @@ impl Space {
     /// NOTE: the face counts and offsets of inactive particles are also updated by this method!
     /// This information is used e.g. in the timestep limiter, where we might want to loop over
     /// the active neighbours of an inactive particle
-    pub fn volume_calculation(&mut self, engine: &Engine) {
+    pub fn volume_calculation(&mut self, runner: &Runner, timestep_info: &TimestepInfo) {
         let generators = self.parts.iter().map(|p| p.loc()).collect::<Vec<_>>();
         let mask = self
             .parts
             .iter()
-            .map(|p| engine.part_is_active(p, Iact::Volume))
+            .map(|p| runner.part_is_active(p, Iact::Volume, timestep_info))
             .collect::<Vec<_>>();
         let voronoi = Voronoi::build_partial(
             &generators,
@@ -260,7 +259,7 @@ impl Space {
             DVec3::ZERO,
             self.box_size,
             self.dimensionality.into(),
-            self.periodic(),
+            self.boundary.periodic(),
         );
 
         self.parts
@@ -287,8 +286,12 @@ impl Space {
     /// all inactive particles, even if they have no faces
     ///
     /// WARNING: slow, doesnt work with periodic boundary conditions
-    pub fn volume_calculation_back_extrapolate(&mut self, engine: &Engine) {
-        if self.periodic() {
+    pub fn volume_calculation_back_extrapolate(
+        &mut self,
+        runner: &Runner,
+        timestep_info: &TimestepInfo,
+    ) {
+        if self.boundary.periodic() {
             panic!("Periodic boundary conditions are not supported for back extrapolation volume calculation!")
         }
         // Loop over the parts and construct the back extrapolated positions of its neighbours
@@ -298,7 +301,7 @@ impl Space {
             .par_iter()
             .enumerate()
             .map(|(idx, part)| {
-                if !engine.part_is_active(part, Iact::Volume) {
+                if !runner.part_is_active(part, Iact::Volume, timestep_info) {
                     return None;
                 }
                 let cell = &self.cells[part.cell_id];
@@ -525,9 +528,13 @@ impl Space {
     /// Drift the particles centroid back to the end of the timestep
     /// This needs to happen after flux exchange, before gradient calculation
     /// in schemes using the back extrapolated volume calculation.
-    pub fn drift_centroids_to_current_time(&mut self, engine: &Engine) {
+    pub fn drift_centroids_to_current_time(
+        &mut self,
+        runner: &Runner,
+        timestep_info: &TimestepInfo,
+    ) {
         self.parts.par_iter_mut().for_each(|part| {
-            if engine.part_is_active(part, Iact::Flux) {
+            if runner.part_is_active(part, Iact::Flux, timestep_info) {
                 part.centroid += 0.5 * part.v * part.dt;
             }
         })
@@ -567,10 +574,14 @@ impl Space {
             .for_each(|(cell, tree)| cell.assign_search_tree(tree));
     }
 
-    pub fn convert_conserved_to_primitive(&mut self, engine: &Engine) {
+    pub fn convert_conserved_to_primitive(
+        &mut self,
+        runner: &Runner,
+        timestep_info: &TimestepInfo,
+    ) {
         let eos = self.eos;
         self.parts.par_iter_mut().for_each(|part| {
-            if engine.part_is_active(part, Iact::Primitive) {
+            if runner.part_is_active(part, Iact::Primitive, timestep_info) {
                 part.convert_conserved_to_primitive(&eos);
 
                 // This also invalidates the extrapolations
@@ -588,7 +599,7 @@ impl Space {
             DVec3::ZERO,
             self.box_size,
             self.dimensionality.into(),
-            self.periodic(),
+            self.boundary.periodic(),
         );
 
         for (part, voronoi_cell) in self.parts.iter_mut().zip(voronoi.cells().iter()) {
@@ -606,12 +617,18 @@ impl Space {
     }
 
     /// Compute the fluxes for each face (if any).
-    fn compute_fluxes(&self, time_extrapolate_fac: f64, engine: &Engine) -> Vec<Option<FluxInfo>> {
+    fn compute_fluxes<RiemannSolver: RiemannFluxSolver>(
+        &self,
+        time_extrapolate_fac: f64,
+        runner: &Runner,
+        timestep_info: &TimestepInfo,
+        riemann_solver: &RiemannSolver,
+    ) -> Vec<Option<FluxInfo>> {
         self.voronoi_faces
             .par_iter()
             .map(|face| {
                 let left = &self.parts[face.left()];
-                let left_active = engine.part_is_active(left, Iact::Flux);
+                let left_active = runner.part_is_active(left, Iact::Flux, timestep_info);
                 match face.right() {
                     Some(right_idx) => {
                         let right = &self.parts[right_idx];
@@ -622,7 +639,9 @@ impl Space {
                         // we do not want to do the flux exchange in that case.
                         let dt = if left_active && left.dt <= right.dt {
                             left.dt
-                        } else if engine.part_is_active(right, Iact::Flux) && right.dt <= left.dt {
+                        } else if runner.part_is_active(right, Iact::Flux, timestep_info)
+                            && right.dt <= left.dt
+                        {
                             right.dt
                         } else {
                             return None;
@@ -634,7 +653,7 @@ impl Space {
                             face,
                             time_extrapolate_fac,
                             &self.eos,
-                            engine,
+                            riemann_solver,
                         ))
                     }
                     None => {
@@ -647,7 +666,7 @@ impl Space {
                             self.boundary,
                             time_extrapolate_fac,
                             &self.eos,
-                            engine,
+                            riemann_solver,
                         ))
                     }
                 }
@@ -656,21 +675,27 @@ impl Space {
     }
 
     /// Add fluxes to the parts
-    fn add_fluxes(&mut self, fluxes: Vec<Option<FluxInfo>>, engine: &Engine) {
+    fn add_fluxes(
+        &mut self,
+        fluxes: Vec<Option<FluxInfo>>,
+        runner: &Runner,
+        timestep_info: &TimestepInfo,
+    ) {
         self.parts
             .par_iter_mut()
             .enumerate()
             .for_each(|(idx, part)| {
                 // Loop over faces and add fluxes if any
+                let part_is_active = runner.part_is_active(part, Iact::ApplyFlux, timestep_info);
                 let offset = part.face_connections_offset;
                 let faces = &self.voronoi_cell_face_connections[offset..offset + part.face_count];
                 for &face_idx in faces {
                     if let Some(flux_info) = &fluxes[face_idx] {
                         // Left or right?
                         if idx == self.voronoi_faces[face_idx].left() {
-                            part.update_fluxes_left(flux_info, engine);
+                            part.update_fluxes_left(flux_info, part_is_active);
                         } else {
-                            part.update_fluxes_right(flux_info, engine);
+                            part.update_fluxes_right(flux_info, part_is_active);
                         }
                     }
                 }
@@ -680,21 +705,44 @@ impl Space {
     /// Do flux exchange between neighbouring particles
     /// This method will extrapolate back in time for half the duration of the timestep over which
     /// fluxes are exchanges (depends on the neigbour).
-    pub fn flux_exchange(&mut self, engine: &Engine) {
-        self.add_fluxes(self.compute_fluxes(0.5, engine), engine);
+    pub fn flux_exchange<RiemannSolver: RiemannFluxSolver>(
+        &mut self,
+        runner: &Runner,
+        timestep_info: &TimestepInfo,
+        riemann_solver: &RiemannSolver,
+    ) {
+        self.add_fluxes(
+            self.compute_fluxes(0.5, runner, timestep_info, riemann_solver),
+            runner,
+            timestep_info,
+        );
     }
 
     /// Do flux exchange between neighbouring particles, without extrapolating back in time
-    pub fn flux_exchange_no_back_extrapolation(&mut self, engine: &Engine) {
-        self.add_fluxes(self.compute_fluxes(0., engine), engine);
+    pub fn flux_exchange_no_back_extrapolation<RiemannSolver: RiemannFluxSolver>(
+        &mut self,
+        runner: &Runner,
+        timestep_info: &TimestepInfo,
+        riemann_solver: &RiemannSolver,
+    ) {
+        self.add_fluxes(
+            self.compute_fluxes(0., runner, timestep_info, riemann_solver),
+            runner,
+            timestep_info,
+        );
     }
 
     /// Do flux exchange between neighbouring particles according to pakmors hybrid Heun/MUSCL-Hankock scheme
     ///
     /// We first calculate the fluxes without extrapolating and then with extrapolating and take the average of the two.
-    pub fn flux_exchange_pakmor_single(&mut self, engine: &Engine) {
-        let mut fluxes = self.compute_fluxes(1., engine);
-        let fluxes_end = self.compute_fluxes(0., engine);
+    pub fn flux_exchange_pakmor_single<RiemannSolver: RiemannFluxSolver>(
+        &mut self,
+        runner: &Runner,
+        timestep_info: &TimestepInfo,
+        riemann_solver: &RiemannSolver,
+    ) {
+        let mut fluxes = self.compute_fluxes(1., runner, timestep_info, riemann_solver);
+        let fluxes_end = self.compute_fluxes(0., runner, timestep_info, riemann_solver);
         // Average the fluxes
         fluxes
             .par_iter_mut()
@@ -712,13 +760,18 @@ impl Space {
                 }
             });
         // Add fluxes to parts
-        self.add_fluxes(fluxes, engine);
+        self.add_fluxes(fluxes, runner, timestep_info);
     }
 
     /// Apply the (first or second) half flux (for Heun's method).
-    pub fn half_flux_exchange(&mut self, engine: &Engine) {
+    pub fn half_flux_exchange<RiemannSolver: RiemannFluxSolver>(
+        &mut self,
+        runner: &Runner,
+        timestep_info: &TimestepInfo,
+        riemann_solver: &RiemannSolver,
+    ) {
         // Calculate the fluxes accross each face
-        let mut fluxes = self.compute_fluxes(0., engine);
+        let mut fluxes = self.compute_fluxes(0., runner, timestep_info, riemann_solver);
 
         // Half the fluxes
         fluxes.par_iter_mut().for_each(|flux_info| {
@@ -728,15 +781,20 @@ impl Space {
             }
         });
 
-        self.add_fluxes(fluxes, engine);
+        self.add_fluxes(fluxes, runner, timestep_info);
     }
 
-    pub fn extrapolate_flux(&mut self, engine: &Engine) {
-        let fluxes = self.compute_fluxes(0., engine);
+    pub fn extrapolate_flux<RiemannSolver: RiemannFluxSolver>(
+        &mut self,
+        runner: &Runner,
+        timestep_info: &TimestepInfo,
+        riemann_solver: &RiemannSolver,
+    ) {
+        let fluxes = self.compute_fluxes(0., runner, timestep_info, riemann_solver);
 
         let mut d_conserved = vec![State::vacuum(); self.parts.len()];
         for (i, part) in self.parts.iter().enumerate() {
-            if !engine.part_is_active(part, Iact::Flux) {
+            if !runner.part_is_active(part, Iact::Flux, timestep_info) {
                 continue;
             }
             let offset = part.face_connections_offset;
@@ -776,18 +834,18 @@ impl Space {
     }
 
     /// Apply the accumulated fluxes to all active particles before calculating the primitives
-    pub fn apply_flux(&mut self, engine: &Engine) {
+    pub fn apply_flux(&mut self, runner: &Runner, timestep_info: &TimestepInfo) {
         self.parts.par_iter_mut().for_each(|part| {
-            if engine.part_is_active(part, Iact::ApplyFlux) {
+            if runner.part_is_active(part, Iact::ApplyFlux, timestep_info) {
                 part.apply_flux();
             }
         });
     }
 
     /// Apply the time extrapolations
-    pub fn apply_time_extrapolations(&mut self, engine: &Engine) {
+    pub fn apply_time_extrapolations(&mut self, runner: &Runner, timestep_info: &TimestepInfo) {
         self.parts.par_iter_mut().for_each(|part| {
-            if engine.part_is_active(part, Iact::Volume) {
+            if runner.part_is_active(part, Iact::Volume, timestep_info) {
                 part.primitives += part.extrapolations;
                 part.extrapolations = State::vacuum();
             }
@@ -795,7 +853,7 @@ impl Space {
     }
 
     /// drift all particles forward over the given timestep
-    pub fn drift(&mut self, dt_drift: f64, dt_extrapolate: f64, _engine: &Engine) {
+    pub fn drift(&mut self, dt_drift: f64, dt_extrapolate: f64) {
         let eos = self.eos;
         // drift all particles, including inactive particles
         self.parts.par_iter_mut().for_each(|part| {
@@ -820,14 +878,14 @@ impl Space {
     }
 
     /// Estimate the gradients for all particles
-    pub fn gradient_estimate(&mut self, engine: &Engine) {
+    pub fn gradient_estimate(&mut self, runner: &Runner, timestep_info: &TimestepInfo) {
         // First calculate the gradients in parallel
         let gradients = self
             .parts
             .par_iter()
             .enumerate()
             .map(|(idx, part)| {
-                if !engine.part_is_active(part, Iact::Gradient) {
+                if !runner.part_is_active(part, Iact::Gradient, timestep_info) {
                     return None;
                 }
 
@@ -887,18 +945,18 @@ impl Space {
                 if let Some(gradient) = gradient {
                     part.gradients = *gradient;
                     part.gradients_centroid = part.centroid;
-                    debug_assert!(engine.part_is_active(part, Iact::Gradient));
+                    debug_assert!(runner.part_is_active(part, Iact::Gradient, timestep_info));
                 }
             });
     }
 
-    pub fn meshless_gradient_estimate(&mut self, engine: &Engine) {
+    pub fn meshless_gradient_estimate(&mut self, runner: &Runner, timestep_info: &TimestepInfo) {
         // Compute the gradients for all the active parts
         let gradients = self
             .parts
             .par_iter()
             .map(|part| {
-                if !engine.part_is_active(part, Iact::Gradient) {
+                if !runner.part_is_active(part, Iact::Gradient, timestep_info) {
                     return None;
                 }
 
@@ -960,18 +1018,18 @@ impl Space {
                 if let Some(gradient) = gradient {
                     part.gradients = *gradient;
                     part.gradients_centroid = part.centroid;
-                    debug_assert!(engine.part_is_active(part, Iact::Gradient));
+                    debug_assert!(runner.part_is_active(part, Iact::Gradient, timestep_info));
                 }
             });
     }
 
-    pub fn volume_derivative_estimate(&mut self, engine: &Engine) {
+    pub fn volume_derivative_estimate(&mut self, runner: &Runner, timestep_info: &TimestepInfo) {
         let mut dvol_dt: Vec<Option<f64>> = vec![None; self.parts.len()];
         dvol_dt
             .par_iter_mut()
             .zip(self.parts.par_iter().enumerate())
             .for_each(|(maybe_dvol, (idx, part))| {
-                if !engine.part_is_active(part, Iact::Volume) {
+                if !runner.part_is_active(part, Iact::Volume, timestep_info) {
                     return;
                 }
                 // Loop over faces of particle
@@ -1007,13 +1065,13 @@ impl Space {
     }
 
     /// Calculate the next timestep for all active particles
-    pub fn timestep(&mut self, engine: &Engine) -> IntegerTime {
+    pub fn timestep<R: RiemannFluxSolver>(&mut self, engine: &Engine<R>) -> IntegerTime {
         // Some useful variables
         let ti_current = engine.ti_current();
         let dti_min = AtomicU64::new(MAX_NR_TIMESTEPS);
 
         self.parts.par_iter_mut().for_each(|part| {
-            if part.is_ending(engine) {
+            if engine.timestep_info.bin_is_ending(part.timebin) {
                 // Compute new timestep
                 let mut dt = part.timestep(
                     engine.cfl_criterion(),
@@ -1060,7 +1118,7 @@ impl Space {
         if engine.sync_all() {
             for part in self.parts.iter_mut() {
                 debug_assert!(
-                    part.is_ending(engine),
+                    engine.timestep_info.bin_is_ending(part.timebin),
                     "Found particle not ending it's timestep while syncing timesteps!"
                 );
                 part.set_timestep(dt, dti_min);
@@ -1071,7 +1129,7 @@ impl Space {
     }
 
     /// Apply the timestep limiter to the particles
-    pub fn timestep_limiter(&mut self, engine: &Engine) {
+    pub fn timestep_limiter(&mut self, timestep_info: &TimestepInfo) {
         // Loop over all the particles to compute their wakeup times
         let wakeups = self
             .parts
@@ -1089,7 +1147,7 @@ impl Space {
 
                     let _reflected;
                     let other = get_other!(self, part, idx, face, _reflected);
-                    if !other.is_ending(engine) {
+                    if !timestep_info.bin_is_starting(other.timebin) {
                         continue;
                     }
 
@@ -1105,12 +1163,12 @@ impl Space {
             .par_iter_mut()
             .zip(wakeups.par_iter())
             .for_each(|(part, &wakeup)| {
-                part.timestep_limit(wakeup, engine);
+                part.timestep_limit(wakeup, timestep_info);
             });
     }
 
     /// Apply the timestep limiter to the particles, in a meshless fashion
-    pub fn meshless_timestep_limiter(&mut self, engine: &Engine) {
+    pub fn meshless_timestep_limiter(&mut self, timestep_info: &TimestepInfo) {
         // Loop over all the particles to compute their wakeup times
         let wakeups = self
             .parts
@@ -1126,7 +1184,7 @@ impl Space {
                         break;
                     }
                     let ngb_part = &self.parts[id];
-                    if !ngb_part.is_ending(engine) {
+                    if !timestep_info.bin_is_starting(ngb_part.timebin) {
                         continue;
                     }
                     if distance_squared > ngb_part.search_radius * ngb_part.search_radius {
@@ -1144,13 +1202,13 @@ impl Space {
             .par_iter_mut()
             .zip(wakeups.par_iter())
             .for_each(|(part, &wakeup)| {
-                part.timestep_limit(wakeup, engine);
+                part.timestep_limit(wakeup, timestep_info);
             });
     }
 
-    /// Collect the gravitational accellerations in the particles
-    pub fn gravity(&mut self, engine: &Engine) {
-        let Some(solver) = &engine.gravity_solver else {
+    /// Collect the gravitational accelerations in the particles
+    pub fn gravity(&mut self, solver: &Option<GravitySolver>) {
+        let Some(solver) = solver else {
             return;
         };
 
@@ -1165,42 +1223,30 @@ impl Space {
 
     /// Apply the first half kick (gravity) to the particles
     /// + hydro half kick to particle velocities
-    pub fn kick1(&mut self, engine: &Engine) {
+    pub fn kick1(&mut self, timestep_info: &TimestepInfo, particle_motion: &ParticleMotion) {
         self.parts.par_iter_mut().for_each(|part| {
-            if part.is_starting(engine) {
-                part.hydro_kick1(&engine.particle_motion, self.dimensionality);
-                if engine.with_gravity() {
-                    part.grav_kick();
-                }
+            if timestep_info.bin_is_starting(part.timebin) {
+                part.hydro_kick1(particle_motion, self.dimensionality);
+                part.grav_kick();
             }
         })
     }
 
     /// Apply the second half kick (gravity) to the particles
-    pub fn kick2(&mut self, engine: &Engine) {
-        if !engine.with_gravity() {
-            return;
-        }
+    pub fn kick2(&mut self, timestep_info: &TimestepInfo) {
         self.parts.par_iter_mut().for_each(|part| {
-            if part.is_ending(engine) {
+            if timestep_info.bin_is_ending(part.timebin) {
                 part.grav_kick();
             }
         })
     }
 
     /// Prepare the particles for the next timestep
-    pub fn prepare(&mut self, _engine: &Engine) {
+    pub fn prepare(&mut self) {
         // Nothing to do here
     }
 
-    fn periodic(&self) -> bool {
-        match self.boundary {
-            Boundary::Periodic => true,
-            _ => false,
-        }
-    }
-
-    pub fn status(&self, engine: &Engine) -> String {
+    pub fn status(&self, timestep_info: &TimestepInfo) -> String {
         let total_mass: f64 = self
             .parts
             .iter()
@@ -1226,7 +1272,7 @@ impl Space {
         let n_active = self
             .parts
             .iter()
-            .filter(|part| part.is_ending(engine))
+            .filter(|part| timestep_info.bin_is_starting(part.timebin))
             .count();
         format!(
             "{}\t{:.8e}\t{:.8e}\t{:.8e}\t{:.8e}",
@@ -1235,12 +1281,17 @@ impl Space {
     }
 
     /// Dump snapshot of space at the current time
-    pub fn dump<P: AsRef<Path>>(&self, engine: &Engine, filename: P) -> Result<(), hdf5::Error> {
+    pub fn dump<P: AsRef<Path>>(
+        &self,
+        timestep_info: &TimestepInfo,
+        save_faces: bool,
+        filename: P,
+    ) -> Result<(), hdf5::Error> {
         let file = hdf5::File::create(filename)?;
 
         // Write header
         let header = file.create_group("Header")?;
-        let time = make_timestep(engine.ti_current(), engine.time_base());
+        let time = timestep_info.dt_from_dti(timestep_info.ti_current);
         create_attr!(header, [time], "Time")?;
         create_attr!(header, self.box_size.to_array(), "BoxSize")?;
         create_attr!(header, [self.parts.len(), 0, 0, 0, 0], "Numpart_Total")?;
@@ -1324,7 +1375,7 @@ impl Space {
         )?;
         create_dataset!(part_data, self.parts.iter().map(|part| part.dt), "Timestep")?;
 
-        if engine.save_faces() {
+        if save_faces {
             // Write Voronoi faces
             let face_data = file.create_group("VoronoiFaces")?;
             create_dataset!(
@@ -1425,7 +1476,7 @@ mod test {
         .set_masses(Vec::from(&MASS))
         .set_velocities(V_X.into_iter().map(|v| v * DVec3::X).collect())
         .set_internal_energies(Vec::from(&E_INT));
-        let space = Space::from_ic(ics, MAX_TOP_LEVEL_CELLS, BOUNDARY, eos);
+        let space = Space::initialize(ics, MAX_TOP_LEVEL_CELLS, BOUNDARY, eos);
         assert_eq!(space.parts.len(), 4);
         // Check volumes
         assert_approx_eq!(f64, space.parts[0].volume, 0.45, epsilon = 1e-10);
@@ -1464,7 +1515,7 @@ mod test {
             mapper,
         );
 
-        let space = Space::from_ic(ics, MAX_TOP_LEVEL_CELLS, BOUNDARY, eos);
+        let space = Space::initialize(ics, MAX_TOP_LEVEL_CELLS, BOUNDARY, eos);
         assert_eq!(space.parts.len(), num_part);
         let mut volume_total = 0.;
         let mut areas = vec![0.; num_part];
@@ -1502,7 +1553,7 @@ mod test {
             mapper,
         );
 
-        let space = Space::from_ic(ics, MAX_TOP_LEVEL_CELLS, BOUNDARY, eos);
+        let space = Space::initialize(ics, MAX_TOP_LEVEL_CELLS, BOUNDARY, eos);
         assert_eq!(space.parts.len(), num_part);
         let mut volume_total = 0.;
         let mut areas = vec![0.; num_part];
@@ -1542,7 +1593,7 @@ mod test {
             mapper,
         );
 
-        let mut space = Space::from_ic(ics, 1, Boundary::Reflective, eos);
+        let mut space = Space::initialize(ics, 1, Boundary::Reflective, eos);
         // Save ICs for later reference
         let parts_old = space.parts.clone();
         let faces_old = space.voronoi_faces.clone();
@@ -1552,7 +1603,7 @@ mod test {
         // Compute timesteps...
         let engine = Engine::new(
             Runner::OptimalOrder,
-            Box::new(HLLCRiemannSolver),
+            HLLCRiemannSolver,
             None,
             0.5,
             1e-10,
@@ -1566,16 +1617,19 @@ mod test {
             ParticleMotion::Fluid,
         );
         let ti_end = space.timestep(&engine);
-        let dt = engine.dt(ti_end - engine.ti_current());
+        let dt = engine
+            .timestep_info
+            .dt_from_dti(ti_end - engine.ti_current());
 
         // ... and drift
         // (only for half the timestep, so that the back extrapolation in
         // the volume calculation moves the particles back to their original positions).
-        space.drift(0.5 * dt, 0.5 * dt, &engine);
+        space.drift(0.5 * dt, 0.5 * dt);
 
         // Do back extrapolation volume calculation
         space.regrid();
-        space.volume_calculation_back_extrapolate(&engine);
+        let runner = Runner::VolumeBackExtrapolate;
+        space.volume_calculation_back_extrapolate(&runner, &engine.timestep_info);
         for (part_old, part) in parts_old.iter().zip(space.parts.iter()) {
             assert_approx_eq!(f64, part_old.volume, part.volume);
             assert_eq!(

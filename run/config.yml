@@ -1,13 +1,13 @@
 time_integration:
   dt_min: 1e-11
   dt_max: 0.05
-  t_end: 0.2
+  t_end: 4.5
   cfl_criterion: 0.3
   sync_timesteps: false
 
 snapshots:
-  dt_snap: 0.02
-  prefix: sodshock_2D
+  dt_snap: 0.05
+  prefix: kelvin_helmholtz_2D
   save_faces: false
 
 engine:
@@ -38,7 +38,7 @@ riemann_solver:
   threshold: 2.
 
 space:
-  boundary: reflective
+  boundary: periodic
   max_top_level_cells: 8
 
 initial_conditions:
@@ -47,4 +47,4 @@ initial_conditions:
   box_size: [4., 1., 1.]
   num_part: 4096
   perturbations: 0.01
-  filename: ICs/sodshock_2D.hdf5
+  filename: ICs/KelvinHelmholtz_2D.hdf5

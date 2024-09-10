@@ -48,7 +48,7 @@ equation_of_state:
 "###;
 
 pub fn get_space(ic: InitialConditions, eos: GasLaw) -> Space {
-    Space::from_ic(
+    Space::initialize(
         ic,
         1,
         mvmm_hydro::Boundary::Periodic,
