@@ -1,4 +1,5 @@
 use std::{
+    fmt::Display,
     path::Path,
     sync::atomic::{AtomicU64, Ordering},
     vec,
@@ -9,12 +10,10 @@ use float_cmp::assert_approx_eq;
 use glam::DVec3;
 use meshless_voronoi::{Voronoi, VoronoiCell, VoronoiFace};
 use rayon::prelude::*;
-use yaml_rust::Yaml;
 
 use crate::{
     cell::Cell,
     engine::Engine,
-    errors::ConfigError,
     flux::FluxInfo,
     gas_law::GasLaw,
     gradients::GradientData,
@@ -28,7 +27,8 @@ use crate::{
         get_integer_time_end, make_integer_timestep, make_timestep, IntegerTime, MAX_NR_TIMESTEPS,
         NUM_TIME_BINS, TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN,
     },
-    utils::{contains, HydroDimension},
+    utils::contains,
+    Dimensionality,
 };
 use crate::{
     flux::{flux_exchange, flux_exchange_boundary},
@@ -41,6 +41,17 @@ pub enum Boundary {
     Reflective,
     Open,
     Vacuum,
+}
+
+impl Display for Boundary {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Boundary::Periodic => f.write_str("periodic"),
+            Boundary::Reflective => f.write_str("reclective"),
+            Boundary::Open => f.write_str("open"),
+            Boundary::Vacuum => f.write_str("vacuum"),
+        }
+    }
 }
 
 macro_rules! get_other {
@@ -69,7 +80,7 @@ pub struct Space {
     voronoi_faces: Vec<VoronoiFace>,
     voronoi_cell_face_connections: Vec<usize>,
     eos: GasLaw,
-    dimensionality: HydroDimension,
+    dimensionality: Dimensionality,
 }
 
 impl Space {
@@ -79,18 +90,11 @@ impl Space {
     /// Particles typically will only have conserved quantities and coordinates set at this point.
     pub fn from_ic(
         initial_conditions: InitialConditions,
-        space_cfg: &Yaml,
+        max_top_level_cells: usize,
+        boundary: Boundary,
         eos: GasLaw,
-    ) -> Result<Self, ConfigError> {
-        // read config
-        print!("Initializing Space...");
-        let box_size = initial_conditions.box_size();
-        let boundary = space_cfg["boundary"]
-            .as_str()
-            .unwrap_or("reflective")
-            .to_string();
-        let max_top_level_cells = space_cfg["max_top_level_cells"].as_i64().unwrap_or(12) as usize;
-
+    ) -> Self {
+        let box_size = initial_conditions.box_size;
         // Calculate the number of cells along each dimension
         let max_width = box_size.max_element();
         let cwidth = max_width / max_top_level_cells as f64;
@@ -100,11 +104,11 @@ impl Space {
             (box_size.z / cwidth).round() as i32,
         ];
         match initial_conditions.dimensionality() {
-            HydroDimension::HydroDimension1D => {
+            Dimensionality::OneD => {
                 cdim[1] = 1;
                 cdim[2] = 1;
             }
-            HydroDimension::HydroDimension2D => cdim[2] = 1,
+            Dimensionality::TwoD => cdim[2] = 1,
             _ => (),
         }
         let cwidth = DVec3::new(
@@ -114,13 +118,18 @@ impl Space {
         );
 
         // Initialize the cells
-        let periodic = boundary == "periodic";
-        if periodic != initial_conditions.periodic {
-            eprintln!(
-                "Warning! Running periodic initial conditions with {:} boundaries",
-                boundary
-            );
-        }
+        let periodic = match boundary {
+            Boundary::Periodic => {
+                if !initial_conditions.periodic {
+                    eprintln!(
+                        "Warning! Running periodic initial conditions with {:} boundaries",
+                        boundary
+                    );
+                }
+                true
+            }
+            _ => false,
+        };
         let mut cells = vec![];
         for i in 0..cdim[0] {
             for j in 0..cdim[1] {
@@ -134,11 +143,11 @@ impl Space {
                     let mut ngb_shift = vec![];
                     let di = 1;
                     let dj = match initial_conditions.dimensionality() {
-                        HydroDimension::HydroDimension1D => 0,
+                        Dimensionality::OneD => 0,
                         _ => 1,
                     };
                     let dk = match initial_conditions.dimensionality() {
-                        HydroDimension::HydroDimension3D => 1,
+                        Dimensionality::ThreeD => 1,
                         _ => 0,
                     };
                     for ii in (i - di)..=(i + di) {
@@ -195,13 +204,7 @@ impl Space {
         }
 
         // create space
-        let boundary = match boundary.as_str() {
-            "periodic" => Boundary::Periodic,
-            "reflective" => Boundary::Reflective,
-            "open" => Boundary::Open,
-            "vacuum" => Boundary::Vacuum,
-            _ => return Err(ConfigError::UnknownBoundaryConditions(boundary)),
-        };
+
         let mut space = Space {
             cells,
             boundary,
@@ -218,9 +221,7 @@ impl Space {
         // Set up the conserved quantities
         space.first_init_parts();
 
-        // return
-        println!("✅");
-        Ok(space)
+        space
     }
 
     fn get_boundary_part(&self, part: &Particle, face: &VoronoiFace) -> Particle {
@@ -331,39 +332,35 @@ impl Space {
                 );
 
                 let cell = vortess.cells()[0].clone();
-                // Collect the faces between neigbouring particles if this particle has the smallest timestep 
+                // Collect the faces between neigbouring particles if this particle has the smallest timestep
                 // OR if the timesteps are equal and this particle has the smallest id
                 let faces = cell
                     .faces(&vortess)
                     .filter_map(|face| {
-                        let left = ids[face.left()];
-                        let right = face.right().map(|idx| ids[idx]);
-                        if let Some(right) = right {
+                        let mut localized_face = face.clone();
+                        localized_face.set_left(ids[face.left()]);
+                        if let Some(right) = face.right() {
+                            let right_idx = ids[right];
                             // Only keep a single face between particles.
                             // Prefer the face of the particle with the smallest timestep.
-                            // If the timesteps are equal, prefer the particle with the smalles id.
+                            // If the timesteps are equal, prefer the particle with the smallest id.
                             match part
                                 .dt
-                                .partial_cmp(&self.parts[right].dt)
+                                .partial_cmp(&self.parts[right_idx].dt)
                                 .expect("dt should not be NaN!")
                             {
                                 std::cmp::Ordering::Greater => return None,
                                 std::cmp::Ordering::Equal => {
-                                    if idx > right {
+                                    if idx > right_idx {
                                         return None;
                                     }
                                 }
                                 std::cmp::Ordering::Less => (),
                             }
+                            // Update the right idx as well.
+                            localized_face.set_right(right_idx);
                         }
-                        Some(VoronoiFace::new(
-                            left,
-                            right,
-                            face.area(),
-                            face.centroid(),
-                            face.normal(),
-                            None,
-                        ))
+                        Some(localized_face)
                     })
                     .collect();
 
@@ -380,8 +377,8 @@ impl Space {
             .filter_map(|(part, maybe_cell_faces)| {
                 if let Some((cell, faces)) = maybe_cell_faces {
                     // Update the geometry of the particle based on it's voronoi cell
-                    // Note that the face connections offset and face count will be overwritten later, but we must set the 
-                    // centroid, volume and search radius here. 
+                    // Note that the face connections offset and face count will be overwritten later, but we must set the
+                    // centroid, volume and search radius here.
                     part.update_geometry(&cell);
                     Some(faces)
                 } else {
@@ -422,56 +419,103 @@ impl Space {
             let faces_back_extrapolate = self.voronoi_faces.clone();
             let cell_face_connections = self.voronoi_cell_face_connections.clone();
             let face_counts: Vec<_> = self.parts.iter().map(|part| part.face_count).collect();
-            let face_offsets: Vec<_> = self.parts.iter().map(|part| part.face_connections_offset).collect();
+            let face_offsets: Vec<_> = self
+                .parts
+                .iter()
+                .map(|part| part.face_connections_offset)
+                .collect();
             let volumes: Vec<_> = self.parts.iter().map(|part| part.volume).collect();
             let centroids: Vec<_> = self.parts.iter().map(|part| part.centroid).collect();
 
             self.volume_calculation(engine);
             assert_eq!(self.voronoi_faces.len(), faces_back_extrapolate.len());
-            assert_eq!(self.voronoi_cell_face_connections.len(), cell_face_connections.len());
+            assert_eq!(
+                self.voronoi_cell_face_connections.len(),
+                cell_face_connections.len()
+            );
 
             for (i, part) in self.parts.iter().enumerate() {
                 assert_approx_eq!(f64, part.volume, volumes[i]);
-                assert_approx_eq!(f64, part.centroid.x, centroids[i].x, ulps=16);
-                assert_approx_eq!(f64, part.centroid.y, centroids[i].y, ulps=16);
-                assert_approx_eq!(f64, part.centroid.z, centroids[i].z, ulps=8, epsilon=1e-13);
+                assert_approx_eq!(f64, part.centroid.x, centroids[i].x, ulps = 16);
+                assert_approx_eq!(f64, part.centroid.y, centroids[i].y, ulps = 16);
+                assert_approx_eq!(
+                    f64,
+                    part.centroid.z,
+                    centroids[i].z,
+                    ulps = 8,
+                    epsilon = 1e-13
+                );
                 assert_eq!(part.face_count, face_counts[i]);
 
-                let new_face_idx = &self.voronoi_cell_face_connections[part.face_connections_offset..part.face_connections_offset+part.face_count];
-                let new_faces: Vec<_> = new_face_idx.iter().map(|&idx| &self.voronoi_faces[idx]).collect();
-                let old_face_idx = &cell_face_connections[face_offsets[i]..face_offsets[i]+face_counts[i]];
-                let old_faces: Vec<_> = old_face_idx.iter().map(|&idx| &faces_back_extrapolate[idx]).collect();
+                let new_face_idx = &self.voronoi_cell_face_connections
+                    [part.face_connections_offset..part.face_connections_offset + part.face_count];
+                let new_faces: Vec<_> = new_face_idx
+                    .iter()
+                    .map(|&idx| &self.voronoi_faces[idx])
+                    .collect();
+                let old_face_idx =
+                    &cell_face_connections[face_offsets[i]..face_offsets[i] + face_counts[i]];
+                let old_faces: Vec<_> = old_face_idx
+                    .iter()
+                    .map(|&idx| &faces_back_extrapolate[idx])
+                    .collect();
                 for new_face in new_faces {
                     let new_left = new_face.left();
                     let new_right = new_face.right();
                     // loop over the old faces and check whether we find the equivalent face
-                    let n_equivalent = old_faces.iter().filter(|&old_face| {
-                        let old_left = old_face.left();
-                        let old_right = old_face.right();
-                        let matching = if let Some(new_right) = new_right {
-                            if let Some(old_right) = old_right {
-                                old_left == new_left && old_right == new_right || old_left == new_right && old_right == new_left
+                    let n_equivalent = old_faces
+                        .iter()
+                        .filter(|&old_face| {
+                            let old_left = old_face.left();
+                            let old_right = old_face.right();
+                            let matching = if let Some(new_right) = new_right {
+                                if let Some(old_right) = old_right {
+                                    old_left == new_left && old_right == new_right
+                                        || old_left == new_right && old_right == new_left
+                                } else {
+                                    false
+                                }
                             } else {
-                                false
+                                // new_right is also None, check that the left particles and the normals match
+                                if old_right.is_none() {
+                                    old_left == new_left && old_face.normal().eq(&new_face.normal())
+                                } else {
+                                    false
+                                }
+                            };
+                            if matching {
+                                // Do some extra sanity checks
+                                assert_approx_eq!(
+                                    f64,
+                                    new_face.area(),
+                                    old_face.area(),
+                                    ulps = 16,
+                                    epsilon = 1e-13
+                                );
+                                assert_approx_eq!(
+                                    f64,
+                                    new_face.centroid().x,
+                                    old_face.centroid().x,
+                                    ulps = 16,
+                                    epsilon = 1e-13
+                                );
+                                assert_approx_eq!(
+                                    f64,
+                                    new_face.centroid().y,
+                                    old_face.centroid().y,
+                                    ulps = 16,
+                                    epsilon = 1e-13
+                                );
+                                assert_approx_eq!(
+                                    f64,
+                                    new_face.centroid().z,
+                                    old_face.centroid().z,
+                                    epsilon = 1e-13
+                                );
                             }
-                        } else {
-                            // new_right is also None, check that the left particles and the normals match
-                            if old_right.is_none() {
-                                old_left == new_left && old_face.normal().eq(&new_face.normal())
-                            } else {
-                                false
-                            }
-                        };
-                        if matching {
-                            // Do some extra sanity checks
-                            assert_approx_eq!(f64, new_face.area(), old_face.area(), ulps=16, epsilon=1e-13);
-                            assert_approx_eq!(f64, new_face.centroid().x, old_face.centroid().x, ulps=16, epsilon=1e-13);
-                            assert_approx_eq!(f64, new_face.centroid().y, old_face.centroid().y, ulps=16, epsilon=1e-13);
-                            assert_approx_eq!(f64, new_face.centroid().z, old_face.centroid().z, epsilon=1e-13);
-                        } 
-                        matching
-
-                    }).count();
+                            matching
+                        })
+                        .count();
                     assert_eq!(n_equivalent, 1)
                 }
             }
@@ -1348,40 +1392,40 @@ impl Space {
 mod test {
     use std::f64;
 
-    use float_cmp::assert_approx_eq;
-    use glam::DVec3;
-    use yaml_rust::YamlLoader;
-
     use crate::gas_law::{EquationOfState, GasLaw};
     use crate::initial_conditions::InitialConditions;
-    use crate::utils::HydroDimension;
+    use crate::riemann_solver::HLLCRiemannSolver;
     use crate::Engine;
+    use crate::{Dimensionality, ParticleMotion, Runner};
+    use float_cmp::assert_approx_eq;
+    use glam::DVec3;
 
-    use super::Space;
+    use super::{Boundary, Space};
 
     const GAMMA: f64 = 5. / 3.;
-    const CFG_STR: &'_ str = r#"
-boundary: "reflective"
-max_top_level_cells: 3
-"#;
-    const IC_CFG: &'_ str = r###"
-type: "config"
-num_part: 4
-box_size: [1., 1., 1.]
-dimensionality: 1
-particles:
-    x: [0.25, 0.65, 0.75, 0.85]
-    mass: [1., 1.125, 1.125, 1.125]
-    velocity: [0.5, 0.5, 0.5, 0.5]
-    internal_energy: [1., 0.1, 0.1, 0.1]"###;
+    const BOUNDARY: Boundary = Boundary::Reflective;
+    const MAX_TOP_LEVEL_CELLS: usize = 3;
 
     #[test]
     fn test_init_1d() {
         let eos = GasLaw::new(GAMMA, EquationOfState::Ideal);
-        let space_config = &YamlLoader::load_from_str(CFG_STR).unwrap()[0];
-        let ic_config = &YamlLoader::load_from_str(IC_CFG).unwrap()[0];
-        let ics = InitialConditions::init(ic_config, &eos).unwrap();
-        let space = Space::from_ic(ics, space_config, eos).expect("Config should be valid!");
+
+        // generate some simple 1D ics
+        const X: [f64; 4] = [0.25, 0.65, 0.75, 0.85];
+        const MASS: [f64; 4] = [1., 1.125, 1.125, 1.125];
+        const V_X: [f64; 4] = [0.5, 0.5, 0.5, 0.5];
+        const E_INT: [f64; 4] = [1., 0.1, 0.1, 0.1];
+        let ics = InitialConditions::empty(
+            4,
+            (1usize).try_into().expect("dimension is smaller than 3"),
+            DVec3::ONE,
+            false,
+        )
+        .set_coordinates(X.into_iter().map(|x| x * DVec3::X).collect())
+        .set_masses(Vec::from(&MASS))
+        .set_velocities(V_X.into_iter().map(|v| v * DVec3::X).collect())
+        .set_internal_energies(Vec::from(&E_INT));
+        let space = Space::from_ic(ics, MAX_TOP_LEVEL_CELLS, BOUNDARY, eos);
         assert_eq!(space.parts.len(), 4);
         // Check volumes
         assert_approx_eq!(f64, space.parts[0].volume, 0.45, epsilon = 1e-10);
@@ -1406,7 +1450,7 @@ particles:
     fn test_init_2d() {
         let box_size = DVec3::new(2., 2., 1.);
         let num_part = 256;
-        let dimensionality = HydroDimension::HydroDimension2D;
+        let dimensionality = Dimensionality::TwoD;
         let eos = GasLaw::new(GAMMA, EquationOfState::Ideal);
 
         let mapper = |_| (1., DVec3::ZERO, 1.);
@@ -1420,9 +1464,7 @@ particles:
             mapper,
         );
 
-        let space_config = &YamlLoader::load_from_str(CFG_STR).unwrap()[0];
-        let space = Space::from_ic(ics, space_config, eos).expect("Config should be valid");
-
+        let space = Space::from_ic(ics, MAX_TOP_LEVEL_CELLS, BOUNDARY, eos);
         assert_eq!(space.parts.len(), num_part);
         let mut volume_total = 0.;
         let mut areas = vec![0.; num_part];
@@ -1446,7 +1488,7 @@ particles:
     fn test_init_3d() {
         let box_size = DVec3::new(2., 2., 2.);
         let num_part = 512;
-        let dimensionality = HydroDimension::HydroDimension3D;
+        let dimensionality = Dimensionality::ThreeD;
         let eos = GasLaw::new(GAMMA, EquationOfState::Ideal);
 
         let mapper = |_| (1., DVec3::ZERO, 1.);
@@ -1460,9 +1502,7 @@ particles:
             mapper,
         );
 
-        let space_config = &YamlLoader::load_from_str(CFG_STR).unwrap()[0];
-        let space = Space::from_ic(ics, space_config, eos).expect("Config should be valid");
-
+        let space = Space::from_ic(ics, MAX_TOP_LEVEL_CELLS, BOUNDARY, eos);
         assert_eq!(space.parts.len(), num_part);
         let mut volume_total = 0.;
         let mut areas = vec![0.; num_part];
@@ -1486,7 +1526,7 @@ particles:
     fn test_back_extrapolate_volume() {
         let box_size = DVec3::splat(1.);
         let num_part = 16;
-        let dimensionality = HydroDimension::HydroDimension2D;
+        let dimensionality = Dimensionality::TwoD;
 
         let eos = GasLaw::new(GAMMA, EquationOfState::Ideal);
 
@@ -1502,15 +1542,7 @@ particles:
             mapper,
         );
 
-        let space_config = &YamlLoader::load_from_str(
-            r#"
-boundary: "reflective"
-max_top_level_cells: 1
-"#,
-        )
-        .unwrap()[0];
-        let mut space = Space::from_ic(ics, space_config, eos).expect("Config should be valid");
-
+        let mut space = Space::from_ic(ics, 1, Boundary::Reflective, eos);
         // Save ICs for later reference
         let parts_old = space.parts.clone();
         let faces_old = space.voronoi_faces.clone();
@@ -1518,52 +1550,21 @@ max_top_level_cells: 1
         assert_eq!(parts_old.len(), num_part);
 
         // Compute timesteps...
-        let time_integration_cfg = &YamlLoader::load_from_str(
-            r##"
-dt_min: 1e-11
-dt_max: 1e-2
-t_min: 1e-8
-t_end: 0.5
-cfl_criterion: 0.3
-sync_timesteps: true
-"##,
-        )
-        .unwrap()[0];
-        let snapshots_cfg = &YamlLoader::load_from_str(
-            r##"
-t_between_snaps: 0.05
-prefix: "sedov_2D_"
-"##,
-        )
-        .unwrap()[0];
-        let engine_cfg = &YamlLoader::load_from_str(
-            r##"
-t_status: 0.005
-particle_motion: "fluid"
-runner: "OptimalOrder"
-"##,
-        )
-        .unwrap()[0];
-        let hydro_solver_cfg = &YamlLoader::load_from_str(
-            r##"
-kind: "Exact"
-"##,
-        )
-        .unwrap()[0];
-        let gravity_cfg = &YamlLoader::load_from_str(
-            r##"
-kind: "none"
-"##,
-        )
-        .unwrap()[0];
-        let engine = Engine::init(
-            engine_cfg,
-            time_integration_cfg,
-            snapshots_cfg,
-            hydro_solver_cfg,
-            gravity_cfg,
-        )
-        .unwrap();
+        let engine = Engine::new(
+            Runner::OptimalOrder,
+            Box::new(HLLCRiemannSolver),
+            None,
+            0.5,
+            1e-10,
+            1e-2,
+            true,
+            0.3,
+            0.5,
+            "test",
+            0.5,
+            false,
+            ParticleMotion::Fluid,
+        );
         let ti_end = space.timestep(&engine);
         let dt = engine.dt(ti_end - engine.ti_current());
 

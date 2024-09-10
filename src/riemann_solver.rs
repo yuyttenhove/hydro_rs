@@ -7,10 +7,9 @@ mod tsrs;
 mod vacuum;
 
 use glam::DVec3;
-use yaml_rust::Yaml;
 
 use crate::{
-    errors::ConfigError,
+    errors::MVMMError,
     gas_law::{AdiabaticIndex, GasLaw},
     physical_quantities::{Conserved, Primitive, State},
 };
@@ -24,25 +23,21 @@ pub use tsrs::TSRiemannSolver;
 
 use self::vacuum::VacuumRiemannSolver;
 
-pub fn get_solver(cfg: &Yaml) -> Result<Box<dyn RiemannFluxSolver>, ConfigError> {
-    let kind = cfg["kind"].as_str().ok_or(ConfigError::MissingParameter(
-        "riemann_solver:kind".to_string(),
-    ))?;
+pub fn riemann_solver(
+    kind: &str,
+    airs_threshold: Option<f64>,
+) -> Result<Box<dyn RiemannFluxSolver>, MVMMError> {
     match kind {
         "HLLC" => Ok(Box::new(HLLCRiemannSolver)),
         "Exact" => Ok(Box::new(ExactRiemannSolver)),
         "PVRS" => Ok(Box::new(PVRiemannSolver)),
         "AIRS" => {
-            let threshold = cfg["threshold"]
-                .as_f64()
-                .ok_or(ConfigError::MissingParameter(
-                    "solver:threshold".to_string(),
-                ))?;
+            let threshold = airs_threshold.ok_or(MVMMError::MissingAIRSThreshold)?;
             Ok(Box::new(AIRiemannSolver::new(threshold)))
         }
         "TSRS" => Ok(Box::new(TSRiemannSolver)),
         "TRRS" => Ok(Box::new(TRRiemannSolver)),
-        _ => Err(ConfigError::UnknownRiemannSolver(kind.to_string())),
+        _ => Err(MVMMError::UnknownRiemannSolver(kind.to_string())),
     }
 }
 

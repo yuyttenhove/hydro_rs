@@ -1,7 +1,3 @@
-use yaml_rust::Yaml;
-
-use crate::errors::ConfigError;
-
 #[derive(Debug, Default, Clone, Copy)]
 pub struct AdiabaticIndex {
     gamma: f64,
@@ -28,13 +24,6 @@ impl From<AdiabaticIndex> for f64 {
 }
 
 impl AdiabaticIndex {
-    pub fn init(cfg: &Yaml) -> Result<Self, ConfigError> {
-        let gamma = cfg["gamma"].as_f64().ok_or(ConfigError::MissingParameter(
-            "hydrodynamics: gamma".to_string(),
-        ))?;
-        Ok(gamma.into())
-    }
-
     pub fn gamma(&self) -> f64 {
         self.gamma
     }
@@ -70,28 +59,6 @@ pub enum EquationOfState {
     Isothermal { isothermal_internal_energy: f64 },
 }
 
-impl EquationOfState {
-    pub fn init(cfg: &Yaml) -> Result<Self, ConfigError> {
-        let kind = cfg["kind"].as_str().ok_or(ConfigError::MissingParameter(
-            "hydrodynamics: solver: kind".to_string(),
-        ))?;
-        Ok(match kind {
-            "Ideal" => EquationOfState::Ideal,
-            "Isothermal" => {
-                let isothermal_internal_energy = cfg["isothermal_internal_energy"].as_f64().ok_or(
-                    ConfigError::MissingParameter(
-                        "hydrodynamics: solver: isothermal_internal_energy".to_string(),
-                    ),
-                )?;
-                EquationOfState::Isothermal {
-                    isothermal_internal_energy,
-                }
-            }
-            _ => return Err(ConfigError::UnknownEOS(kind.to_string())),
-        })
-    }
-}
-
 #[derive(Debug, Clone, Copy)]
 pub struct GasLaw {
     gamma: AdiabaticIndex,
@@ -99,13 +66,6 @@ pub struct GasLaw {
 }
 
 impl GasLaw {
-    pub fn init(cfg: &Yaml) -> Result<Self, ConfigError> {
-        Ok(Self {
-            gamma: AdiabaticIndex::init(cfg)?,
-            eos: EquationOfState::init(&cfg["equation_of_state"])?,
-        })
-    }
-
     pub fn new(gamma: f64, eos: EquationOfState) -> Self {
         Self {
             gamma: gamma.into(),

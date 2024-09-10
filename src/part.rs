@@ -9,7 +9,7 @@ use crate::{
     engine::{Engine, ParticleMotion},
     flux::FluxInfo,
     timeline::*,
-    utils::{HydroDimension, HydroDimension::*},
+    Dimensionality,
 };
 
 #[derive(Default, Debug, Clone)]
@@ -49,7 +49,7 @@ impl Particle {
         cfl_criterion: f64,
         particle_motion: &ParticleMotion,
         eos: &GasLaw,
-        dimensionality: HydroDimension,
+        dimensionality: Dimensionality,
     ) -> f64 {
         if self.conserved.mass() == 0. {
             // We have vacuum
@@ -92,7 +92,7 @@ impl Particle {
     pub fn hydro_kick1(
         &mut self,
         particle_motion: &ParticleMotion,
-        dimensionality: HydroDimension,
+        dimensionality: Dimensionality,
     ) {
         match particle_motion {
             ParticleMotion::Fixed => (),
@@ -116,7 +116,7 @@ impl Particle {
         dt_drift: f64,
         dt_extrapolate: f64,
         eos: &GasLaw,
-        dimensionality: HydroDimension,
+        dimensionality: Dimensionality,
     ) {
         for i in 0..dimensionality.into() {
             self.loc[i] += self.v[i] * dt_drift;
@@ -353,7 +353,7 @@ impl Particle {
         fluid_v: DVec3,
         sound_speed: f64,
         particle_motion: &ParticleMotion,
-        dimensionality: HydroDimension,
+        dimensionality: Dimensionality,
     ) {
         self.v = match particle_motion {
             ParticleMotion::Fixed => DVec3::ZERO,
@@ -459,17 +459,17 @@ impl Particle {
         self.centroid = centroid;
     }
 
-    pub fn radius(&self, dimensionality: HydroDimension) -> f64 {
+    pub fn radius(&self, dimensionality: Dimensionality) -> f64 {
         match dimensionality {
-            HydroDimension1D => 0.5 * self.volume(),
-            HydroDimension2D => (std::f64::consts::FRAC_1_PI * self.volume()).sqrt(),
-            HydroDimension3D => {
+            Dimensionality::OneD => 0.5 * self.volume(),
+            Dimensionality::TwoD => (std::f64::consts::FRAC_1_PI * self.volume()).sqrt(),
+            Dimensionality::ThreeD => {
                 (0.25 * 3. * std::f64::consts::FRAC_1_PI * self.volume()).powf(1. / 3.)
             }
         }
     }
 
-    pub fn box_wrap(&mut self, box_size: DVec3, dimensionality: HydroDimension) {
+    pub fn box_wrap(&mut self, box_size: DVec3, dimensionality: Dimensionality) {
         let pos_old = self.loc;
         box_wrap(box_size, &mut self.loc, dimensionality.into());
         let shift = self.loc - pos_old;
@@ -477,7 +477,7 @@ impl Particle {
         self.centroid += shift;
     }
 
-    pub fn box_reflect(&mut self, box_size: DVec3, dimensionality: HydroDimension) {
+    pub fn box_reflect(&mut self, box_size: DVec3, dimensionality: Dimensionality) {
         let pos_old = self.loc;
         box_reflect(box_size, &mut self.loc, dimensionality.into());
         debug_assert!(contains(box_size, self.loc, dimensionality.into()));

@@ -1,39 +1,4 @@
 use glam::DVec3;
-use meshless_voronoi::Dimensionality;
-
-#[derive(Clone, Copy, PartialEq, Eq, num_enum::IntoPrimitive, num_enum::TryFromPrimitive)]
-#[repr(usize)]
-pub enum HydroDimension {
-    HydroDimension1D = 1,
-    HydroDimension2D = 2,
-    HydroDimension3D = 3,
-}
-
-impl Default for HydroDimension {
-    fn default() -> Self {
-        HydroDimension::HydroDimension3D
-    }
-}
-
-impl From<Dimensionality> for HydroDimension {
-    fn from(d: Dimensionality) -> Self {
-        match d {
-            Dimensionality::OneD => HydroDimension::HydroDimension1D,
-            Dimensionality::TwoD => HydroDimension::HydroDimension2D,
-            Dimensionality::ThreeD => HydroDimension::HydroDimension3D,
-        }
-    }
-}
-
-impl From<HydroDimension> for Dimensionality {
-    fn from(d: HydroDimension) -> Self {
-        match d {
-            HydroDimension::HydroDimension1D => Dimensionality::OneD,
-            HydroDimension::HydroDimension2D => Dimensionality::TwoD,
-            HydroDimension::HydroDimension3D => Dimensionality::ThreeD,
-        }
-    }
-}
 
 pub trait Round {
     #[allow(dead_code)]

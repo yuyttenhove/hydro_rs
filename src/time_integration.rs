@@ -1,6 +1,4 @@
-use crate::{
-    engine::Engine, errors::ConfigError, part::Particle, space::Space, timeline::IntegerTime,
-};
+use crate::{engine::Engine, part::Particle, space::Space, timeline::IntegerTime};
 
 pub enum Iact {
     Volume,
@@ -26,23 +24,6 @@ pub enum Runner {
 }
 
 impl Runner {
-    pub fn new(kind: &str) -> Result<Runner, ConfigError> {
-        match kind {
-            "Default" => Ok(Runner::Default),
-            "OptimalOrder" => Ok(Runner::OptimalOrder),
-            "TwoGradient" => Ok(Runner::TwoGradient),
-            "Pakmor" => Ok(Runner::Pakmor),
-            "VolumeBackExtrapolate" => Ok(Runner::VolumeBackExtrapolate),
-            "PakmorExtrapolate" => Ok(Runner::PakmorExtrapolate),
-            "TwoVolumeHalfDrift" => Ok(Runner::TwoVolumeHalfDrift),
-            "OptimalOrderHalfDrift" => Ok(Runner::OptimalOrderHalfDrift),
-            "DefaultHalfDrift" => Ok(Runner::DefaultHalfDrift),
-            "MeshlessGradientHalfDrift" => Ok(Runner::MeshlessGradientHalfDrift),
-            "FluxExtrapolateHalfDrift" => Ok(Runner::FluxExtrapolateHalfDrift),
-            _ => Err(ConfigError::UnknownRunner(kind.to_string())),
-        }
-    }
-
     pub fn label(&self) -> &str {
         match self {
             Runner::Default => "default",
@@ -63,6 +44,7 @@ impl Runner {
         let dt = engine.dt(dti);
         match self {
             Runner::FluxExtrapolateHalfDrift => space.drift(dt, 0., engine),
+            // Runner::VolumeBackExtrapolate => space.drift(dt, 0.5 * dt, engine),
             _ => space.drift(dt, dt, engine),
         }
     }
@@ -139,12 +121,15 @@ impl Runner {
             Runner::VolumeBackExtrapolate => {
                 space.regrid();
                 space.volume_calculation_back_extrapolate(engine);
+                // space.volume_derivative_estimate(engine);
                 // Todo: update primitives using new volumes?
                 // Todo: flux extrapolate (godunov) to half timestep? Or keep gradient extrapolation?
                 // Todo: Recompute spatial gradients at half timestep in back extrapolated coordinates?
                 // Todo: Do flux calculation in back extrapolated coordinates as well
                 // space.convert_conserved_to_primitive(engine);
+                // space.apply_time_extrapolations(engine);
                 // space.gradient_estimate(engine);
+                // space.flux_exchange_no_back_extrapolation(engine);
                 space.flux_exchange(engine);
                 space.apply_flux(engine);
                 space.drift_centroids_to_current_time(engine);

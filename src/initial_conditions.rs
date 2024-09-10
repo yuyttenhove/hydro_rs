@@ -2,156 +2,16 @@ use std::{error::Error, path::Path};
 
 use glam::DVec3;
 use rand::Rng;
-use yaml_rust::Yaml;
 
 use meshless_voronoi::integrals::VolumeIntegral;
 use meshless_voronoi::VoronoiIntegrator;
 
 use crate::{
-    errors::ConfigError,
     gas_law::GasLaw,
     macros::{create_attr, create_dataset},
     part::Particle,
-    utils::HydroDimension::{self, *},
+    Dimensionality,
 };
-
-macro_rules! cfg_ics2vec {
-    ($yaml:expr, $prop:expr, $count:expr) => {
-        match $yaml[$prop].as_vec() {
-            Some(arr) if arr.len() == $count => arr
-                .into_iter()
-                .map(|y| match y {
-                    Yaml::Real(s) => Ok(s.parse::<f64>().unwrap()),
-                    Yaml::Integer(i) => Ok(*i as f64),
-                    _ => Err(ConfigError::InvalidArrayFormat($yaml[$prop].clone())),
-                })
-                .collect::<Result<Vec<_>, _>>(),
-            Some(arr) => Err(ConfigError::InvalidArrayLength($count, arr.len())),
-            None => Err(ConfigError::MissingParameter(format!(
-                "initial_conditions:particles:{}",
-                $prop
-            ))),
-        }
-    };
-}
-
-fn sod_shock(coordinate: DVec3) -> (f64, DVec3, f64) {
-    let density = if coordinate.x < 0.5 { 1. } else { 0.125 };
-    let velocity = DVec3::ZERO;
-    let pressure = if coordinate.x < 0.5 { 1. } else { 0.1 };
-    (density, velocity, pressure)
-}
-
-fn noh(coordinate: DVec3) -> (f64, DVec3, f64) {
-    let density = 1.;
-    let velocity = if coordinate.x < 0.5 {
-        DVec3::X
-    } else {
-        -DVec3::X
-    };
-    let pressure = 1.0e-6;
-    (density, velocity, pressure)
-}
-
-fn toro(coordinate: DVec3) -> (f64, DVec3, f64) {
-    let density = 1.;
-    let velocity = if coordinate.x < 0.5 { 2. } else { -2. };
-    let pressure = 0.4;
-    (density, velocity * DVec3::X, pressure)
-}
-
-fn vacuum_expansion(coordinate: DVec3) -> (f64, DVec3, f64) {
-    let density = if coordinate.x < 0.5 { 1. } else { 0. };
-    let velocity = DVec3::ZERO;
-    let pressure = if coordinate.x < 0.5 { 1. } else { 0. };
-    (density, velocity, pressure)
-}
-
-/// Generates a spherically symmetric 1/r density profile
-fn _evrard(_num_part: usize, _box_size: DVec3, _eos: &GasLaw) -> Vec<Particle> {
-    // let mut ic = Vec::<Particle>::with_capacity(num_part);
-    // let num_part_inv = 1. / (num_part as f64);
-
-    // let u0 = 0.05;
-    // let mut m_tot = 0.;
-    // for idx in 0..num_part {
-    //     let x = (idx as f64 + 0.5) * num_part_inv;
-    //     let density = 1. / x;
-    //     let r_in = idx as f64 * num_part_inv;
-    //     let r_out = (idx as f64 + 1.) * num_part_inv;
-    //     m_tot += density * 4. * std::f64::consts::FRAC_PI_3 * (r_out.powi(3) - r_in.powi(3));
-    //     let velocity = 0.;
-    //     let pressure = eos.gas_pressure_from_internal_energy(u0, density);
-    //     ic.push(conv1d!(
-    //         x * box_size.x,
-    //         density,
-    //         velocity,
-    //         pressure,
-    //         box_size,
-    //         num_part_inv,
-    //         eos
-    //     ));
-    // }
-
-    // let correction = 1. / m_tot;
-    // for part in ic.iter_mut() {
-    //     part.conserved = State::<Conserved>::new(
-    //         correction * part.conserved.mass(),
-    //         part.conserved.momentum(),
-    //         part.conserved.energy(),
-    //     );
-    // }
-
-    // ic
-    todo!()
-}
-
-fn constant(_coordinate: DVec3) -> (f64, DVec3, f64) {
-    let density = 1.;
-    let velocity = DVec3::ZERO;
-    let pressure = 1.;
-    (density, velocity, pressure)
-}
-
-fn square(coordinate: DVec3) -> (f64, DVec3, f64) {
-    let density_low = 1.;
-    let density_high = 4.;
-    let density = if coordinate.x < 0.25 || coordinate.x > 0.75 {
-        density_low
-    } else {
-        density_high
-    };
-    let velocity = DVec3::X;
-    let pressure = 1.;
-    (density, velocity, pressure)
-}
-
-fn read_parts_from_cfg(
-    ic_cfg: &Yaml,
-    num_part: usize,
-    periodic: bool,
-    dimensionality: HydroDimension,
-    box_size: DVec3,
-) -> Result<InitialConditions, ConfigError> {
-    let coordinates = cfg_ics2vec!(ic_cfg, "x", num_part)?;
-    let masses = cfg_ics2vec!(ic_cfg, "mass", num_part)?;
-    let velocities = cfg_ics2vec!(ic_cfg, "velocity", num_part)?;
-    let internal_energies = cfg_ics2vec!(ic_cfg, "internal_energy", num_part)?;
-
-    let coordinates = coordinates.iter().map(|&x| x * DVec3::X).collect();
-    let velocities = velocities.iter().map(|&v| v * DVec3::X).collect();
-    Ok(InitialConditions {
-        coordinates,
-        masses,
-        velocities,
-        internal_energies,
-        num_part,
-        periodic,
-        dimensionality,
-        box_size,
-        ..InitialConditions::default()
-    })
-}
 
 #[derive(Clone, Default)]
 pub struct InitialConditions {
@@ -161,7 +21,7 @@ pub struct InitialConditions {
     pub internal_energies: Vec<f64>,
     pub num_part: usize,
     pub periodic: bool,
-    pub dimensionality: HydroDimension,
+    pub dimensionality: Dimensionality,
     pub box_size: DVec3,
     volumes: Option<Vec<f64>>,
     smoothing_lengths: Option<Vec<f64>>,
@@ -169,121 +29,9 @@ pub struct InitialConditions {
 }
 
 impl InitialConditions {
-    pub fn init(ic_cfg: &Yaml, eos: &GasLaw) -> Result<Self, Box<dyn Error>> {
-        println!("Reading ICs...");
-        let kind = ic_cfg["type"]
-            .as_str()
-            .ok_or(ConfigError::MissingParameter(
-                "initial_conditions:type".to_string(),
-            ))?
-            .to_string();
-
-        match kind.as_str() {
-            "file" => {
-                let filename = ic_cfg["filename"]
-                    .as_str()
-                    .ok_or(ConfigError::MissingParameter(
-                        "initial_conditions:filename".to_string(),
-                    ))?
-                    .to_string();
-                return Self::from_hdf5(filename);
-            }
-            _ => (),
-        }
-        // Not reading from file, continue parsing the configuration
-        let num_part = ic_cfg["num_part"].as_i64().unwrap_or(100) as usize;
-        let box_size = ic_cfg["box_size"].as_vec().map_or(
-            Ok(DVec3::from_array([1., 1., 1.])),
-            |v| match &v[..] {
-                [Yaml::Real(a), Yaml::Real(b), Yaml::Real(c)] => Ok(DVec3 {
-                    x: a.parse().unwrap(),
-                    y: b.parse().unwrap(),
-                    z: c.parse().unwrap(),
-                }),
-                _ => Err(ConfigError::IllegalBoxSize(format!(
-                    "{:?}",
-                    ic_cfg["box_size"]
-                ))),
-            },
-        )?;
-        let periodic = ic_cfg["periodic"].as_bool().unwrap_or(false);
-        let dimensionality = (ic_cfg["dimensionality"].as_i64().unwrap_or(3) as usize)
-            .try_into()
-            .expect("Hydro dimensionality must be <= 3!");
-        let perturbations = ic_cfg["perturbations"].as_f64();
-
-        let ics = match kind.as_str() {
-            "config" => read_parts_from_cfg(
-                &ic_cfg["particles"],
-                num_part,
-                periodic,
-                dimensionality,
-                box_size,
-            )?,
-            "sodshock" => Self::from_fn(
-                box_size,
-                num_part,
-                dimensionality,
-                periodic,
-                eos,
-                perturbations,
-                sod_shock,
-            ),
-            "noh" => Self::from_fn(
-                box_size,
-                num_part,
-                dimensionality,
-                periodic,
-                eos,
-                perturbations,
-                noh,
-            ),
-            "toro" => Self::from_fn(
-                box_size,
-                num_part,
-                dimensionality,
-                periodic,
-                eos,
-                perturbations,
-                toro,
-            ),
-            "vacuum" => Self::from_fn(
-                box_size,
-                num_part,
-                dimensionality,
-                periodic,
-                eos,
-                perturbations,
-                vacuum_expansion,
-            ),
-            "evrard" => todo!(),
-            "constant" => Self::from_fn(
-                box_size,
-                num_part,
-                dimensionality,
-                periodic,
-                eos,
-                perturbations,
-                constant,
-            ),
-            "square" => Self::from_fn(
-                box_size,
-                num_part,
-                dimensionality,
-                periodic,
-                eos,
-                perturbations,
-                square,
-            ),
-            _ => return Err(Box::new(ConfigError::UnknownICs(kind.to_string()))),
-        };
-
-        Ok(ics.postprocess_positions())
-    }
-
     pub fn empty(
         num_part: usize,
-        dimension: HydroDimension,
+        dimension: Dimensionality,
         box_size: DVec3,
         periodic: bool,
     ) -> Self {
@@ -338,22 +86,22 @@ impl InitialConditions {
         assert_eq!(
             3 * num_parts,
             coordinates.len(),
-            "Incorrect lenght of coordinates vector!"
+            "Incorrect length of coordinates vector!"
         );
         assert_eq!(
             num_parts,
             masses.len(),
-            "Incorrect lenght of masses vector!"
+            "Incorrect length of masses vector!"
         );
         assert_eq!(
             3 * num_parts,
             velocities.len(),
-            "Incorrect lenght of velocities vector!"
+            "Incorrect length of velocities vector!"
         );
         assert_eq!(
             num_parts,
             internal_energy.len(),
-            "Incorrect lenght of internal energies vector!"
+            "Incorrect length of internal energies vector!"
         );
         let coordinates = coordinates
             .chunks(3)
@@ -361,21 +109,21 @@ impl InitialConditions {
             .collect();
         let velocities = velocities.chunks(3).map(|c| DVec3::from_slice(c)).collect();
 
-        let mut ics = Self::empty(num_parts, dimension, box_size, periodic);
-        ics = ics.set_coordinates(coordinates);
-        ics = ics.set_masses(masses);
-        ics = ics.set_velocities(velocities);
-        ics = ics.set_internal_energies(internal_energy);
-        println!("✅");
+        let ics = Self::empty(num_parts, dimension, box_size, periodic)
+            .set_coordinates(coordinates)
+            .set_masses(masses)
+            .set_velocities(velocities)
+            .set_internal_energies(internal_energy);
 
-        Ok(ics.postprocess_positions())
+        Ok(ics)
     }
 
     /// Create an initial condition from a mapper that maps a particle's `position` to its `(density, velocity, pressure)`.
+    /// The positions are normalized to the interval [0.; 1.] in all dimensions.
     pub fn from_fn<F>(
         mut box_size: DVec3,
         num_part: usize,
-        dimensionality: HydroDimension,
+        dimensionality: Dimensionality,
         periodic: bool,
         eos: &GasLaw,
         perturbations: Option<f64>,
@@ -436,19 +184,18 @@ impl InitialConditions {
                 .push(eos.gas_internal_energy_from_pressure(pressure, 1. / density));
         }
 
-        ics.postprocess_positions()
+        ics
     }
 
-    fn postprocess_positions(mut self) -> Self {
+    fn postprocess_positions(&mut self) {
         let dimension_fac = match self.dimensionality {
-            HydroDimension1D => DVec3::new(1., 0., 0.),
-            HydroDimension2D => DVec3::new(1., 1., 0.),
-            HydroDimension3D => DVec3::new(1., 1., 1.),
+            Dimensionality::OneD => DVec3::new(1., 0., 0.),
+            Dimensionality::TwoD => DVec3::new(1., 1., 0.),
+            Dimensionality::ThreeD => DVec3::new(1., 1., 1.),
         };
         for pos in self.coordinates.iter_mut() {
             *pos *= dimension_fac;
         }
-        self
     }
 
     fn init_volumes(&mut self) -> &[f64] {
@@ -456,7 +203,7 @@ impl InitialConditions {
             assert_eq!(
                 self.coordinates.len(),
                 self.num_part,
-                "Invalid lenght of coordinates!"
+                "Invalid length of coordinates!"
             );
             VoronoiIntegrator::build(
                 &self.coordinates,
@@ -479,26 +226,51 @@ impl InitialConditions {
 
     pub fn set_coordinates(mut self, coordinates: Vec<DVec3>) -> Self {
         self.coordinates = coordinates;
+        assert_eq!(
+            self.coordinates.len(),
+            self.num_part,
+            "Invalid length of coordinates!"
+        );
         self
     }
 
     pub fn set_masses(mut self, masses: Vec<f64>) -> Self {
         self.masses = masses;
+        assert_eq!(
+            self.masses.len(),
+            self.num_part,
+            "Invalid length of masses!"
+        );
         self
     }
 
     pub fn set_velocities(mut self, velocities: Vec<DVec3>) -> Self {
         self.velocities = velocities;
+        assert_eq!(
+            self.velocities.len(),
+            self.num_part,
+            "Invalid length of velocities!"
+        );
         self
     }
 
     pub fn set_internal_energies(mut self, internal_energies: Vec<f64>) -> Self {
         self.internal_energies = internal_energies;
+        assert_eq!(
+            self.internal_energies.len(),
+            self.num_part,
+            "Invalid length of internal energies!"
+        );
         self
     }
 
     pub fn set_densities(mut self, densities: &[f64]) -> Self {
         // Set masses
+        assert_eq!(
+            densities.len(),
+            self.num_part,
+            "Invalid length of densities!"
+        );
         self.init_volumes();
         self.masses = densities
             .iter()
@@ -513,12 +285,12 @@ impl InitialConditions {
         assert_eq!(
             self.masses.len(),
             self.num_part,
-            "Invalid lenght of masses!"
+            "Invalid length of masses!"
         );
         assert_eq!(
             pressures.len(),
             self.num_part,
-            "Invalid lenght of pressures!"
+            "Invalid length of pressures!"
         );
 
         self.init_volumes();
@@ -540,9 +312,9 @@ impl InitialConditions {
         assert_eq!(
             self.masses.len(),
             self.num_part,
-            "Invalid lenght of masses!"
+            "Invalid length of masses!"
         );
-        assert_eq!(momenta.len(), self.num_part, "Invalid lenght of momenta!");
+        assert_eq!(momenta.len(), self.num_part, "Invalid length of momenta!");
 
         self.velocities = self
             .masses
@@ -577,9 +349,9 @@ impl InitialConditions {
                 .iter()
                 .map(|vol| {
                     let radius = match self.dimensionality {
-                        HydroDimension1D => 0.5 * *vol,
-                        HydroDimension2D => (std::f64::consts::FRAC_1_PI * vol).sqrt(),
-                        HydroDimension3D => {
+                        Dimensionality::OneD => 0.5 * *vol,
+                        Dimensionality::TwoD => (std::f64::consts::FRAC_1_PI * vol).sqrt(),
+                        Dimensionality::ThreeD => {
                             (0.25 * 3. * std::f64::consts::FRAC_1_PI * vol).powf(1. / 3.)
                         }
                     };
@@ -649,7 +421,8 @@ impl InitialConditions {
         self.box_size
     }
 
-    pub(crate) fn into_parts(self) -> Vec<Particle> {
+    pub(crate) fn into_parts(mut self) -> Vec<Particle> {
+        self.postprocess_positions();
         self.coordinates
             .iter()
             .zip(self.masses.iter())
@@ -661,7 +434,7 @@ impl InitialConditions {
             .collect()
     }
 
-    pub fn dimensionality(&self) -> HydroDimension {
+    pub fn dimensionality(&self) -> Dimensionality {
         self.dimensionality
     }
 }

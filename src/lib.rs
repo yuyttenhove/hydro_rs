@@ -1,8 +1,15 @@
-extern crate yaml_rust;
+//! Meshless-Voronoi Moving Mesh hydrodynamics code/library focussed on flexibility rather than raw performance.
+//!
+//! The library also provides access to a variety of Riemann Solvers for the Euler equations.
 
-pub use engine::Engine;
+pub use engine::{Engine, ParticleMotion};
+pub use gravity::{GravitySolver, KeplerianPotential, Potential};
 pub use initial_conditions::InitialConditions;
-pub use space::Space;
+pub use space::{Boundary, Space};
+pub use time_integration::Runner;
+
+/// The dimensionality of the hydrodynamics simulation.
+pub type Dimensionality = meshless_voronoi::Dimensionality;
 
 mod cell;
 mod engine;

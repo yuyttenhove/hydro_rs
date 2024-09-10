@@ -1,16 +1,11 @@
 use common::{
-    get_engine, get_eos, get_space, ENGINE_CONFIG, EOS_CONFIG, GRAVITY_CONFIG, HYDRO_CONFIG,
-    SNAPSHOTS_CONFIG, TIME_INTEGRATION_CONFIG,
+    get_space, get_testing_engine, 
 };
 use float_cmp::{approx_eq, assert_approx_eq};
 use glam::DVec3;
-use hydro_rs::{gas_law::GasLaw, Engine, InitialConditions, Space};
+use mvmm_hydro::{gas_law::{EquationOfState, GasLaw}, riemann_solver::ExactRiemannSolver, Engine, InitialConditions, ParticleMotion, Runner, Space};
 
 mod common;
-
-const SPACE_CONFIG: &'static str = r##"
-boundary: "periodic"
-"##;
 
 fn get_ic_2d(v: DVec3, eos: &GasLaw) -> InitialConditions {
     InitialConditions::from_fn(
@@ -217,19 +212,13 @@ fn flux_exchange(
 
 #[test]
 fn test_invariance() {
-    let engine = get_engine(
-        ENGINE_CONFIG,
-        TIME_INTEGRATION_CONFIG,
-        SNAPSHOTS_CONFIG,
-        HYDRO_CONFIG,
-        GRAVITY_CONFIG,
-    );
-    let eos = get_eos(EOS_CONFIG);
+    let engine = get_testing_engine(Runner::OptimalOrder, Box::new(ExactRiemannSolver), 0.5, 1e-11, 1e-2, false, 0.3, ParticleMotion::Fluid);
+    let eos = GasLaw::new(5. / 3., EquationOfState::Ideal);
     let ic = get_ic_2d(DVec3::ZERO, &eos);
     let boost_velocity = 10. * DVec3::X;
     let ic_boosted = get_ic_2d(boost_velocity, &eos);
-    let mut space = get_space(SPACE_CONFIG, ic, eos);
-    let mut space_boosted = get_space(SPACE_CONFIG, ic_boosted, eos);
+    let mut space = get_space(ic, eos);
+    let mut space_boosted = get_space(ic_boosted, eos);
 
     gradient_estimate(&mut space, &mut space_boosted, &engine);
     let _dti = timestep(&mut space, &mut space_boosted, &engine);

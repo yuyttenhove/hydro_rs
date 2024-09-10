@@ -21,10 +21,11 @@ def load(data, center=5):
     density_s, velocities_s, internal_energy_s = yee_quantities(
         centred_centroids, T_INF, GAMMA, BETA)
 
-    delta_rho = np.abs(density - density_s)
+    delta_rho = (density - density_s) / density_s
+    v_s = np.sqrt(np.sum(velocities_s ** 2, axis=1))
     delta_v = velocities[:, :2] - velocities_s
-    delta_v = np.sqrt(np.sum(delta_v * delta_v, axis=1))
-    delta_u = np.abs(internal_energy_s - internal_energy)
+    delta_v = np.sqrt(np.sum(delta_v ** 2, axis=1)) / (v_s.max())
+    delta_u = (internal_energy - internal_energy_s) / (internal_energy_s)
 
     return coordinates, density, delta_rho, delta_v, delta_u
 
@@ -84,17 +85,24 @@ def plot_single(coordinates, property, ax, norm, title=None, cmap=None, lim=[0, 
     ax.set_yticks([])
 
 
+def get_norm(vmin, vmax):
+    if vmin < 0 and vmax > 0:
+        vmin = min(vmin, -vmax)
+        vmax = max(vmax, -vmin)
+    return Normalize(vmin=vmin, vmax=vmax)
+
+
 def plot_comparison(entries, info, savename_base=None, half_drift=None):
 
-    norm_field = Normalize(vmin=info["limits"]["Field"][0],
+    norm_field = get_norm(vmin=info["limits"]["Field"][0],
                          vmax=info["limits"]["Field"][1])    
-    norm_rho = Normalize(vmin=info["limits"]["Density"][0],
+    norm_rho = get_norm(vmin=info["limits"]["Density"][0],
                          vmax=info["limits"]["Density"][1])
     # norm_rho = LogNorm(vmin=1e-3,
     #                      vmax=info["limits"]["Density"][1])
-    norm_v = Normalize(vmin=info["limits"]["Velocity"][0],
+    norm_v = get_norm(vmin=info["limits"]["Velocity"][0],
                        vmax=info["limits"]["Velocity"][1])
-    norm_u = Normalize(vmin=info["limits"]["Internal energy"][0],
+    norm_u = get_norm(vmin=info["limits"]["Internal energy"][0],
                        vmax=info["limits"]["Internal energy"][1])
 
     if half_drift is None:
@@ -121,17 +129,17 @@ def plot_comparison(entries, info, savename_base=None, half_drift=None):
         plot_single(data["Coordinates"], data["Field"],
                     col[0], norm_field, title=data["title"], cmap="viridis")
         plot_single(data["Coordinates"], data["Density"],
-                    col[1], norm_rho, cmap="turbo")
+                    col[1], norm_rho, cmap="Spectral")
         plot_single(data["Coordinates"], data["Velocity"],
                     col[2], norm_v, cmap="turbo")
         plot_single(data["Coordinates"], data["Internal energy"],
-                    col[3], norm_u, cmap="turbo")
+                    col[3], norm_u, cmap="Spectral")
         i += 1
 
     axes.axes_column[0][0].set_ylabel("Density field")
     axes.axes_column[0][1].set_ylabel("Density error")
-    axes.axes_column[0][2].set_ylabel("Internal energy error")
-    axes.axes_column[0][3].set_ylabel("Velocity error")
+    axes.axes_column[0][2].set_ylabel("Velocity error")
+    axes.axes_column[0][3].set_ylabel("Internal energy error")
 
     time = round(info["time"], 1)
     if half_drift is None:
@@ -159,7 +167,7 @@ def plot_comparison(entries, info, savename_base=None, half_drift=None):
 if __name__ == "__main__":
     high_cfl = False
     low_cfl = False
-    res = 50
+    res = 100
     if high_cfl:
         entries = {
             f"yee_{res}_optimal_high_cfl": dict(title="Optimal", half_drift=False),
@@ -172,10 +180,10 @@ if __name__ == "__main__":
         entries = {
             # f"yee_{res}_default": dict(title="Default", half_drift=False),
             # f"yee_{res}_optimal": dict(title="Optimal", half_drift=False),
-            # f"yee_{res}_pakmor": dict(title="Pakmor", half_drift=False),
-            f"yee_{res}_swift": dict(title="SWIFT", half_drift=False),
+            f"yee_{res}_pakmor": dict(title="Pakmor", half_drift=False),
+            # f"yee_{res}_swift": dict(title="SWIFT", half_drift=False),
             # f"yee_{res}_pakmor_extrapolate": dict(title="PakmorExtrapolate", half_drift=False),
-            f"yee_{res}_pakmor": dict(title="Volume Back", half_drift=False),
+            f"yee_{res}_volume_back_extrapolate": dict(title="Volume Back", half_drift=False),
             # f"yee_{res}_optimal_half": dict(title="Optimal, half drift", half_drift=True),
             f"yee_{res}_meshless_gradient_half": dict(title="Meshless gradient", half_drift=True),
             # f"yee_{res}_flux_extrapolate_half": dict(title="Flux extrapolate", half_drift=True),

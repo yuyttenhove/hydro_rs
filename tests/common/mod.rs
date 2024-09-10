@@ -1,5 +1,10 @@
-use hydro_rs::{gas_law::GasLaw, Engine, InitialConditions, Space};
-use yaml_rust::YamlLoader;
+use std::f64;
+
+use mvmm_hydro::{
+    gas_law::GasLaw,
+    riemann_solver::RiemannFluxSolver,
+    Engine, InitialConditions, ParticleMotion, Runner, Space,
+};
 
 pub const _CONFIG: &'static str = r###"
 time_integration:
@@ -42,85 +47,38 @@ equation_of_state:
   gamma: 1.66666666667
 "###;
 
-pub const TIME_INTEGRATION_CONFIG: &'static str = r##"
-dt_min: 1e-11
-dt_max: 1e-2
-t_min: 1e-8
-t_end: 0.5
-cfl_criterion: 0.3
-"##;
-
-pub const SNAPSHOTS_CONFIG: &'static str = r##"
-t_between_snaps: 0.05
-prefix: "sedov_2D_"
-"##;
-
-pub const _SPACE_CONFIG: &'static str = r##"
-boundary: "periodic"
-"##;
-
-pub const ENGINE_CONFIG: &'static str = r##"
-t_status: 0.005
-particle_motion: "fluid"
-runner: "OptimalOrder"
-"##;
-
-pub const HYDRO_CONFIG: &'static str = r##"
-solver: "Exact"
-"##;
-
-pub const GRAVITY_CONFIG: &'static str = r##"
-kind: "none"
-"##;
-
-pub const EOS_CONFIG: &'static str = r##"
-gamma: 1.66666667
-equation_of_state: 
-  kind: "Ideal"
-"##;
-
-pub const _IC_CONFIG: &'static str = r##"
-type: "file"
-box_size: [2., 1., 1.]
-num_part: 200
-filename: "ICs/sedov_2D.hdf5"
-"##;
-
-pub fn get_eos(cfg: &str) -> GasLaw {
-    GasLaw::init(&YamlLoader::load_from_str(cfg).expect("Error loading EOS cfg!")[0])
-        .expect("Error creating GasLaw!")
-}
-
-pub fn _get_ic(cfg: &str, eos: &GasLaw) -> InitialConditions {
-    InitialConditions::init(
-        &YamlLoader::load_from_str(cfg).expect("Error loading ICs cfg!")[0],
-        eos,
-    )
-    .expect("Error creating Initial conditions")
-}
-
-pub fn get_space(cfg: &str, ic: InitialConditions, eos: GasLaw) -> Space {
+pub fn get_space(ic: InitialConditions, eos: GasLaw) -> Space {
     Space::from_ic(
         ic,
-        &YamlLoader::load_from_str(cfg).expect("Error loading space cfg!")[0],
+        1,
+        mvmm_hydro::Boundary::Periodic,
         eos,
     )
-    .expect("Error creating Space")
 }
 
-pub fn get_engine(
-    engine_cfg: &str,
-    time_integration_cfg: &str,
-    snapshots_cfg: &str,
-    hydro_solver_cfg: &str,
-    gravity_solver_cfg: &str,
+pub fn get_testing_engine(
+    runner: Runner,
+    riemann_solver: Box<dyn RiemannFluxSolver>,
+    t_end: f64,
+    dt_min: f64,
+    dt_max: f64,
+    sync_all: bool,
+    cfl_criterion: f64,
+    particle_motion: ParticleMotion,
 ) -> Engine {
-    Engine::init(
-        &YamlLoader::load_from_str(engine_cfg).expect("Error loading engine cfg!")[0],
-        &YamlLoader::load_from_str(time_integration_cfg).expect("Error loading engine cfg!")[0],
-        &YamlLoader::load_from_str(snapshots_cfg).expect("Error loading engine cfg!")[0],
-        &YamlLoader::load_from_str(hydro_solver_cfg).expect("Error loading engine cfg!")[0],
-        &YamlLoader::load_from_str(gravity_solver_cfg).expect("Error loading engine cfg!")[0],
+    Engine::new(
+        runner,
+        riemann_solver,
+        None,
+        t_end,
+        dt_min,
+        dt_max,
+        sync_all,
+        cfl_criterion,
+        f64::INFINITY,
+        "none",
+        f64::INFINITY,
+        false,
+        particle_motion,
     )
-    .expect("Error initializing engine!")
 }

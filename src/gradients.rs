@@ -2,7 +2,7 @@ use glam::{DMat3, DVec3};
 
 use crate::{
     physical_quantities::{Gradients, Primitive, State},
-    utils::HydroDimension,
+    Dimensionality,
 };
 
 pub struct GradientData<T> {
@@ -11,19 +11,19 @@ pub struct GradientData<T> {
 }
 
 impl<T> GradientData<T> {
-    pub fn init(dimensionality: HydroDimension) -> Self {
+    pub fn init(dimensionality: Dimensionality) -> Self {
         let matrix_wls = match dimensionality {
-            HydroDimension::HydroDimension1D => {
+            Dimensionality::OneD => {
                 let mut mat = DMat3::IDENTITY;
                 mat.x_axis.x = 0.;
                 mat
             }
-            HydroDimension::HydroDimension2D => {
+            Dimensionality::TwoD => {
                 let mut mat = DMat3::ZERO;
                 mat.z_axis.z = 1.;
                 mat
             }
-            HydroDimension::HydroDimension3D => DMat3::ZERO,
+            Dimensionality::ThreeD => DMat3::ZERO,
         };
 
         Self {

@@ -1,11 +1,9 @@
 use std::collections::VecDeque;
-use yaml_rust::Yaml;
 
 use crate::{
-    errors::ConfigError,
     gravity::GravitySolver,
     part::Particle,
-    riemann_solver::{get_solver, RiemannFluxSolver},
+    riemann_solver::RiemannFluxSolver,
     space::Space,
     time_integration::{Iact, Runner},
     timeline::*,
@@ -33,18 +31,6 @@ struct SyncPoint {
 impl SyncPoint {
     fn new(ti: IntegerTime, kind: SyncPointType) -> Self {
         Self { ti, kind }
-    }
-}
-
-impl ParticleMotion {
-    fn new(kind: &str) -> Result<Self, ConfigError> {
-        match kind {
-            "fixed" => Ok(ParticleMotion::Fixed),
-            "steer" => Ok(ParticleMotion::Steer),
-            "steer_pakmor" => Ok(ParticleMotion::SteerPakmor),
-            "fluid" => Ok(ParticleMotion::Fluid),
-            _ => Err(ConfigError::UnknownParticleMotion(kind.to_string())),
-        }
     }
 }
 
@@ -76,69 +62,21 @@ pub struct Engine {
 }
 
 impl Engine {
-    /// Setup a simulation by initializing a new engine struct for initial conditions
-    pub fn init(
-        engine_cfg: &Yaml,
-        time_integration_cfg: &Yaml,
-        snapshots_cfg: &Yaml,
-        riemann_solver_cfg: &Yaml,
-        gravity_solver_cfg: &Yaml,
-    ) -> Result<Self, ConfigError> {
-        // Read config
-        print!("Initializing engine...");
-        let t_status = engine_cfg["t_status"]
-            .as_f64()
-            .ok_or(ConfigError::MissingParameter("engine:t_status".to_string()))?;
-        let runner_kind = engine_cfg["runner"]
-            .as_str()
-            .ok_or(ConfigError::MissingParameter(
-                "time_integration: runner".to_string(),
-            ))?;
-        let particle_motion = engine_cfg["particle_motion"].as_str().unwrap_or("fluid");
-        let dt_min =
-            time_integration_cfg["dt_min"]
-                .as_f64()
-                .ok_or(ConfigError::MissingParameter(
-                    "time_integration:t_end".to_string(),
-                ))?;
-        let dt_max =
-            time_integration_cfg["dt_max"]
-                .as_f64()
-                .ok_or(ConfigError::MissingParameter(
-                    "time_integration:dt_max".to_string(),
-                ))?;
-        let t_end = time_integration_cfg["t_end"]
-            .as_f64()
-            .ok_or(ConfigError::MissingParameter(
-                "time_integration:t_end".to_string(),
-            ))?;
-        let cfl_criterion =
-            time_integration_cfg["cfl_criterion"]
-                .as_f64()
-                .ok_or(ConfigError::MissingParameter(
-                    "time_integration:cfl_criterion".to_string(),
-                ))?;
-        let sync_all = time_integration_cfg["sync_timesteps"]
-            .as_bool()
-            .unwrap_or(false);
-        let t_between_snaps =
-            snapshots_cfg["t_between_snaps"]
-                .as_f64()
-                .ok_or(ConfigError::MissingParameter(
-                    "snapshots:t_between_snaps".to_string(),
-                ))?;
-        let prefix = snapshots_cfg["prefix"]
-            .as_str()
-            .ok_or(ConfigError::MissingParameter(
-                "snapshots:t_between_snaps".to_string(),
-            ))?;
-        let save_faces = snapshots_cfg["save_faces"].as_bool().unwrap_or(false);
-
-        // Setup members
-        let runner = Runner::new(runner_kind)?;
-        let riemann_solver = get_solver(riemann_solver_cfg)?;
-        let gravity_solver = GravitySolver::init(gravity_solver_cfg)?;
-        let particle_motion = ParticleMotion::new(particle_motion)?;
+    pub fn new(
+        runner: Runner,
+        riemann_solver: Box<dyn RiemannFluxSolver>,
+        gravity_solver: Option<GravitySolver>,
+        t_end: f64,
+        dt_min: f64,
+        dt_max: f64,
+        sync_all: bool,
+        cfl_criterion: f64,
+        dt_snap: f64,
+        snapshot_prefix: &str,
+        dt_status: f64,
+        save_faces: bool,
+        particle_motion: ParticleMotion,
+    ) -> Self {
         let time_base = t_end / MAX_NR_TIMESTEPS as f64;
         let time_base_inv = 1. / time_base;
 
@@ -151,8 +89,7 @@ impl Engine {
             sync_points.push_back(SyncPoint::new(0, SyncPointType::Step));
         }
 
-        println!("✅");
-        Ok(Self {
+        Self {
             runner,
             riemann_solver,
             gravity_solver,
@@ -170,14 +107,14 @@ impl Engine {
             dt_max,
             sync_all,
             ti_snap: 0,
-            ti_between_snaps: (t_between_snaps * time_base_inv) as IntegerTime,
+            ti_between_snaps: (dt_snap * time_base_inv) as IntegerTime,
             ti_status: 0,
-            ti_between_status: (t_status * time_base_inv) as IntegerTime,
+            ti_between_status: (dt_status * time_base_inv) as IntegerTime,
             snap: 0,
-            snapshot_prefix: prefix.to_string(),
+            snapshot_prefix: snapshot_prefix.to_string(),
             save_faces,
             particle_motion,
-        })
+        }
     }
 
     /// Run this simulation

@@ -6,46 +6,45 @@ time_integration:
   sync_timesteps: false
 
 snapshots:
-  t_between_snaps: 0.02
-  prefix: "sodshock_2D"
+  dt_snap: 0.02
+  prefix: sodshock_2D
   save_faces: false
 
 engine:
-  t_status: 1e-3
-  particle_motion: "steer"
-  # runner: "DefaultHalfDrift"
-  # runner: "OptimalOrderHalfDrift"
-  # runner: "TwoVolumeHalfDrift"
-  # runner: "MeshlessGradientHalfDrift"
-  # runner: "FluxExtrapolateHalfDrift"
-  # runner: "OptimalOrder"
-  # runner: "TwoGradient"
-  # runner: "Default"
-  # runner: "Pakmor"
-  # runner: "PakmorExtrapolate"
-  runner: "VolumeBackExtrapolate"
+  dt_status: 1e-3
+  particle_motion: steer
+  # runner: DefaultHalfDrift
+  # runner: OptimalOrderHalfDrift
+  # runner: TwoVolumeHalfDrift
+  # runner: MeshlessGradientHalfDrift
+  # runner: FluxExtrapolateHalfDrift
+  runner: OptimalOrder
+  # runner: TwoGradient
+  # runner: Default
+  # runner: Pakmor
+  # runner: PakmorExtrapolate
+  # runner: VolumeBackExtrapolate
 gravity:
-  kind: "none"
+  kind: none
   potential:
-    kind: "constant"
+    kind: constant
     acceleration: [0., -1., 0.]
 
 hydrodynamics:
   gamma: 1.66666667
-  equation_of_state: 
-    kind: "Ideal"
+  equation_of_state: Ideal
 riemann_solver: 
-  kind: "AIRS"
+  kind: AIRS
   threshold: 2.
 
 space:
-  boundary: "reflective"
+  boundary: reflective
   max_top_level_cells: 8
 
 initial_conditions:
-  type: "file"
+  kind: file
   dimensionality: 2
   box_size: [4., 1., 1.]
   num_part: 4096
   perturbations: 0.01
-  filename: "ICs/sodshock_2D.hdf5"
+  filename: ICs/sodshock_2D.hdf5

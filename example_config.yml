@@ -1,0 +1,45 @@
+time_integration:
+  dt_min: 1e-11         # The minimal possible timestep allowed. Will panic if a particle requests a smaller timestep
+  dt_max: 0.05          # The maximal possible timestep.
+  t_end: 0.2            # The end time of the simulation
+  cfl_criterion: 0.3    # The CFL criterion for determining the particles' timesteps
+  sync_timesteps: false # Whether to always update all particles, or use individual timesteps
+
+snapshots:
+  dt_snap: 0.02         # The time between snapshot dumps (hdf5 format)
+  prefix: sodshock_2D   # The prefix of the snapshot names
+  save_faces: false     # Whether to store the Voronoi faces in the snapshots
+
+engine:
+  dt_status: 1e-3           # How often the status line is printed
+  particle_motion: steer    # Particle motion: fixed for Eulerian mode, fluid for full lagrangian mode, steer or steer_pakmor for a lagrangian mode with steering to improve the geometry of the cells 
+  runner: OptimalOrder      # The runner used for performing a timestep (determines the order of operations in the timestep). Options are: [OptimalOrder, Default, TwoGradient, Pakmor, PakmorExtrapolate, VolumeBackExtrapolate, DefaultHalfDrift, OptimalOrderHalfDrift, MeshlessGradientHalfDrift, TwoVolumeHalfDrift, FluxExtrapolateHalfDrift]
+  
+gravity:
+  kind: none                    # The type of gravitational potential: none, external or self-gravity
+  softening_length: 0.001       # The gravitational softening length to use for the particles (for self-gravity, or keplerian disc)
+  potential:                    # Extra properties of the potential (when an external potential is chosen)
+    kind: constant              # The type of external potential: constant or keplerian_disc
+    acceleration: [0., -1., 0.] # The (constant) gravitational acceleration
+
+hydrodynamics:
+  gamma: 1.66666667               # The polytropic index of the gas
+  equation_of_state: Ideal        # The type of equation of state: Ideal or Isothermal 
+  isothermal_internal_energy: 1.  # The internal energy of the isothermal gas.
+
+riemann_solver: 
+  kind: AIRS    # The type of Riemann solver to use for the simulation. Options are: [Exact, HLLC, TSRS, TRRS, AIRS, PVRS]
+  threshold: 2. # The threshold of the AIRS
+
+space:
+  boundary: reflective    # The type of boundary conditions for simulations: periodic, reflective, vacuum or open
+  max_top_level_cells: 8  # The number of cells in 1 spatial dimension. Neighbour search for particles is only performed by searching in the cell containing a particle and its neighbours
+
+initial_conditions:
+  kind: file              # The type of initial conditions, load from file or config or use a preset: file, config, sodshock, noh, toro, constant, vacuum-expansion or square-advection
+  filename: ICs/sodshock_2D.hdf5  # The filename to load the ICs from (hdf5 format)
+  periodic: false         # Whether the ICs are meant to run with periodic boundary conditions (only used when loading from config or preset).
+  dimensionality: 2       # The dimensionality of the simulation (only used when loading from config or preset).
+  box_size: [4., 1., 1.]  # The box-size of the simulation (only used when loading from config or preset).
+  num_part: 4096          # The number of particles to generate (only used when loading from config or preset).
+  perturbations: 0.01     # The scale of the perturbations to the particle positions (when generating from a preset).
