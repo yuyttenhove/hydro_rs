@@ -1,4 +1,3 @@
-use std::mem::size_of;
 
 /// Timebins are stored as `i8`
 pub type Timebin = i8;
@@ -30,7 +29,7 @@ pub const fn get_integer_timestep(bin: Timebin) -> IntegerTime {
 ///
 /// log_2(x) = (number of bits in the type) - (number of leading 0-bits in x) - 1
 pub const fn get_time_bin(time_step: IntegerTime) -> Timebin {
-    ((8 * size_of::<IntegerTime>()) as u32 - time_step.leading_zeros() - 2) as i8
+    (IntegerTime::BITS - time_step.leading_zeros() - 2) as i8
 }
 
 /// Returns the integer time corresponding to the start of the time-step

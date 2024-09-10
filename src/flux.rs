@@ -46,11 +46,11 @@ pub fn flux_exchange<RiemannSolver: RiemannFluxSolver>(
     // Gradient + time extrapolation + pair wise limiting
     let dt_extrapolate = -time_extrapolate_fac * dt;
     let left_dash = left.primitives
-        + left.gradients.dot(dx_left).into()
+        + left.gradients.dot(dx_left)
         + left.extrapolations
         + left.time_extrapolations(dt_extrapolate, eos);
     let right_dash = right.primitives
-        + right.gradients.dot(dx_right).into()
+        + right.gradients.dot(dx_right)
         + right.extrapolations
         + right.time_extrapolations(dt_extrapolate, eos);
     let primitives_left = pairwise_limiter(
@@ -117,7 +117,7 @@ pub fn flux_exchange_boundary<RiemannSolver: RiemannFluxSolver>(
     // Gradient extrapolation
     let dt_extraplotate = -time_extrapolate_fac * part.dt;
     let mut primitives_dash = part.primitives
-        + part.gradients.dot(dx_face).into()
+        + part.gradients.dot(dx_face)
         + part.extrapolations
         + part.time_extrapolations(dt_extraplotate, eos);
 

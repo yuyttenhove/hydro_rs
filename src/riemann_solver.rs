@@ -241,16 +241,14 @@ trait RiemannStarSolver: RiemannFluxSolver {
                     star.rho_r, star.u, star.p, right, v_r, a_r, n_unit, gamma,
                 )
             }
+        } else if star.p > left.pressure() {
+            Self::sample_left_shock_wave(
+                star.rho_l, star.u, star.p, left, v_l, a_l, n_unit, gamma,
+            )
         } else {
-            if star.p > left.pressure() {
-                Self::sample_left_shock_wave(
-                    star.rho_l, star.u, star.p, left, v_l, a_l, n_unit, gamma,
-                )
-            } else {
-                Self::sample_left_rarefaction_wave(
-                    star.rho_l, star.u, star.p, left, v_l, a_l, n_unit, gamma,
-                )
-            }
+            Self::sample_left_rarefaction_wave(
+                star.rho_l, star.u, star.p, left, v_l, a_l, n_unit, gamma,
+            )
         }
     }
 }

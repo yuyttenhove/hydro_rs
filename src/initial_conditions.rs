@@ -38,9 +38,7 @@ impl InitialConditions {
         Self {
             num_part,
             periodic,
-            dimensionality: dimension
-                .try_into()
-                .expect("Dimension must be from 1 to 3!"),
+            dimensionality: dimension,
             box_size,
             ..Self::default()
         }
@@ -105,9 +103,9 @@ impl InitialConditions {
         );
         let coordinates = coordinates
             .chunks(3)
-            .map(|c| DVec3::from_slice(c))
+            .map(DVec3::from_slice)
             .collect();
-        let velocities = velocities.chunks(3).map(|c| DVec3::from_slice(c)).collect();
+        let velocities = velocities.chunks(3).map(DVec3::from_slice).collect();
 
         let ics = Self::empty(num_parts, dimension, box_size, periodic)
             .set_coordinates(coordinates)
@@ -210,7 +208,7 @@ impl InitialConditions {
                 None,
                 DVec3::ZERO,
                 self.box_size,
-                self.dimensionality.into(),
+                self.dimensionality,
                 self.periodic,
             )
             .compute_cell_integrals::<VolumeIntegral>()
@@ -383,7 +381,7 @@ impl InitialConditions {
         let part_data = file.create_group("PartType0")?;
         create_dataset!(
             part_data,
-            self.coordinates.iter().map(|x| x.to_array()).flatten(),
+            self.coordinates.iter().flat_map(|x| x.to_array()),
             "Coordinates"
         )?;
         part_data
@@ -392,7 +390,7 @@ impl InitialConditions {
             .create("Masses")?;
         create_dataset!(
             part_data,
-            self.velocities.iter().map(|v| v.to_array()).flatten(),
+            self.velocities.iter().flat_map(|v| v.to_array()),
             "Velocities"
         )?;
         part_data

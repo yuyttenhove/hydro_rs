@@ -44,7 +44,7 @@ impl GravitySolver {
             Self::SelfGravity { softening_length } => {
                 let a2 = particle.a_grav.length_squared();
                 if a2 == 0. {
-                    return std::f64::INFINITY;
+                    return f64::INFINITY;
                 }
                 (softening_length / a2.sqrt()).sqrt()
             }
@@ -67,7 +67,7 @@ impl Potential {
 
     fn get_timestep(&self, particle: &Particle) -> f64 {
         match self {
-            Potential::Constant { acceleration: _ } => std::f64::INFINITY,
+            Potential::Constant { acceleration: _ } => f64::INFINITY,
             Potential::Keplerian(potential) => potential.get_timestep(particle),
         }
     }

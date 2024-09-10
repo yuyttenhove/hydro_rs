@@ -416,9 +416,9 @@ impl Particle {
             y: dv_dy.dot(normal),
             z: dv_dz.dot(normal),
         };
-        grad_reflected[1] = grad_reflected[1] - 2. * dv_dot_n * normal.x;
-        grad_reflected[2] = grad_reflected[2] - 2. * dv_dot_n * normal.y;
-        grad_reflected[3] = grad_reflected[3] - 2. * dv_dot_n * normal.z;
+        grad_reflected[1] -= 2. * dv_dot_n * normal.x;
+        grad_reflected[2] -= 2. * dv_dot_n * normal.y;
+        grad_reflected[3] -= 2. * dv_dot_n * normal.z;
         // Now flip the gradients:
         grad_reflected[1] = grad_reflected[1] - 2. * grad_reflected[1].dot(normal) * normal;
         grad_reflected[2] = grad_reflected[2] - 2. * grad_reflected[2].dot(normal) * normal;

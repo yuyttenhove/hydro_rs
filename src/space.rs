@@ -258,7 +258,7 @@ impl Space {
             &mask,
             DVec3::ZERO,
             self.box_size,
-            self.dimensionality.into(),
+            self.dimensionality,
             self.boundary.periodic(),
         );
 
@@ -330,7 +330,7 @@ impl Space {
                     &mask,
                     anchor,
                     width,
-                    self.dimensionality.into(),
+                    self.dimensionality,
                     false,
                 );
 
@@ -404,7 +404,7 @@ impl Space {
         self.voronoi_cell_face_connections = cell_face_connections
             .into_iter()
             .zip(self.parts.iter_mut())
-            .map(|(connections, part)| {
+            .flat_map(|(connections, part)| {
                 // Overwrite the particles cell-face connections and face counts, based on the actual faces between all particles.
                 // Note we do this for inactive particles as well (sets their face count to 0), so no mor faces are linked to them.
                 part.face_count = connections.len();
@@ -413,7 +413,6 @@ impl Space {
 
                 connections
             })
-            .flatten()
             .collect();
 
         // DEBUGGING: Compute faces and cells the normal way and compare
@@ -598,7 +597,7 @@ impl Space {
             &generators,
             DVec3::ZERO,
             self.box_size,
-            self.dimensionality.into(),
+            self.dimensionality,
             self.boundary.periodic(),
         );
 
@@ -819,7 +818,7 @@ impl Space {
 
         self.parts
             .iter_mut()
-            .zip(d_conserved.into_iter())
+            .zip(d_conserved)
             .for_each(|(part, d_conserved)| {
                 if part.conserved.mass() + d_conserved.mass() > 0. {
                     let mut new_primitives = State::from_conserved(
@@ -926,8 +925,7 @@ impl Space {
                         _ => DVec3::ZERO,
                     };
                     let extrapolated = gradients
-                        .dot(face.centroid() - part.centroid - shift)
-                        .into();
+                        .dot(face.centroid() - part.centroid - shift);
                     limiter.collect(&other.primitives, &extrapolated)
                 }
                 limiter.limit(&mut gradients, &part.primitives);
@@ -1000,7 +998,7 @@ impl Space {
                         continue;
                     }
                     let midpoint = part.loc + 0.5 * ds;
-                    let extrapolated = gradients.dot(midpoint - part.centroid).into();
+                    let extrapolated = gradients.dot(midpoint - part.centroid);
                     limiter.collect(&ngb_part.primitives, &extrapolated)
                 }
                 limiter.limit(&mut gradients, &part.primitives);

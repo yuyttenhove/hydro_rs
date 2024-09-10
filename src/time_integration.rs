@@ -59,96 +59,96 @@ impl Runner {
         let ti_next;
         match self {
             Runner::Default => {
-                space.volume_calculation(&self, &engine.timestep_info);
-                space.convert_conserved_to_primitive(&self, &engine.timestep_info);
-                space.gradient_estimate(&self, &engine.timestep_info);
-                space.flux_exchange(&self, &engine.timestep_info, &engine.riemann_solver);
-                space.apply_flux(&self, &engine.timestep_info);
+                space.volume_calculation(self, &engine.timestep_info);
+                space.convert_conserved_to_primitive(self, &engine.timestep_info);
+                space.gradient_estimate(self, &engine.timestep_info);
+                space.flux_exchange(self, &engine.timestep_info, &engine.riemann_solver);
+                space.apply_flux(self, &engine.timestep_info);
                 space.kick2(&engine.timestep_info);
-                ti_next = space.timestep(&engine);
+                ti_next = space.timestep(engine);
                 space.timestep_limiter(&engine.timestep_info); // Note: this can never decrease ti_next
                 space.kick1(&engine.timestep_info, &engine.particle_motion);
             }
             Runner::OptimalOrder => {
                 // space.regrid();
-                space.volume_calculation(&self, &engine.timestep_info);
-                space.flux_exchange(&self, &engine.timestep_info, &engine.riemann_solver);
-                space.apply_flux(&self, &engine.timestep_info);
+                space.volume_calculation(self, &engine.timestep_info);
+                space.flux_exchange(self, &engine.timestep_info, &engine.riemann_solver);
+                space.apply_flux(self, &engine.timestep_info);
                 space.gravity(&engine.gravity_solver);
                 space.kick2(&engine.timestep_info);
-                space.convert_conserved_to_primitive(&self, &engine.timestep_info);
-                space.gradient_estimate(&self, &engine.timestep_info);
-                // space.meshless_gradient_estimate(&self, &engine.timestep_info);
-                ti_next = space.timestep(&engine);
+                space.convert_conserved_to_primitive(self, &engine.timestep_info);
+                space.gradient_estimate(self, &engine.timestep_info);
+                // space.meshless_gradient_estimate(self, &engine.timestep_info);
+                ti_next = space.timestep(engine);
                 space.timestep_limiter(&engine.timestep_info); // Note: this can never decrease ti_next
                 space.kick1(&engine.timestep_info, &engine.particle_motion);
             }
             Runner::TwoGradient => {
-                space.volume_calculation(&self, &engine.timestep_info);
-                space.gradient_estimate(&self, &engine.timestep_info);
-                space.flux_exchange(&self, &engine.timestep_info, &engine.riemann_solver);
-                space.apply_flux(&self, &engine.timestep_info);
-                space.convert_conserved_to_primitive(&self, &engine.timestep_info);
-                space.gradient_estimate(&self, &engine.timestep_info);
+                space.volume_calculation(self, &engine.timestep_info);
+                space.gradient_estimate(self, &engine.timestep_info);
+                space.flux_exchange(self, &engine.timestep_info, &engine.riemann_solver);
+                space.apply_flux(self, &engine.timestep_info);
+                space.convert_conserved_to_primitive(self, &engine.timestep_info);
+                space.gradient_estimate(self, &engine.timestep_info);
                 space.gravity(&engine.gravity_solver);
                 space.kick2(&engine.timestep_info);
-                ti_next = space.timestep(&engine);
+                ti_next = space.timestep(engine);
                 space.timestep_limiter(&engine.timestep_info); // Note: this can never decrease ti_next
                 space.kick1(&engine.timestep_info, &engine.particle_motion);
             }
             Runner::Pakmor => {
-                space.volume_calculation(&self, &engine.timestep_info);
-                space.gradient_estimate(&self, &engine.timestep_info);
+                space.volume_calculation(self, &engine.timestep_info);
+                space.gradient_estimate(self, &engine.timestep_info);
                 // First half flux
-                space.half_flux_exchange(&self, &engine.timestep_info, &engine.riemann_solver);
-                space.apply_flux(&self, &engine.timestep_info);
+                space.half_flux_exchange(self, &engine.timestep_info, &engine.riemann_solver);
+                space.apply_flux(self, &engine.timestep_info);
                 space.gravity(&engine.gravity_solver);
                 space.kick2(&engine.timestep_info);
-                space.convert_conserved_to_primitive(&self, &engine.timestep_info);
-                space.gradient_estimate(&self, &engine.timestep_info);
-                ti_next = space.timestep(&engine);
-                // space.timestep_limiter(&self, &engine.timestep_info); // Note: this can never decrease ti_next
+                space.convert_conserved_to_primitive(self, &engine.timestep_info);
+                space.gradient_estimate(self, &engine.timestep_info);
+                ti_next = space.timestep(engine);
+                // space.timestep_limiter(self, &engine.timestep_info); // Note: this can never decrease ti_next
                 space.kick1(&engine.timestep_info, &engine.particle_motion);
                 // second half flux
-                space.half_flux_exchange(&self, &engine.timestep_info, &engine.riemann_solver);
+                space.half_flux_exchange(self, &engine.timestep_info, &engine.riemann_solver);
             }
             Runner::PakmorExtrapolate => {
-                space.volume_calculation(&self, &engine.timestep_info);
+                space.volume_calculation(self, &engine.timestep_info);
                 space.flux_exchange_pakmor_single(
-                    &self,
+                    self,
                     &engine.timestep_info,
                     &engine.riemann_solver,
                 );
-                space.apply_flux(&self, &engine.timestep_info);
+                space.apply_flux(self, &engine.timestep_info);
                 space.gravity(&engine.gravity_solver);
                 space.kick2(&engine.timestep_info);
-                space.convert_conserved_to_primitive(&self, &engine.timestep_info);
-                space.gradient_estimate(&self, &engine.timestep_info);
-                ti_next = space.timestep(&engine);
+                space.convert_conserved_to_primitive(self, &engine.timestep_info);
+                space.gradient_estimate(self, &engine.timestep_info);
+                ti_next = space.timestep(engine);
                 space.timestep_limiter(&engine.timestep_info); // Note: this can never decrease ti_next
                 space.kick1(&engine.timestep_info, &engine.particle_motion);
             }
             Runner::VolumeBackExtrapolate => {
                 space.regrid();
-                space.volume_calculation_back_extrapolate(&self, &engine.timestep_info);
-                // space.volume_derivative_estimate(&self, &engine.timestep_info);
+                space.volume_calculation_back_extrapolate(self, &engine.timestep_info);
+                // space.volume_derivative_estimate(self, &engine.timestep_info);
                 // Todo: update primitives using new volumes?
                 // Todo: flux extrapolate (godunov) to half timestep? Or keep gradient extrapolation?
                 // Todo: Recompute spatial gradients at half timestep in back extrapolated coordinates?
                 // Todo: Do flux calculation in back extrapolated coordinates as well
-                // space.convert_conserved_to_primitive(&self, &engine.timestep_info);
-                // space.apply_time_extrapolations(&self, &engine.timestep_info);
-                // space.gradient_estimate(&self, &engine.timestep_info);
-                // space.flux_exchange_no_back_extrapolation(&self, &engine.timestep_info, &engine.riemann_solver);
-                space.flux_exchange(&self, &engine.timestep_info, &engine.riemann_solver);
-                space.apply_flux(&self, &engine.timestep_info);
-                space.drift_centroids_to_current_time(&self, &engine.timestep_info);
+                // space.convert_conserved_to_primitive(self, &engine.timestep_info);
+                // space.apply_time_extrapolations(self, &engine.timestep_info);
+                // space.gradient_estimate(self, &engine.timestep_info);
+                // space.flux_exchange_no_back_extrapolation(self, &engine.timestep_info, &engine.riemann_solver);
+                space.flux_exchange(self, &engine.timestep_info, &engine.riemann_solver);
+                space.apply_flux(self, &engine.timestep_info);
+                space.drift_centroids_to_current_time(self, &engine.timestep_info);
                 space.gravity(&engine.gravity_solver);
                 space.kick2(&engine.timestep_info);
-                space.convert_conserved_to_primitive(&self, &engine.timestep_info);
-                space.meshless_gradient_estimate(&self, &engine.timestep_info);
-                // space.gradient_estimate(&self, &engine.timestep_info);
-                ti_next = space.timestep(&engine);
+                space.convert_conserved_to_primitive(self, &engine.timestep_info);
+                space.meshless_gradient_estimate(self, &engine.timestep_info);
+                // space.gradient_estimate(self, &engine.timestep_info);
+                ti_next = space.timestep(engine);
                 space.timestep_limiter(&engine.timestep_info); // Note: this can never decrease ti_next
                 space.kick1(&engine.timestep_info, &engine.particle_motion);
             }
@@ -164,52 +164,52 @@ impl Runner {
     pub fn half_step1<R: RiemannFluxSolver>(&self, engine: &Engine<R>, space: &mut Space) {
         match self {
             Runner::TwoVolumeHalfDrift => {
-                space.volume_calculation(&self, &engine.timestep_info);
+                space.volume_calculation(self, &engine.timestep_info);
                 space.flux_exchange_no_back_extrapolation(
-                    &self,
+                    self,
                     &engine.timestep_info,
                     &engine.riemann_solver,
                 );
             }
             Runner::OptimalOrderHalfDrift => {
-                space.volume_calculation(&self, &engine.timestep_info);
+                space.volume_calculation(self, &engine.timestep_info);
                 space.flux_exchange_no_back_extrapolation(
-                    &self,
+                    self,
                     &engine.timestep_info,
                     &engine.riemann_solver,
                 );
-                space.apply_flux(&self, &engine.timestep_info);
-                space.convert_conserved_to_primitive(&self, &engine.timestep_info);
-                space.gradient_estimate(&self, &engine.timestep_info);
+                space.apply_flux(self, &engine.timestep_info);
+                space.convert_conserved_to_primitive(self, &engine.timestep_info);
+                space.gradient_estimate(self, &engine.timestep_info);
             }
             Runner::DefaultHalfDrift => {
-                space.volume_calculation(&self, &engine.timestep_info);
-                space.convert_conserved_to_primitive(&self, &engine.timestep_info);
-                space.gradient_estimate(&self, &engine.timestep_info);
+                space.volume_calculation(self, &engine.timestep_info);
+                space.convert_conserved_to_primitive(self, &engine.timestep_info);
+                space.gradient_estimate(self, &engine.timestep_info);
                 space.flux_exchange_no_back_extrapolation(
-                    &self,
+                    self,
                     &engine.timestep_info,
                     &engine.riemann_solver,
                 );
             }
             Runner::MeshlessGradientHalfDrift => {
-                space.volume_calculation(&self, &engine.timestep_info);
-                space.volume_derivative_estimate(&self, &engine.timestep_info);
-                space.apply_time_extrapolations(&self, &engine.timestep_info);
-                space.gradient_estimate(&self, &engine.timestep_info);
+                space.volume_calculation(self, &engine.timestep_info);
+                space.volume_derivative_estimate(self, &engine.timestep_info);
+                space.apply_time_extrapolations(self, &engine.timestep_info);
+                space.gradient_estimate(self, &engine.timestep_info);
                 space.flux_exchange_no_back_extrapolation(
-                    &self,
+                    self,
                     &engine.timestep_info,
                     &engine.riemann_solver,
                 );
             }
             Runner::FluxExtrapolateHalfDrift => {
-                space.volume_calculation(&self, &engine.timestep_info);
-                space.extrapolate_flux(&self, &engine.timestep_info, &engine.riemann_solver);
-                space.convert_conserved_to_primitive(&self, &engine.timestep_info);
-                space.gradient_estimate(&self, &engine.timestep_info);
+                space.volume_calculation(self, &engine.timestep_info);
+                space.extrapolate_flux(self, &engine.timestep_info, &engine.riemann_solver);
+                space.convert_conserved_to_primitive(self, &engine.timestep_info);
+                space.gradient_estimate(self, &engine.timestep_info);
                 space.flux_exchange_no_back_extrapolation(
-                    &self,
+                    self,
                     &engine.timestep_info,
                     &engine.riemann_solver,
                 );
@@ -228,46 +228,46 @@ impl Runner {
         let ti_next;
         match self {
             Runner::TwoVolumeHalfDrift => {
-                space.volume_calculation(&self, &engine.timestep_info);
-                space.apply_flux(&self, &engine.timestep_info);
+                space.volume_calculation(self, &engine.timestep_info);
+                space.apply_flux(self, &engine.timestep_info);
                 space.kick2(&engine.timestep_info);
-                space.convert_conserved_to_primitive(&self, &engine.timestep_info);
-                space.gradient_estimate(&self, &engine.timestep_info);
-                ti_next = space.timestep(&engine);
-                // space.timestep_limiter(&self, &engine.timestep_info); // Note: this can never decrease ti_next
+                space.convert_conserved_to_primitive(self, &engine.timestep_info);
+                space.gradient_estimate(self, &engine.timestep_info);
+                ti_next = space.timestep(engine);
+                // space.timestep_limiter(self, &engine.timestep_info); // Note: this can never decrease ti_next
                 space.kick1(&engine.timestep_info, &engine.particle_motion);
             }
             Runner::OptimalOrderHalfDrift => {
                 space.kick2(&engine.timestep_info);
-                ti_next = space.timestep(&engine);
-                // space.timestep_limiter(&self, &engine.timestep_info); // Note: this can never decrease ti_next
+                ti_next = space.timestep(engine);
+                // space.timestep_limiter(self, &engine.timestep_info); // Note: this can never decrease ti_next
                 space.kick1(&engine.timestep_info, &engine.particle_motion);
             }
             Runner::DefaultHalfDrift => {
-                space.apply_flux(&self, &engine.timestep_info);
+                space.apply_flux(self, &engine.timestep_info);
                 space.kick2(&engine.timestep_info);
-                ti_next = space.timestep(&engine);
-                // space.timestep_limiter(&self, &engine.timestep_info); // Note: this can never decrease ti_next
+                ti_next = space.timestep(engine);
+                // space.timestep_limiter(self, &engine.timestep_info); // Note: this can never decrease ti_next
                 space.kick1(&engine.timestep_info, &engine.particle_motion);
             }
             Runner::MeshlessGradientHalfDrift => {
                 space.regrid();
-                space.apply_flux(&self, &engine.timestep_info);
+                space.apply_flux(self, &engine.timestep_info);
                 space.kick2(&engine.timestep_info);
-                space.convert_conserved_to_primitive(&self, &engine.timestep_info);
-                space.meshless_gradient_estimate(&self, &engine.timestep_info);
-                ti_next = space.timestep(&engine);
-                // space.meshless_timestep_limiter(&self, &engine.timestep_info); // Note: this can never decrease ti_next
+                space.convert_conserved_to_primitive(self, &engine.timestep_info);
+                space.meshless_gradient_estimate(self, &engine.timestep_info);
+                ti_next = space.timestep(engine);
+                // space.meshless_timestep_limiter(self, &engine.timestep_info); // Note: this can never decrease ti_next
                 space.kick1(&engine.timestep_info, &engine.particle_motion);
             }
             Runner::FluxExtrapolateHalfDrift => {
                 space.regrid();
-                space.apply_flux(&self, &engine.timestep_info);
+                space.apply_flux(self, &engine.timestep_info);
                 space.kick2(&engine.timestep_info);
-                space.convert_conserved_to_primitive(&self, &engine.timestep_info);
-                space.meshless_gradient_estimate(&self, &engine.timestep_info);
-                ti_next = space.timestep(&engine);
-                // space.meshless_timestep_limiter(&self, &engine.timestep_info); // Note: this can never decrease ti_next
+                space.convert_conserved_to_primitive(self, &engine.timestep_info);
+                space.meshless_gradient_estimate(self, &engine.timestep_info);
+                ti_next = space.timestep(engine);
+                // space.meshless_timestep_limiter(self, &engine.timestep_info); // Note: this can never decrease ti_next
                 space.kick1(&engine.timestep_info, &engine.particle_motion);
             }
             _ => {

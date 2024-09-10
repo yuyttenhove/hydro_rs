@@ -58,18 +58,18 @@ impl TimestepInfo {
 
     /// Must be called at the end of the timestep
     pub(crate) fn bin_is_ending(&self, timebin: Timebin) -> bool {
-        return timebin <= get_max_active_bin(self.ti_current);
+        timebin <= get_max_active_bin(self.ti_current)
     }
 
     pub(crate) fn bin_is_halfway(&self, timebin: Timebin) -> bool {
         let dti = self.ti_current - self.ti_old;
-        return !self.bin_is_ending(timebin)
-            && timebin <= get_max_active_bin(self.ti_old + 2 * dti);
+        !self.bin_is_ending(timebin)
+            && timebin <= get_max_active_bin(self.ti_old + 2 * dti)
     }
 
     /// must be called at the beginning of a timestep (e.g. kick1, limiter)
     pub(crate) fn bin_is_starting(&self, timebin: Timebin) -> bool {
-        return timebin <= get_max_active_bin(self.ti_current);
+        timebin <= get_max_active_bin(self.ti_current)
     }
 
     pub(crate) fn get_integer_time_end(&self, timebin: Timebin) -> IntegerTime {
@@ -235,7 +235,7 @@ impl<Riemann: RiemannFluxSolver> Engine<Riemann> {
             self.runner.label(),
             self.snap
         );
-        space.dump(&self.timestep_info, self.save_faces, &filename)?;
+        space.dump(&self.timestep_info, self.save_faces, filename)?;
         self.snap += 1;
 
         Ok(())

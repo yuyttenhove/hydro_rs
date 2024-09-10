@@ -67,8 +67,8 @@ impl<T: Copy> LimiterData<T> {
         Self {
             min: *state,
             max: *state,
-            e_min: State::splat(f64::INFINITY).into(),
-            e_max: State::splat(f64::NEG_INFINITY).into(),
+            e_min: State::splat(f64::INFINITY),
+            e_max: State::splat(f64::NEG_INFINITY),
         }
     }
 }
