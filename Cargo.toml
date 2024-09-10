@@ -1,5 +1,6 @@
 [package]
 name = "mvmm_hydro"
+description = "A moving mesh hydrodynamics (CFD) solver prioritizing flexibility over raw performance."
 version = "0.1.0"
 edition = "2021"
 license = "LGPL-3.0+"
