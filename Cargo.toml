@@ -9,7 +9,7 @@ authors = ["Yolan Uyttenhove"]
 repository = "https://github.com/yuyttenhove/hydro_rs"
 documentation = "https://docs.rs/mvmm_hydro"
 keywords = ["voronoi", "hydrodynamics", "CFD", "physics"]
-categories = ["physics", "science", "mathematics"]
+categories = ["simulation", "science", "mathematics"]
 exclude = ["run", "python"]
 
 [dependencies]
