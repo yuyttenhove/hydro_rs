@@ -1,4 +1,4 @@
-use crate::{timeline::IntegerTime, ParticleMotion, TimestepInfo};
+use crate::{finite_volume_solver::FiniteVolumeSolver, gravity::GravitySolver, timeline::IntegerTime, ParticleMotion, Space, TimestepInfo};
 
 pub mod hydrodynamics;
 
@@ -8,15 +8,15 @@ pub trait Runner {
 
     fn label(&self) -> String;
 
-    fn step(&self, space: &mut crate::Space, timestep_info: &TimestepInfo, sync_all: bool, particle_motion: ParticleMotion) -> IntegerTime {
+    fn step(&self, space: &mut Space, fv_solver: &Box<dyn FiniteVolumeSolver>, gravity_solver: &Option<Box<dyn GravitySolver>>, timestep_info: &TimestepInfo, sync_all: bool, particle_motion: ParticleMotion) -> IntegerTime {
         unreachable!("This runner should be run with half steps!");
     }
 
-    fn half_step1(&self, space: &mut crate::Space, timestep_info: &TimestepInfo, sync_all: bool, particle_motion: ParticleMotion) -> IntegerTime {
+    fn half_step1(&self, space: &mut Space, fv_solver: &Box<dyn FiniteVolumeSolver>, gravity_solver: &Option<Box<dyn GravitySolver>>, timestep_info: &TimestepInfo, sync_all: bool, particle_motion: ParticleMotion) -> IntegerTime {
         unreachable!("This runner should be run with full steps!");
     }
 
-    fn half_step2(&self, space: &mut crate::Space, timestep_info: &TimestepInfo, sync_all: bool, particle_motion: ParticleMotion) -> IntegerTime {
+    fn half_step2(&self, space: &mut Space, fv_solver: &Box<dyn FiniteVolumeSolver>, gravity_solver: &Option<Box<dyn GravitySolver>>, timestep_info: &TimestepInfo, sync_all: bool, particle_motion: ParticleMotion) -> IntegerTime {
         unreachable!("This runner should be run with full steps!");
     }
 }

@@ -2,46 +2,11 @@ use glam::DVec3;
 use meshless_voronoi::VoronoiFace;
 use rayon::prelude::*;
 
-use crate::{flux::{flux_exchange, flux_exchange_boundary, FluxInfo}, gas_law::GasLaw, gradients::{GradientData, LimiterData}, physical_quantities::{Gradients, Primitive}, riemann_solver::RiemannFluxSolver, timeline::{make_integer_timestep, make_timestep, IntegerTime, NUM_TIME_BINS, TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN}, ParticleMotion, Space, TimestepInfo};
+use crate::{flux::FluxInfo, gradients::{GradientData, LimiterData}, physical_quantities::{Gradients, Primitive}, timeline::{make_integer_timestep, make_timestep, IntegerTime, MAX_NR_TIMESTEPS, NUM_TIME_BINS, TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN}, ParticleMotion, Space, TimestepInfo};
 
 mod optimal_order;
 
 pub use optimal_order::OptimalOrderRunner;
-
-pub struct HydroSolver<R: RiemannFluxSolver> {
-    gas_law: GasLaw,
-    riemann_solver: R,
-    cfl: f64
-}
-
-impl<R: RiemannFluxSolver> HydroSolver<R> {
-    pub fn new(gas_law: GasLaw, cfl: f64, riemann_solver: R) -> Self {
-        Self { gas_law, riemann_solver, cfl }
-    }
-}
-
-/// Extrapolate the state of *all* particles over the given timestep.
-/// 
-/// We always extrapolate all particles to ensure consistent state.
-fn extrapolate_state(space: &mut Space, dt: f64, eos: &GasLaw) {
-    space.parts_mut().par_iter_mut().for_each(|part| {
-        part.extrapolate_state(dt, eos);
-    });
-}
-
-fn compute_fluxes<R: RiemannFluxSolver>(space: &Space, eos: &GasLaw, riemann: &R) -> Vec<FluxInfo> {
-    space.faces().par_iter().map(|face|{
-        let left = &space.parts()[face.left()];
-        match face.right() {
-            Some(right_idx) => {
-                let right = &space.parts()[right_idx];
-                let dt = left.dt.min(right.dt);
-                flux_exchange(left, right, dt, face, 0.5, eos, riemann)
-            }
-            None => flux_exchange_boundary(left, face, space.boundary(), 0.5, eos, riemann)
-        }
-    }).collect()
-}
 
 fn apply_fluxes(space: &mut Space, fluxes: &[FluxInfo], part_is_active: &[bool]) {
     let faces = &space.voronoi_faces;
@@ -80,14 +45,6 @@ fn kick2(space: &mut Space, part_is_active: &[bool]) {
     space.parts_mut().par_iter_mut().enumerate().for_each(|(part_idx, part)| {
         if part_is_active[part_idx] {
             part.grav_kick();
-        }
-    });
-}
-
-fn convert_conserved_to_primitive(space: &mut Space, part_is_active: &[bool], eos: &GasLaw) {
-    space.parts_mut().par_iter_mut().enumerate().for_each(|(part_idx, part)| {
-        if part_is_active[part_idx] {
-            part.convert_conserved_to_primitive(eos);
         }
     });
 }
@@ -178,39 +135,18 @@ fn gradient_apply(space: &mut Space, gradients: &[Option<Gradients<Primitive>>])
     });
 }
 
-fn timestep_hydro(space: &mut Space, part_is_active: &[bool], timestep_info: &TimestepInfo, cfl: f64, motion: ParticleMotion, eos: &GasLaw) -> Vec<Option<f64>> {
-    // Some useful variables
-    let dimensionality = space.dimensionality();
-    space.parts_mut().par_iter_mut().enumerate().map(|(part_idx, part)| {
-        if !part_is_active[part_idx] { return None; }
-
-        // Compute new hydro timestep
-        let dt = part.timestep(
-            cfl,
-            &motion,
-            eos,
-            dimensionality,
+fn timesteps_apply(space: &mut Space, timesteps: &[f64], part_is_active: &[bool], timestep_info: &TimestepInfo) -> IntegerTime {
+    space.parts_mut().par_iter_mut().zip(timesteps.par_iter()).zip(part_is_active.par_iter()).map(|((part, dt), active)| {
+        if !active { return MAX_NR_TIMESTEPS; }
+        let dti = make_integer_timestep(
+            *dt,
+            part.timebin,
+            /*TODO*/ NUM_TIME_BINS,
+            timestep_info.ti_current,
+            timestep_info.time_base_inv,
         );
-        
-        Some(dt.min(timestep_info.dt_max))
-    }).collect()
-}
-
-fn timestep(space: &mut Space, dt: &[Option<f64>], timestep_info: &TimestepInfo) -> IntegerTime {
-    space.parts_mut().par_iter_mut().zip(dt.par_iter()).filter_map(|(part, dt)| {
-        if let Some(dt) = dt {
-            let dti = make_integer_timestep(
-                *dt,
-                part.timebin,
-                /*TODO*/ NUM_TIME_BINS,
-                timestep_info.ti_current,
-                timestep_info.time_base_inv,
-            );
-            part.set_timestep(make_timestep(dti, timestep_info.time_base), dti);
-            Some(dti)
-        } else{
-            None
-        }
+        part.set_timestep(make_timestep(dti, timestep_info.time_base), dti);
+        dti
     }).min().expect("At least one particle must be active")
 } 
 

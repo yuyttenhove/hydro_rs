@@ -1,10 +1,10 @@
 use clap::Parser;
 use glam::DVec3;
 use mvmm_hydro::{
-    gas_law::{EquationOfState, GasLaw}, hydrodynamics::{HydroSolver, OptimalOrderRunner}, riemann_solver::{
-        riemann_solver, AIRiemannSolver, ExactRiemannSolver, HLLCRiemannSolver, PVRiemannSolver,
+    finite_volume_solver::{EulerEqnsFvs, FiniteVolumeSolver}, gas_law::{EquationOfState, GasLaw}, gravity::{ExternalPotentialGravity, GravitySolver, KeplerianPotential, Potential, SelfGravity}, hydrodynamics::OptimalOrderRunner, riemann_solver::{
+        AIRiemannSolver, ExactRiemannSolver, HLLCRiemannSolver, PVRiemannSolver,
         TRRiemannSolver, TSRiemannSolver,
-    }, Engine, GravitySolver, InitialConditions, KeplerianPotential, ParticleMotion, Potential, Runner, Space
+    }, Engine, InitialConditions, ParticleMotion, Space
 };
 use std::path;
 
@@ -431,59 +431,57 @@ impl RiemannCfg {
     }
 }
 
+struct PotentialCfg {
+    kind: String,
+    acceleration: Option<DVec3>,
+    position: Option<DVec3>,
+}
+
+impl PotentialCfg {
+    fn parse(yaml: &Yaml) -> Result<Self, ConfigError> {
+        let kind = yaml["kind"].as_str().ok_or(ConfigError::MissingParameter("gravity: potential: kind".to_string()))?;
+        let acceleration = &yaml["acceleration"];
+        let acceleration = if acceleration.is_badvalue() {
+            None
+        } else {
+            Some(parse_dvec3(acceleration).map_err(
+                |_| ConfigError::IllegalDVec3("gravity:potential:acceleration".to_string())
+            )?)
+        };
+        let position = &yaml["position"];
+        let position = if position.is_badvalue() {
+            None
+        } else {
+            Some(parse_dvec3(position).map_err(
+                |_| ConfigError::IllegalDVec3("gravity:potential:position".to_string())
+            )?)
+        };
+        Ok(Self { kind: kind.to_string(), acceleration, position })
+    }
+}
+
 struct GravityCfg {
-    solver: Option<GravitySolver>,
+    kind: String,
+    softening_length: Option<f64>,
+    potential: Option<PotentialCfg>,
 }
 
 impl GravityCfg {
     fn parse(yaml: &Yaml) -> Result<Self, ConfigError> {
-        let kind = yaml["kind"].as_str().unwrap_or("none");
-        let solver = match kind {
-            "none" => None,
-            "external" => {
-                let potential_yaml = &yaml["potential"];
-                let potential_kind =
-                    potential_yaml["kind"]
-                        .as_str()
-                        .ok_or(ConfigError::MissingParameter(
-                            "gravity:potential:kind".to_string(),
-                        ))?;
-                let potential = match potential_kind {
-                    "constant" => Potential::Constant {
-                        acceleration: parse_dvec3(&potential_yaml["acceleration"]).map_err(
-                            |_| {
-                                ConfigError::IllegalDVec3(
-                                    "gravity:potential:acceleration".to_string(),
-                                )
-                            },
-                        )?,
-                    },
-                    "keplerian_disc" => Potential::Keplerian(KeplerianPotential::new(
-                        parse_dvec3(&potential_yaml["position"]).map_err(|_| {
-                            ConfigError::IllegalDVec3("gravity:potential:position".to_string())
-                        })?,
-                        yaml["softening_length"].as_f64().unwrap_or(0.),
-                    )),
-                    _ => {
-                        return Err(ConfigError::UnknownGravity(format!(
-                            "gravity:external:kind:{:}",
-                            kind
-                        )))
-                    }
-                };
-                Some(GravitySolver::External(potential))
-            }
-            "self-gravity" => {
-                let softening_length = yaml["softening-length"].as_f64().unwrap_or(0.);
-                Some(GravitySolver::SelfGravity { softening_length })
-            }
-            _ => return Err(ConfigError::UnknownGravity(kind.to_string())),
+        let kind = yaml["kind"].as_str().unwrap_or("none").to_string();
+        let softening_length = yaml["softening_length"].as_f64();
+        let potential = if yaml["potential"].is_badvalue() {
+            None
+        } else {
+            Some(PotentialCfg::parse(&yaml["potential"])?)
         };
-        Ok(Self { solver })
+        
+        Ok(Self { kind, softening_length, potential })
     }
 }
 
 struct EngingeCfg {
+    runner: String,
     dt_min: f64,
     dt_max: f64,
     t_end: f64,
@@ -557,6 +555,7 @@ impl EngingeCfg {
         let save_faces = yaml_snapshots["save_faces"].as_bool().unwrap_or(false);
 
         Ok(Self {
+            runner: runner.to_string(),
             dt_min,
             dt_max,
             t_end,
@@ -620,16 +619,57 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::parse(args.config)?;
 
     // Setup simulation
-    let eos = config.hydro.gas_law;
-    let runner = match config.hydro.riemann.kind.as_str() {
-        "HLLC" => Box::new(
-            OptimalOrderRunner::new(HydroSolver::new(eos, config.hydro.cfl, HLLCRiemannSolver))
-        ),
+    let gas_law = config.hydro.gas_law;
+    let cfl = config.hydro.cfl;
+    let finite_volume_solver: Box<dyn FiniteVolumeSolver> = match config.hydro.riemann.kind.as_str() {
+        "HLLC" => Box::new(EulerEqnsFvs::new(HLLCRiemannSolver, cfl, gas_law)),
+        "PVRS" => Box::new(EulerEqnsFvs::new(PVRiemannSolver, cfl, gas_law)),
+        "Exact" => Box::new(EulerEqnsFvs::new(ExactRiemannSolver, cfl, gas_law)),
+        "TSRS" => Box::new(EulerEqnsFvs::new(TSRiemannSolver, cfl, gas_law)),
+        "TRRS" => Box::new(EulerEqnsFvs::new(TRRiemannSolver, cfl, gas_law)),
+        "AIRS" => {
+            let threshold = config.hydro.riemann.threshold.ok_or(ConfigError::MissingParameter("hydrodynamics: riemann_solver: threshold".to_string()))?;
+            Box::new(EulerEqnsFvs::new(AIRiemannSolver::new(threshold), cfl, gas_law))
+        }
         _ => Err(ConfigError::UnknownRiemannSolver(
             config.hydro.riemann.kind,
         ))?,
     };
-    let mut engine = Engine::new(runner, config.engine.t_end,
+    let gravity_solver: Option<Box<dyn GravitySolver>> = match config.gravity.kind.as_str() {
+        "none" => None,
+        "self_gravity" => {
+            let softening_length = config.gravity.softening_length.ok_or(ConfigError::MissingParameter("gravity: softening_length".to_string()))?;
+            Some(Box::new(SelfGravity::new(softening_length)))
+        }
+        "external_potential" => {
+            let potential_cfg = config.gravity.potential.ok_or(ConfigError::MissingParameter("gravity: potential".to_string()))?;
+            let potential = match potential_cfg.kind.as_str() {
+                "constant" => {
+                    let acceleration = potential_cfg.acceleration.ok_or(ConfigError::MissingParameter("gravity: potential: acceleration".to_string()))?;
+                    Potential::Constant { acceleration }
+                }
+                "keplerian_disc" => {
+                    let position = potential_cfg.position.ok_or(ConfigError::MissingParameter("gravity: potential: position".to_string()))?;
+                    let softening_length = config.gravity.softening_length.ok_or(ConfigError::MissingParameter("gravity: softening_length".to_string()))?;
+                    Potential::Keplerian(KeplerianPotential::new(position, softening_length))
+                }
+                _ => return Err(Box::new(ConfigError::UnknownGravity(format!("gravity: potential: kind: {:}", potential_cfg.kind).to_string()))),
+            };
+            Some(Box::new(ExternalPotentialGravity::new(potential)))
+        }
+        _ => return Err(Box::new(ConfigError::UnknownGravity(config.gravity.kind))),
+    };
+    let runner = match config.engine.runner.as_str() {
+        "OptimalOrder" => Box::new(OptimalOrderRunner),
+        _ => Err(ConfigError::UnknownRunner(
+            config.engine.runner,
+        ))?,
+    };
+    let mut engine = Engine::new(
+        runner,
+        finite_volume_solver,
+        gravity_solver, 
+        config.engine.t_end,
         config.engine.dt_min,
         config.engine.dt_max,
         config.engine.sync_timesteps,
@@ -637,7 +677,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &config.engine.prefix,
         config.engine.dt_status,
         config.engine.save_faces,
-        config.engine.particle_motion,);
+        config.engine.particle_motion,
+    );
     
 
     // Setup ICs and construct space
@@ -671,14 +712,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             dimensionality,
             box_size,
             periodic,
-            &eos,
+            &gas_law,
         )?,
     };
     let mut space = Space::initialize(
         ic,
         config.space.max_top_level_cells,
         config.space.boundary,
-        eos,
+        gas_law,
     );
 
     // run

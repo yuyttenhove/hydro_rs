@@ -42,7 +42,7 @@ impl Particle {
     pub fn timestep(
         &mut self,
         cfl_criterion: f64,
-        particle_motion: &ParticleMotion,
+        particle_motion: ParticleMotion,
         eos: &GasLaw,
         dimensionality: Dimensionality,
     ) -> f64 {
@@ -330,7 +330,7 @@ impl Particle {
         &mut self,
         fluid_v: DVec3,
         sound_speed: f64,
-        particle_motion: &ParticleMotion,
+        particle_motion: ParticleMotion,
         dimensionality: Dimensionality,
     ) {
         self.v = match particle_motion {

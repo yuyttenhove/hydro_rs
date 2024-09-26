@@ -3,52 +3,74 @@ use rayon::prelude::*;
 
 use crate::{part::Particle, Dimensionality};
 
-fn compute_self_gravity(particles: &[Particle], softening_length: f64) -> Vec<DVec3> {
-    let num_particles = particles.len();
+pub trait GravitySolver {
+    fn compute_accelerations(&self, particles: &mut [Particle]);
 
-    (0..num_particles)
-        .into_par_iter()
-        .map(|i| {
-            let pi = &particles[i];
-            let mut acceleration = DVec3::ZERO;
-            for j in (i + 1)..num_particles {
-                let pj = &particles[j];
-                let r = (pj.loc - pi.loc).length() + softening_length;
-                let dir = pj.loc - pi.loc;
-                let a = pj.conserved.mass() * dir / (r * r * r);
-                acceleration += a;
-            }
-            acceleration
-        })
-        .collect()
+    fn compute_timesteps(&self, particles: &[Particle]) -> Vec<f64>;
 }
 
-pub enum GravitySolver {
-    External(Potential),
-    SelfGravity { softening_length: f64 },
+pub struct SelfGravity {
+    softening_length: f64,
 }
 
-impl GravitySolver {
-    pub fn accelerations(&self, particles: &[Particle]) -> Vec<DVec3> {
-        match self {
-            Self::External(potential) => potential.accelerations(particles),
-            Self::SelfGravity { softening_length } => {
-                compute_self_gravity(particles, *softening_length)
-            }
-        }
+impl SelfGravity {
+    pub fn new(softening_length: f64) -> Self {
+        Self { softening_length }
+    }
+}
+
+impl GravitySolver for SelfGravity {
+    fn compute_accelerations(&self, particles: &mut [Particle]) {
+        let num_particles = particles.len();
+
+        let accelerations: Vec<_> = (0..num_particles)
+            .into_par_iter()
+            .map(|i| {
+                let pi = &particles[i];
+                let mut acceleration = DVec3::ZERO;
+                for j in (i + 1)..num_particles {
+                    let pj = &particles[j];
+                    let r = (pj.loc - pi.loc).length() + self.softening_length;
+                    let dir = pj.loc - pi.loc;
+                    let a = pj.conserved.mass() * dir / (r * r * r);
+                    acceleration += a;
+                }
+                acceleration
+            })
+            .collect();
+
+        particles.par_iter_mut().zip(accelerations).for_each(|(p, a)| p.a_grav = a);
     }
 
-    pub fn get_timestep(&self, particle: &Particle) -> f64 {
-        match self {
-            Self::External(potential) => potential.get_timestep(particle),
-            Self::SelfGravity { softening_length } => {
-                let a2 = particle.a_grav.length_squared();
+    fn compute_timesteps(&self, particles: &[Particle]) -> Vec<f64> {
+        particles.par_iter().map(|particle|{
+            let a2 = particle.a_grav.length_squared();
                 if a2 == 0. {
                     return f64::INFINITY;
                 }
-                (softening_length / a2.sqrt()).sqrt()
-            }
-        }
+                (self.softening_length / a2.sqrt()).sqrt()
+        }).collect()
+    }
+}
+
+pub struct ExternalPotentialGravity {
+    potential: Potential,
+}
+
+impl ExternalPotentialGravity {
+    pub fn new(potential: Potential) -> Self {
+        Self { potential }
+    }
+}
+
+impl GravitySolver for ExternalPotentialGravity {
+    fn compute_accelerations(&self, particles: &mut [Particle]) {
+        let accelerations = self.potential.accelerations(particles);
+        particles.par_iter_mut().zip(accelerations).for_each(|(p, a)| p.a_grav = a);
+    }
+
+    fn compute_timesteps(&self, particles: &[Particle]) -> Vec<f64> {
+        particles.par_iter().map(|particle| self.potential.get_timestep(particle)).collect()
     }
 }
 

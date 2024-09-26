@@ -1,8 +1,7 @@
 use std::collections::VecDeque;
 
 use crate::{
-    space::Space,
-    runner::Runner, timeline::*,
+    finite_volume_solver::FiniteVolumeSolver, gravity::GravitySolver, runner::Runner, space::Space, timeline::*
 };
 
 #[derive(Copy, Clone)]
@@ -83,6 +82,8 @@ impl TimestepInfo {
 
 pub struct Engine {
     runner: Box<dyn Runner>,
+    finite_volume_solver: Box<dyn FiniteVolumeSolver>,
+    gravity_solver: Option<Box<dyn GravitySolver>>,
     pub(crate) timestep_info: TimestepInfo,
     t_current: f64,
     t_end: f64,
@@ -102,6 +103,8 @@ pub struct Engine {
 impl Engine {
     pub fn new(
         runner: Box<dyn Runner>,
+        finite_volume_solver: Box<dyn FiniteVolumeSolver>,
+        gravity_solver: Option<Box<dyn GravitySolver>>,
         t_end: f64,
         dt_min: f64,
         dt_max: f64,
@@ -126,6 +129,8 @@ impl Engine {
 
         Self {
             runner,
+            finite_volume_solver, 
+            gravity_solver,
             t_end,
             t_current: 0.0,
             timestep_info: TimestepInfo::init(time_base, dt_min, dt_max),
@@ -188,19 +193,19 @@ impl Engine {
 
     fn step(&mut self, space: &mut Space) {
         assert!(!self.runner.use_half_step());
-        let ti_next = self.runner.step(space, &self.timestep_info, self.sync_all, self.particle_motion);
+        let ti_next = self.runner.step(space, &self.finite_volume_solver, &self.gravity_solver, &self.timestep_info, self.sync_all, self.particle_motion);
         self.queue_step(ti_next, SyncPointType::Step);
         self.update_ti_next(ti_next, space);
     }
 
     fn half_step1(&self, space: &mut Space) {
         assert!(self.runner.use_half_step());
-        self.runner.half_step1(space, &self.timestep_info, self.sync_all, self.particle_motion);
+        self.runner.half_step1(space, &self.finite_volume_solver, &self.gravity_solver, &self.timestep_info, self.sync_all, self.particle_motion);
     }
 
     fn half_step2(&mut self, space: &mut Space) {
         assert!(self.runner.use_half_step());
-        let ti_next = self.runner.half_step2(space, &self.timestep_info, self.sync_all, self.particle_motion);
+        let ti_next = self.runner.half_step2(space, &self.finite_volume_solver, &self.gravity_solver, &self.timestep_info, self.sync_all, self.particle_motion);
         let dti = ti_next - self.ti_current();
         assert_eq!(dti % 2, 0, "Encountered indivisible time-step!");
         let ti_half_next = self.ti_current() + dti / 2;

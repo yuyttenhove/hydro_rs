@@ -19,7 +19,7 @@ use crate::{
     part::Particle,
     physical_quantities::State,
     utils::contains,
-    Dimensionality, GravitySolver,
+    Dimensionality,
 };
 
 
@@ -1182,19 +1182,19 @@ impl Space {
     // }
 
     /// Collect the gravitational accelerations in the particles
-    pub fn gravity(&mut self, solver: &Option<GravitySolver>) {
-        let Some(solver) = solver else {
-            return;
-        };
+    // pub fn gravity(&mut self, solver: &Option<GravitySolver>) {
+    //     let Some(solver) = solver else {
+    //         return;
+    //     };
 
-        let accelerations = solver.accelerations(&self.parts);
-        self.parts
-            .par_iter_mut()
-            .zip(accelerations.par_iter())
-            .for_each(|(p, a)| {
-                p.a_grav = *a;
-            });
-    }
+    //     let accelerations = solver.accelerations(&self.parts);
+    //     self.parts
+    //         .par_iter_mut()
+    //         .zip(accelerations.par_iter())
+    //         .for_each(|(p, a)| {
+    //             p.a_grav = *a;
+    //         });
+    // }
 
     // /// Apply the first half kick (gravity) to the particles
     // /// + hydro half kick to particle velocities
