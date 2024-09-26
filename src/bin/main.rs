@@ -1,13 +1,10 @@
 use clap::Parser;
 use glam::DVec3;
 use mvmm_hydro::{
-    gas_law::{EquationOfState, GasLaw},
-    riemann_solver::{
+    gas_law::{EquationOfState, GasLaw}, hydrodynamics::{HydroSolver, OptimalOrderRunner}, riemann_solver::{
         riemann_solver, AIRiemannSolver, ExactRiemannSolver, HLLCRiemannSolver, PVRiemannSolver,
         TRRiemannSolver, TSRiemannSolver,
-    },
-    Engine, EngineTrait, GravitySolver, InitialConditions, KeplerianPotential, ParticleMotion,
-    Potential, Runner, Space,
+    }, Engine, GravitySolver, InitialConditions, KeplerianPotential, ParticleMotion, Potential, Runner, Space
 };
 use std::path;
 
@@ -372,12 +369,13 @@ impl InitialConditionsCfg {
     }
 }
 
-struct GasLawCfg {
-    gamma: f64,
-    equation_of_state: EquationOfState,
+struct HydroCfg {
+    gas_law: GasLaw,
+    cfl: f64,
+    riemann: RiemannCfg,
 }
 
-impl GasLawCfg {
+impl HydroCfg {
     fn parse(yaml: &Yaml) -> Result<Self, ConfigError> {
         let gamma = yaml["gamma"].as_f64().ok_or(ConfigError::MissingParameter(
             "hydrodynamics: gamma".to_string(),
@@ -402,9 +400,14 @@ impl GasLawCfg {
             }
             _ => return Err(ConfigError::UnknownEOS(equation_of_state)),
         };
+        let cfl = yaml["cfl_criterion"].as_f64().ok_or(ConfigError::MissingParameter(
+            "hydrodynamics: cfl_criterion".to_string(),
+        ))?;
+        let riemann = RiemannCfg::parse(&yaml["riemann_solver"])?;
         Ok(Self {
-            gamma,
-            equation_of_state,
+            gas_law: GasLaw::new(gamma, equation_of_state),
+            cfl,
+            riemann,
         })
     }
 }
@@ -481,11 +484,9 @@ impl GravityCfg {
 }
 
 struct EngingeCfg {
-    runner: Runner,
     dt_min: f64,
     dt_max: f64,
     t_end: f64,
-    cfl_criterion: f64,
     sync_timesteps: bool,
     dt_snap: f64,
     prefix: String,
@@ -508,20 +509,6 @@ impl EngingeCfg {
         let runner = yaml_engine["runner"]
             .as_str()
             .ok_or(ConfigError::MissingParameter("engine: runner".to_string()))?;
-        let runner = match runner {
-            "Default" => Runner::Default,
-            "OptimalOrder" => Runner::OptimalOrder,
-            "TwoGradient" => Runner::TwoGradient,
-            "Pakmor" => Runner::Pakmor,
-            "VolumeBackExtrapolate" => Runner::VolumeBackExtrapolate,
-            "PakmorExtrapolate" => Runner::PakmorExtrapolate,
-            "TwoVolumeHalfDrift" => Runner::TwoVolumeHalfDrift,
-            "OptimalOrderHalfDrift" => Runner::OptimalOrderHalfDrift,
-            "DefaultHalfDrift" => Runner::DefaultHalfDrift,
-            "MeshlessGradientHalfDrift" => Runner::MeshlessGradientHalfDrift,
-            "FluxExtrapolateHalfDrift" => Runner::FluxExtrapolateHalfDrift,
-            _ => return Err(ConfigError::UnknownRunner(runner.to_string())),
-        };
         let particle_motion = yaml_engine["particle_motion"].as_str().unwrap_or("fluid");
         let particle_motion = match particle_motion {
             "fixed" => ParticleMotion::Fixed,
@@ -553,9 +540,6 @@ impl EngingeCfg {
                 .ok_or(ConfigError::MissingParameter(
                     "time_integration:t_end".to_string(),
                 ))?;
-        let cfl_criterion = yaml_time_integration["cfl_criterion"].as_f64().ok_or(
-            ConfigError::MissingParameter("time_integration:cfl_criterion".to_string()),
-        )?;
         let sync_timesteps = yaml_time_integration["sync_timesteps"]
             .as_bool()
             .unwrap_or(false);
@@ -573,11 +557,9 @@ impl EngingeCfg {
         let save_faces = yaml_snapshots["save_faces"].as_bool().unwrap_or(false);
 
         Ok(Self {
-            runner,
             dt_min,
             dt_max,
             t_end,
-            cfl_criterion,
             sync_timesteps,
             dt_snap,
             prefix: prefix.to_string(),
@@ -589,8 +571,7 @@ impl EngingeCfg {
 }
 
 struct Config {
-    gas_law: GasLawCfg,
-    riemann_solver: RiemannCfg,
+    hydro: HydroCfg,
     gravity: GravityCfg,
     engine: EngingeCfg,
     initial_conditions: InitialConditionsCfg,
@@ -603,8 +584,7 @@ impl Config {
         let config_yml = &docs[0];
 
         Ok(Self {
-            gas_law: GasLawCfg::parse(&config_yml["hydrodynamics"])?,
-            riemann_solver: RiemannCfg::parse(&config_yml["riemann_solver"])?,
+            hydro: HydroCfg::parse(&config_yml["hydrodynamics"])?,
             gravity: GravityCfg::parse(&config_yml["gravity"])?,
             engine: EngingeCfg::parse(
                 &config_yml["engine"],
@@ -624,6 +604,14 @@ pub struct Cli {
     pub config: path::PathBuf,
 }
 
+macro_rules! get_hydro_solver {
+    (kind:expr, gas_law:expr, cfl:expr) => {
+        match kind.as_str() {
+            "HLLC" 
+        }
+    };
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // parse command line parameters
     let args = Cli::parse();
@@ -632,115 +620,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::parse(args.config)?;
 
     // Setup simulation
-    let eos = GasLaw::new(config.gas_law.gamma, config.gas_law.equation_of_state);
-    let riemann_solver =
-        riemann_solver(&config.riemann_solver.kind, config.riemann_solver.threshold)?;
-
-    // Construct engine as a trait object to erase the type of the riemann solver
-    let mut engine: Box<dyn EngineTrait> = match config.riemann_solver.kind.as_str() {
-        "HLLC" => Box::new(Engine::new(
-            config.engine.runner,
-            HLLCRiemannSolver,
-            config.gravity.solver,
-            config.engine.t_end,
-            config.engine.dt_min,
-            config.engine.dt_max,
-            config.engine.sync_timesteps,
-            config.engine.cfl_criterion,
-            config.engine.dt_snap,
-            &config.engine.prefix,
-            config.engine.dt_status,
-            config.engine.save_faces,
-            config.engine.particle_motion,
-        )),
-        "Exact" => Box::new(Engine::new(
-            config.engine.runner,
-            ExactRiemannSolver,
-            config.gravity.solver,
-            config.engine.t_end,
-            config.engine.dt_min,
-            config.engine.dt_max,
-            config.engine.sync_timesteps,
-            config.engine.cfl_criterion,
-            config.engine.dt_snap,
-            &config.engine.prefix,
-            config.engine.dt_status,
-            config.engine.save_faces,
-            config.engine.particle_motion,
-        )),
-        "PVRS" => Box::new(Engine::new(
-            config.engine.runner,
-            PVRiemannSolver,
-            config.gravity.solver,
-            config.engine.t_end,
-            config.engine.dt_min,
-            config.engine.dt_max,
-            config.engine.sync_timesteps,
-            config.engine.cfl_criterion,
-            config.engine.dt_snap,
-            &config.engine.prefix,
-            config.engine.dt_status,
-            config.engine.save_faces,
-            config.engine.particle_motion,
-        )),
-        "AIRS" => {
-            let threshold =
-                config
-                    .riemann_solver
-                    .threshold
-                    .ok_or(ConfigError::MissingParameter(
-                        "riemann_solver:threshold".to_string(),
-                    ))?;
-            Box::new(Engine::new(
-                config.engine.runner,
-                AIRiemannSolver::new(threshold),
-                config.gravity.solver,
-                config.engine.t_end,
-                config.engine.dt_min,
-                config.engine.dt_max,
-                config.engine.sync_timesteps,
-                config.engine.cfl_criterion,
-                config.engine.dt_snap,
-                &config.engine.prefix,
-                config.engine.dt_status,
-                config.engine.save_faces,
-                config.engine.particle_motion,
-            ))
-        }
-        "TSRS" => Box::new(Engine::new(
-            config.engine.runner,
-            TSRiemannSolver,
-            config.gravity.solver,
-            config.engine.t_end,
-            config.engine.dt_min,
-            config.engine.dt_max,
-            config.engine.sync_timesteps,
-            config.engine.cfl_criterion,
-            config.engine.dt_snap,
-            &config.engine.prefix,
-            config.engine.dt_status,
-            config.engine.save_faces,
-            config.engine.particle_motion,
-        )),
-        "TRRS" => Box::new(Engine::new(
-            config.engine.runner,
-            TRRiemannSolver,
-            config.gravity.solver,
-            config.engine.t_end,
-            config.engine.dt_min,
-            config.engine.dt_max,
-            config.engine.sync_timesteps,
-            config.engine.cfl_criterion,
-            config.engine.dt_snap,
-            &config.engine.prefix,
-            config.engine.dt_status,
-            config.engine.save_faces,
-            config.engine.particle_motion,
-        )),
+    let eos = config.hydro.gas_law;
+    let runner = match config.hydro.riemann.kind.as_str() {
+        "HLLC" => Box::new(
+            OptimalOrderRunner::new(HydroSolver::new(eos, config.hydro.cfl, HLLCRiemannSolver))
+        ),
         _ => Err(ConfigError::UnknownRiemannSolver(
-            config.riemann_solver.kind,
+            config.hydro.riemann.kind,
         ))?,
     };
+    let mut engine = Engine::new(runner, config.engine.t_end,
+        config.engine.dt_min,
+        config.engine.dt_max,
+        config.engine.sync_timesteps,
+        config.engine.dt_snap,
+        &config.engine.prefix,
+        config.engine.dt_status,
+        config.engine.save_faces,
+        config.engine.particle_motion,);
+    
 
     // Setup ICs and construct space
     let ic = match config.initial_conditions {

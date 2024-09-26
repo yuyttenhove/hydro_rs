@@ -2,11 +2,11 @@
 //!
 //! The library also provides access to a variety of Riemann Solvers for the Euler equations.
 
-pub use engine::{Engine, EngineTrait, TimestepInfo, ParticleMotion};
+pub use engine::{Engine, TimestepInfo, ParticleMotion};
 pub use gravity::{GravitySolver, KeplerianPotential, Potential};
 pub use initial_conditions::InitialConditions;
 pub use space::{Boundary, Space};
-pub use time_integration::Runner;
+pub use runner::{Runner, hydrodynamics};
 
 /// The dimensionality of the hydrodynamics simulation.
 pub type Dimensionality = meshless_voronoi::Dimensionality;
@@ -25,6 +25,7 @@ mod part;
 mod physical_constants;
 pub mod physical_quantities;
 pub mod riemann_solver;
+mod runner;
 mod space;
 mod time_integration;
 mod timeline;

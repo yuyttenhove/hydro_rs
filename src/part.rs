@@ -104,13 +104,9 @@ impl Particle {
     }
 
     /// Drifts the particle forward in time over a time `dt_drift`.
-    ///
-    /// Also predicts the primitive quantities forward in time over a time dt_extrapolate using the Euler equations.
     pub fn drift(
         &mut self,
         dt_drift: f64,
-        dt_extrapolate: f64,
-        eos: &GasLaw,
         dimensionality: Dimensionality,
     ) {
         for i in 0..dimensionality.into() {
@@ -120,14 +116,18 @@ impl Particle {
         }
 
         debug_assert!(self.loc.is_finite(), "Infinite x after drift!");
+    }
 
+
+    /// Extrapolates the current state (e.g. primitives) forward in time
+    pub fn extrapolate_state(&mut self, dt: f64, eos: &GasLaw) {
         // Extrapolate primitives in time
-        self.extrapolations += self.time_extrapolations(dt_extrapolate, eos);
+        self.extrapolations += self.time_extrapolations(dt, eos);
 
         self.primitives.check_physical();
 
         // Extrapolate volume in time
-        let volume = self.volume + self.dvdt * self.dt;
+        let volume = self.volume + self.dvdt * dt;
         self.volume = (volume).clamp(0.5 * self.volume, 2. * self.volume);
     }
 
