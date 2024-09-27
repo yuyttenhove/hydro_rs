@@ -14,6 +14,12 @@ pub struct FluxInfo {
     pub a_over_r: f64,
 }
 
+impl FluxInfo {
+    pub fn zero() -> Self {
+        Self { fluxes: State::vacuum(),  mflux: DVec3::ZERO, v_max: 0., a_over_r: 0. }
+    }
+}
+
 pub fn flux_exchange<RiemannSolver: RiemannFluxSolver>(
     left: &Particle,
     right: &Particle,

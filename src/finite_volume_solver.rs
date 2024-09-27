@@ -9,7 +9,7 @@ pub use euler_eqns_fvs::EulerEqnsFvs;
 pub trait FiniteVolumeSolver {
     fn predict(&self, particles: &mut [Particle], dt: f64);
 
-    fn compute_fluxes(&self, faces: &[VoronoiFace], particles: &[Particle], boundary: Boundary) -> Vec<FluxInfo>;
+    fn compute_fluxes(&self, faces: &[VoronoiFace], particles: &[Particle], part_is_active: &[bool], boundary: Boundary) -> Vec<FluxInfo>;
 
     fn convert_conserved_to_primitive(&self, particles: &mut [Particle], part_is_active: &[bool]);
 

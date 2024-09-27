@@ -1,18 +1,17 @@
-use crate::{finite_volume_solver::FiniteVolumeSolver, gravity::GravitySolver, timeline::IntegerTime, ParticleMotion, Space, TimestepInfo};
+use crate::{ParticleMotion, Runner};
 
-use super::{apply_fluxes, gradient_apply, gradient_estimate, gradient_limit, kick1, kick2, reset_extrapolations, timestep_limiter, timestep_sync, timesteps_apply};
-use crate::runner::Runner;
+use super::{apply_fluxes, kick1, kick2, reset_extrapolations, timestep_limiter, timestep_sync, timesteps_apply};
+
 use rayon::prelude::*;
 
-pub struct OptimalOrderRunner;
+pub struct GodunovHydroRunner;
 
-
-impl Runner for OptimalOrderRunner {
+impl Runner for GodunovHydroRunner {
     fn use_half_step(&self) -> bool {
         false
     }
 
-    fn step(&self, space: &mut Space, fv_solver: &Box<dyn FiniteVolumeSolver>, gravity_solver: &Option<Box<dyn GravitySolver>>, timestep_info: &TimestepInfo, sync_all: bool, particle_motion: ParticleMotion) -> IntegerTime {
+    fn step(&self, space: &mut crate::Space, fv_solver: &Box<dyn crate::finite_volume_solver::FiniteVolumeSolver>, gravity_solver: &Option<Box<dyn crate::gravity::GravitySolver>>, timestep_info: &crate::TimestepInfo, sync_all: bool, particle_motion: crate::ParticleMotion) -> crate::timeline::IntegerTime {
         // Get the mask of active parts
         let part_is_active: Vec<bool> = space.parts.iter().map(|part| { timestep_info.bin_is_ending(part.timebin) }).collect();
         
@@ -35,11 +34,6 @@ impl Runner for OptimalOrderRunner {
         kick2(space, &part_is_active);
 
         fv_solver.convert_conserved_to_primitive(space.parts_mut(), &part_is_active);
-        
-        // Compute, limit and apply gradients
-        let mut gradients = gradient_estimate(space, &part_is_active);
-        gradient_limit(space, &mut gradients); 
-        gradient_apply(space, &gradients);
 
         // Timestep
         let dimensionality = space.dimensionality();
@@ -62,8 +56,8 @@ impl Runner for OptimalOrderRunner {
 
         ti_next
     }
-    
+
     fn label(&self) -> String {
-        "optimal".to_string()
+        "godunov".to_string()
     }
 }

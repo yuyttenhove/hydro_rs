@@ -5,6 +5,7 @@ mod pvrs;
 mod trrs;
 mod tsrs;
 mod vacuum;
+mod linear_advection;
 
 use glam::DVec3;
 
@@ -20,6 +21,7 @@ pub use hllc::HLLCRiemannSolver;
 pub use pvrs::PVRiemannSolver;
 pub use trrs::TRRiemannSolver;
 pub use tsrs::TSRiemannSolver;
+pub use linear_advection::LinearAdvectionRiemannSover;
 
 use self::vacuum::VacuumRiemannSolver;
 

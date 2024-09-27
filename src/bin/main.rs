@@ -1,10 +1,9 @@
 use clap::Parser;
 use glam::DVec3;
 use mvmm_hydro::{
-    finite_volume_solver::{EulerEqnsFvs, FiniteVolumeSolver}, gas_law::{EquationOfState, GasLaw}, gravity::{ExternalPotentialGravity, GravitySolver, KeplerianPotential, Potential, SelfGravity}, hydrodynamics::OptimalOrderRunner, riemann_solver::{
-        AIRiemannSolver, ExactRiemannSolver, HLLCRiemannSolver, PVRiemannSolver,
-        TRRiemannSolver, TSRiemannSolver,
-    }, Engine, InitialConditions, ParticleMotion, Space
+    finite_volume_solver::{EulerEqnsFvs, FiniteVolumeSolver}, gas_law::{EquationOfState, GasLaw}, gravity::{ExternalPotentialGravity, GravitySolver, KeplerianPotential, Potential, SelfGravity}, hydrodynamics::{GodunovHydroRunner, OptimalOrderRunner}, riemann_solver::{
+        AIRiemannSolver, ExactRiemannSolver, HLLCRiemannSolver, LinearAdvectionRiemannSover, PVRiemannSolver, TRRiemannSolver, TSRiemannSolver
+    }, Engine, InitialConditions, ParticleMotion, Runner, Space
 };
 use std::path;
 
@@ -415,10 +414,19 @@ impl HydroCfg {
 struct RiemannCfg {
     kind: String,
     threshold: Option<f64>,
+    velocity: Option<DVec3>,
 }
 
 impl RiemannCfg {
     fn parse(yaml: &Yaml) -> Result<Self, ConfigError> {
+        let velocity = &yaml["velocity"];
+        let velocity = if velocity.is_badvalue() {
+            None
+        } else {
+            Some(parse_dvec3(velocity).map_err(
+                |_| ConfigError::IllegalDVec3("hydrodynamics:riemann_solver:velocity".to_string())
+            )?)
+        };
         Ok(Self {
             kind: yaml["kind"]
                 .as_str()
@@ -427,6 +435,7 @@ impl RiemannCfg {
                 ))?
                 .to_string(),
             threshold: yaml["threshold"].as_f64(),
+            velocity,
         })
     }
 }
@@ -603,14 +612,6 @@ pub struct Cli {
     pub config: path::PathBuf,
 }
 
-macro_rules! get_hydro_solver {
-    (kind:expr, gas_law:expr, cfl:expr) => {
-        match kind.as_str() {
-            "HLLC" 
-        }
-    };
-}
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // parse command line parameters
     let args = Cli::parse();
@@ -630,6 +631,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "AIRS" => {
             let threshold = config.hydro.riemann.threshold.ok_or(ConfigError::MissingParameter("hydrodynamics: riemann_solver: threshold".to_string()))?;
             Box::new(EulerEqnsFvs::new(AIRiemannSolver::new(threshold), cfl, gas_law))
+        }
+        "LinearAdvection" => {
+            let velocity = config.hydro.riemann.velocity.ok_or(ConfigError::MissingParameter("hydrodynamics: riemann_solver: velocity".to_string()))?;
+            Box::new(EulerEqnsFvs::new(LinearAdvectionRiemannSover::new(velocity), cfl, gas_law))
         }
         _ => Err(ConfigError::UnknownRiemannSolver(
             config.hydro.riemann.kind,
@@ -659,8 +664,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => return Err(Box::new(ConfigError::UnknownGravity(config.gravity.kind))),
     };
-    let runner = match config.engine.runner.as_str() {
+    let runner: Box<dyn Runner> = match config.engine.runner.as_str() {
         "OptimalOrder" => Box::new(OptimalOrderRunner),
+        "Godunov" => Box::new(GodunovHydroRunner),
         _ => Err(ConfigError::UnknownRunner(
             config.engine.runner,
         ))?,

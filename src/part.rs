@@ -115,7 +115,7 @@ impl Particle {
             self.gradients_centroid[i] += self.v[i] * dt_drift;
         }
 
-        debug_assert!(self.loc.is_finite(), "Infinite x after drift!");
+        assert!(self.loc.is_finite(), "Infinite x after drift!");
     }
 
 
@@ -154,7 +154,7 @@ impl Particle {
         self.face_count = voronoi_cell.face_count();
         self.search_radius = 1.5 * voronoi_cell.safety_radius();
         self.set_centroid(voronoi_cell.centroid());
-        debug_assert!(self.volume >= 0.);
+        assert!(self.volume >= 0.);
     }
 
     pub fn update_fluxes_left(&mut self, flux_info: &FluxInfo, part_is_active: bool) {
@@ -177,9 +177,9 @@ impl Particle {
 
     pub fn apply_flux(&mut self) {
         self.conserved += self.fluxes;
-        debug_assert!(self.conserved.mass().is_finite());
-        debug_assert!(self.conserved.momentum().is_finite());
-        debug_assert!(self.conserved.energy().is_finite());
+        assert!(self.conserved.mass().is_finite());
+        assert!(self.conserved.momentum().is_finite());
+        assert!(self.conserved.energy().is_finite());
 
         if self.conserved.mass() < 0. {
             eprintln!("Negative mass after applying fluxes");
@@ -199,9 +199,9 @@ impl Particle {
 
     pub fn first_init(&mut self, eos: &GasLaw) {
         self.primitives = State::from_conserved(&self.conserved, self.volume(), eos);
-        debug_assert!(self.primitives.density().is_finite());
-        debug_assert!(self.primitives.velocity().is_finite());
-        debug_assert!(self.primitives.pressure().is_finite());
+        assert!(self.primitives.density().is_finite());
+        assert!(self.primitives.velocity().is_finite());
+        assert!(self.primitives.pressure().is_finite());
     }
 
     pub fn from_ic(x: DVec3, mass: f64, velocity: DVec3, internal_energy: f64) -> Self {
@@ -217,14 +217,14 @@ impl Particle {
     }
 
     pub fn convert_conserved_to_primitive(&mut self, eos: &GasLaw) {
-        debug_assert!(self.conserved.mass() >= 0., "Encountered negative mass!");
-        debug_assert!(
+        assert!(self.conserved.mass() >= 0., "Encountered negative mass!");
+        assert!(
             self.conserved.energy() >= 0.,
             "Encountered negative energy!"
         );
 
         self.primitives = if self.conserved.mass() == 0. {
-            debug_assert_eq!(
+            assert_eq!(
                 self.conserved.energy(),
                 0.,
                 "Zero mass, indicating vacuum, but energy != 0!"
@@ -246,15 +246,15 @@ impl Particle {
         assert!(self.primitives.density() >= 0.);
         assert!(self.primitives.pressure() >= 0.);
 
-        debug_assert!(
+        assert!(
             self.primitives.density().is_finite(),
             "Infinite density detected!"
         );
-        debug_assert!(
+        assert!(
             self.primitives.velocity().is_finite(),
             "Infinite velocity detected!"
         );
-        debug_assert!(
+        assert!(
             self.primitives.pressure().is_finite(),
             "Infinite pressure detected!"
         );
@@ -296,8 +296,7 @@ impl Particle {
         // TODO: Handle gravity (rewind kick1 and reapply)
     }
 
-    pub(crate) fn reset_gradients(&mut self) {
-        self.gradients = Gradients::zeros();
+    pub(crate) fn reset_extrapolations(&mut self) {
         self.extrapolations = State::vacuum();
     }
 
@@ -458,7 +457,7 @@ impl Particle {
     pub fn box_reflect(&mut self, box_size: DVec3, dimensionality: Dimensionality) {
         let pos_old = self.loc;
         box_reflect(box_size, &mut self.loc, dimensionality.into());
-        debug_assert!(contains(box_size, self.loc, dimensionality.into()));
+        assert!(contains(box_size, self.loc, dimensionality.into()));
         let shift = self.loc - pos_old;
         if shift.length_squared() > 0. {
             let normal = shift * shift.length_recip();

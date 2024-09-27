@@ -23,16 +23,26 @@ impl<R: RiemannFluxSolver> FiniteVolumeSolver for EulerEqnsFvs<R> {
         });
     }
 
-    fn compute_fluxes(&self, faces: &[meshless_voronoi::VoronoiFace], particles: &[Particle], boundary: Boundary) -> Vec<FluxInfo> {
+    fn compute_fluxes(&self, faces: &[meshless_voronoi::VoronoiFace], particles: &[Particle], part_is_active: &[bool], boundary: Boundary) -> Vec<FluxInfo> {
         faces.par_iter().map(|face|{
             let left = &particles[face.left()];
+            let left_active = part_is_active[face.left()];
             match face.right() {
                 Some(right_idx) => {
                     let right = &particles[right_idx];
+                    let right_active = part_is_active[right_idx];
+                    // Do the flux exchange only when at least one particle is active *and* the particle with the strictly smallest timestep is active
+                    if (!left_active && !right_active) || (right.dt < left.dt && !right_active) || (left.dt < right.dt && !left_active) {
+                        return FluxInfo::zero();
+                    }
                     let dt = left.dt.min(right.dt);
                     flux_exchange(left, right, dt, face, 0.5, &self.gas_law, &self.riemann_solver)
                 }
-                None => flux_exchange_boundary(left, face, boundary, 0.5, &self.gas_law, &self.riemann_solver)
+                None => if left_active {
+                    flux_exchange_boundary(left, face, boundary, 0.5, &self.gas_law, &self.riemann_solver)
+                } else {
+                    FluxInfo::zero()
+                }
             }
         }).collect()
     }

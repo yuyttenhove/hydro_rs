@@ -5,8 +5,10 @@ use rayon::prelude::*;
 use crate::{flux::FluxInfo, gradients::{GradientData, LimiterData}, physical_quantities::{Gradients, Primitive}, timeline::{make_integer_timestep, make_timestep, IntegerTime, MAX_NR_TIMESTEPS, NUM_TIME_BINS, TIME_BIN_NEIGHBOUR_MAX_DELTA_BIN}, ParticleMotion, Space, TimestepInfo};
 
 mod optimal_order;
+mod godunov;
 
 pub use optimal_order::OptimalOrderRunner;
+pub use godunov::GodunovHydroRunner;
 
 fn apply_fluxes(space: &mut Space, fluxes: &[FluxInfo], part_is_active: &[bool]) {
     let faces = &space.voronoi_faces;
@@ -17,16 +19,21 @@ fn apply_fluxes(space: &mut Space, fluxes: &[FluxInfo], part_is_active: &[bool])
             let end = start + part.face_count;
             &cell_face_connections[start..end]
         };
+        let active = part_is_active[part_idx];
         for &idx in face_idx {
             let face = &faces[idx];
             let flux = &fluxes[idx];
             if face.left() == part_idx {
-                part.update_fluxes_left(flux, part_is_active[part_idx]);
+                part.update_fluxes_left(flux, active);
             } else {
                 assert!(face.right().is_some());
                 assert_eq!(face.right().expect("Right is not None"), part_idx);
-                part.update_fluxes_right(flux, part_is_active[part_idx]);
+                part.update_fluxes_right(flux, active);
             }
+        }
+
+        if active {
+            part.apply_flux();
         }
     });
 }
@@ -181,4 +188,8 @@ fn timestep_sync(space: &mut Space, timestep_info: &TimestepInfo) {
     space.parts_mut().par_iter_mut().for_each(|part| {
         part.timestep_limit(min_timebin, timestep_info);
     });
+}
+
+fn reset_extrapolations(space: &mut Space, part_is_active: &[bool]) {
+    space.parts_mut().par_iter_mut().zip(part_is_active).for_each(|(part, active)| if *active {part.reset_extrapolations()});
 }
