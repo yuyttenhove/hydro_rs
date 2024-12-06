@@ -6,6 +6,7 @@ mod trrs;
 mod tsrs;
 mod vacuum;
 mod linear_advection;
+mod anrs;
 
 use glam::DVec3;
 
@@ -86,6 +87,22 @@ pub trait RiemannFluxSolver: Sync {
     ) -> State<Conserved>;
 }
 
+pub trait RiemannWafFluxSolver: Sync {
+    fn solve_for_waf_flux(
+        &self,
+        left: &State<Primitive>,
+        right: &State<Primitive>,
+        dx_left: DVec3,
+        dx_right: DVec3,
+        drho_left: f64,
+        drho_right: f64,
+        interface_velocity: DVec3,
+        dt: f64,
+        n_unit: DVec3,
+        eos: &GasLaw,
+    ) -> State<Conserved>;
+}
+
 #[derive(Default)]
 struct RiemannStarValues {
     rho_l: f64,
@@ -94,6 +111,7 @@ struct RiemannStarValues {
     p: f64,
 }
 trait RiemannStarSolver: RiemannFluxSolver {
+    /// Solve for the flux in a reference frame where the interface is not moving
     fn solve_for_star_state(
         &self,
         left: &State<Primitive>,
@@ -264,6 +282,11 @@ impl<T: RiemannStarSolver> RiemannFluxSolver for T {
         n_unit: DVec3,
         eos: &GasLaw,
     ) -> State<Conserved> {
+
+        // Boost to interface frame
+        let left = left.boost(-interface_velocity);
+        let right = right.boost(-interface_velocity);
+
         let v_l = left.velocity().dot(n_unit);
         let v_r = right.velocity().dot(n_unit);
         let a_l = eos.sound_speed(left.pressure(), 1. / left.density());
@@ -274,12 +297,12 @@ impl<T: RiemannStarSolver> RiemannFluxSolver for T {
 
         // handle vacuum
         let w_half =
-            if VacuumRiemannSolver::is_vacuum(left, right, a_l, a_r, v_r_m_v_l, eos.gamma()) {
-                VacuumRiemannSolver.sample(left, right, v_l, v_r, a_l, a_r, n_unit, eos.gamma())
+            if VacuumRiemannSolver::is_vacuum(&left, &right, a_l, a_r, v_r_m_v_l, eos.gamma()) {
+                VacuumRiemannSolver.sample(&left, &right, v_l, v_r, a_l, a_r, n_unit, eos.gamma())
             } else {
                 // Sample the solution.
                 // This corresponds to the flow chart in Fig. 4.14 in Toro
-                self.sample(left, right, v_l, v_r, a_l, a_r, n_unit, eos.gamma())
+                self.sample(&left, &right, v_l, v_r, a_l, a_r, n_unit, eos.gamma())
             };
 
         flux_from_half_state(&w_half, interface_velocity, n_unit, eos.gamma())

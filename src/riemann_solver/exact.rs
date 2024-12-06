@@ -20,7 +20,7 @@ impl ExactRiemannSolver {
     }
 
     /// Function (4.5) in Toro
-    fn f(
+    pub(super) fn f(
         p: f64,
         left: &State<Primitive>,
         right: &State<Primitive>,

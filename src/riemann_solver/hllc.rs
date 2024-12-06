@@ -17,6 +17,10 @@ impl RiemannFluxSolver for HLLCRiemannSolver {
         n_unit: DVec3,
         eos: &GasLaw,
     ) -> State<Conserved> {
+        // Boost to interface frame
+        let left = left.boost(-interface_velocity);
+        let right = right.boost(-interface_velocity);
+
         // Inverse densities
         let rho_l_inv = 1. / left.density();
         let rho_r_inv = 1. / right.density();
@@ -29,9 +33,9 @@ impl RiemannFluxSolver for HLLCRiemannSolver {
         let v_r_m_v_l = v_r - v_l;
 
         // handle vacuum
-        if VacuumRiemannSolver::is_vacuum(left, right, a_l, a_r, v_r_m_v_l, eos.gamma()) {
+        if VacuumRiemannSolver::is_vacuum(&left, &right, a_l, a_r, v_r_m_v_l, eos.gamma()) {
             let w_half =
-                VacuumRiemannSolver.sample(left, right, v_l, v_r, a_l, a_r, n_unit, eos.gamma());
+                VacuumRiemannSolver.sample(&left, &right, v_l, v_r, a_l, a_r, n_unit, eos.gamma());
             return flux_from_half_state(&w_half, interface_velocity, n_unit, eos.gamma());
         }
 
@@ -63,20 +67,20 @@ impl RiemannFluxSolver for HLLCRiemannSolver {
             let v_l2 = left.velocity().length_squared();
             let e_l =
                 eos.gas_internal_energy_from_pressure(left.pressure(), rho_l_inv) + 0.5 * v_l2;
-            flux = Self::flux(left, v_l, e_l, n_unit);
+            flux = Self::flux(&left, v_l, e_l, n_unit);
             let s_l = s_l_m_v_l + v_l;
             if s_l < 0. {
-                flux += Self::flux_star(left, v_l, e_l, s_l, s_star, n_unit);
+                flux += Self::flux_star(&left, v_l, e_l, s_l, s_star, n_unit);
             }
         } else {
             // flux FR
             let v_r2 = right.velocity().length_squared();
             let e_r =
                 eos.gas_internal_energy_from_pressure(right.pressure(), rho_r_inv) + 0.5 * v_r2;
-            flux = Self::flux(right, v_r, e_r, n_unit);
+            flux = Self::flux(&right, v_r, e_r, n_unit);
             let s_r = s_r_m_v_r + v_r;
             if s_r > 0. {
-                flux += Self::flux_star(right, v_r, e_r, s_r, s_star, n_unit);
+                flux += Self::flux_star(&right, v_r, e_r, s_r, s_star, n_unit);
             }
         }
         debug_assert!(!(flux.mass().is_nan() || flux.mass().is_infinite()));
@@ -125,7 +129,7 @@ impl HLLCRiemannSolver {
 
 #[cfg(test)]
 mod tests {
-    use crate::gas_law::EquationOfState;
+    use crate::gas_law::{EquationOfState, GasLaw};
 
     use super::*;
     use float_cmp::assert_approx_eq;
