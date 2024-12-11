@@ -6,12 +6,12 @@ time_integration:
 
 snapshots:
   dt_snap: 0.01
-  prefix: sodshock_2D
+  prefix: sodshock_1D
   save_faces: true
 
 engine:
   dt_status: 0.
-  particle_motion: fixed
+  particle_motion: fluid
   # runner: DefaultHalfDrift
   # runner: OptimalOrderHalfDrift
   # runner: TwoVolumeHalfDrift
@@ -30,12 +30,12 @@ gravity:
     acceleration: [0., -1., 0.]
 
 hydrodynamics:
-  solver: MUSCL
+  solver: Godunov
   equation_of_state: Ideal
   gamma: 1.66666667
   cfl_criterion: 0.5
   riemann_solver:
-    kind: TRRS
+    kind: LinearAdvection
     threshold: 2.
     velocity: [1., 0., 0.]
 
@@ -44,9 +44,9 @@ space:
   max_top_level_cells: 8
 
 initial_conditions:
-  kind: file
-  dimensionality: 2
-  box_size: [4., 1., 1.]
-  num_part: 4096
-  perturbations: 0.01
+  kind: sodshock
+  dimensionality: 1
+  box_size: [ 2., 1., 1. ]
+  num_part: 1000
+  perturbations: 0.0
   filename: ICs/sodshock_2D.hdf5

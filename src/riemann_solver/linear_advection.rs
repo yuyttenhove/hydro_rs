@@ -1,6 +1,9 @@
 use glam::DVec3;
 
-use crate::{gas_law::GasLaw, physical_quantities::{Conserved, Primitive, State}};
+use crate::{
+    gas_law::GasLaw,
+    physical_quantities::{Conserved, Primitive, State},
+};
 
 use super::{RiemannFluxSolver, RiemannWafFluxSolver};
 
@@ -55,7 +58,7 @@ impl RiemannWafFluxSolver for LinearAdvectionRiemannSover {
         let left = left.boost(-interface_velocity);
         let right = right.boost(-interface_velocity);
         let drho = right.density() - left.density();
-        
+
         let dx_left = dx_left.dot(n_unit);
         let dx_right = dx_right.dot(n_unit);
         let dx = dx_left + dx_right;
@@ -65,16 +68,28 @@ impl RiemannWafFluxSolver for LinearAdvectionRiemannSover {
         let c = (0.5 * v * dt).abs();
         assert!(dx_left >= c);
         assert!(dx_right >= c);
-        let (phi_left, phi_right)= if v > 0. {
+        let (phi_left, phi_right) = if v > 0. {
             let r = drho_left / drho;
             let psi = (r + r.abs()) / (1. + r);
-            (1. - (dx_left - c) / (2. * dx_left) * psi, 1. - (dx_right - c) / (2. * dx_right) * psi)
+            (
+                1. - (dx_left - c) / (2. * dx_left) * psi,
+                1. - (dx_right - c) / (2. * dx_right) * psi,
+            )
         } else {
             ((dx_left - c) / dx, (dx_right + c) / dx);
             let r = drho_right / drho;
             let psi = (r + r.abs()) / (1. + r);
-            (1. - (dx_left - c) / dx * psi, 1. - (dx_right - c) / dx * psi)
+            (
+                1. - (dx_left - c) / dx * psi,
+                1. - (dx_right - c) / dx * psi,
+            )
         };
-        0.5 * v * ((1. + phi_left) * State::<Conserved>::new(left.density(), DVec3::ZERO, 0.) + (1. - phi_right) * State::<Conserved>::new(right.density(), DVec3::ZERO, 0.))
+        // 0.5 * v * ((1. + phi_left) * State::<Conserved>::new(left.density(), DVec3::ZERO, 0.) + (1. - phi_right) * State::<Conserved>::new(right.density(), DVec3::ZERO, 0.))
+
+        1. / (dx_left + dx_right)
+            * (v * (dx_left + 0.5 * v * dt)
+                * State::<Conserved>::new(left.density(), DVec3::ZERO, 0.)
+                + v * (dx_right - 0.5 * v * dt)
+                    * State::<Conserved>::new(right.density(), DVec3::ZERO, 0.))
     }
 }
