@@ -1,39 +1,93 @@
-use crate::gas_law::GasLaw;
-use crate::gradients::pairwise_limiter;
-use crate::part::Particle;
-use crate::physical_quantities::{Conserved, State};
-use crate::riemann_solver::RiemannFluxSolver;
-use crate::space::Boundary;
+use crate::{
+    gas_law::GasLaw, part::Particle, physical_quantities::State, riemann_solver::RiemannFluxSolver,
+    Boundary,
+};
+
+use super::{FiniteVolumeSolver, FluxInfo};
+
 use glam::DVec3;
 use meshless_voronoi::VoronoiFace;
+use rayon::prelude::*;
 
-pub struct FluxInfo {
-    pub fluxes: State<Conserved>,
-    pub mflux: DVec3,
-    pub v_max: f64,
-    pub a_over_r: f64,
+pub struct GodunovFvs<R: RiemannFluxSolver> {
+    riemann_solver: R,
+    cfl: f64,
+    gas_law: GasLaw,
 }
 
-impl FluxInfo {
-    pub fn zero() -> Self {
-        Self { fluxes: State::vacuum(),  mflux: DVec3::ZERO, v_max: 0., a_over_r: 0. }
+impl<R: RiemannFluxSolver> GodunovFvs<R> {
+    pub fn new(riemann_solver: R, cfl: f64, gas_law: GasLaw) -> Self {
+        Self {
+            riemann_solver,
+            cfl,
+            gas_law,
+        }
     }
 }
 
-pub fn flux_exchange<RiemannSolver: RiemannFluxSolver>(
+impl<R: RiemannFluxSolver> FiniteVolumeSolver for GodunovFvs<R> {
+    fn compute_fluxes(
+        &self,
+        faces: &[meshless_voronoi::VoronoiFace],
+        particles: &[Particle],
+        part_is_active: &[bool],
+        boundary: Boundary,
+    ) -> Vec<super::FluxInfo> {
+        faces
+            .par_iter()
+            .map(|face| {
+                let left = &particles[face.left()];
+                let left_active = part_is_active[face.left()];
+                match face.right() {
+                    Some(right_idx) => {
+                        let right = &particles[right_idx];
+                        let right_active = part_is_active[right_idx];
+                        // Do the flux exchange only when at least one particle is active *and* the particle with the strictly smallest timestep is active
+                        if (!left_active && !right_active)
+                            || (right.dt < left.dt && !right_active)
+                            || (left.dt < right.dt && !left_active)
+                        {
+                            return FluxInfo::zero();
+                        }
+                        let dt = left.dt.min(right.dt);
+                        flux_exchange(left, right, dt, face, &self.gas_law, &self.riemann_solver)
+                    }
+                    None => {
+                        if left_active {
+                            flux_exchange_boundary(
+                                left,
+                                face,
+                                boundary,
+                                &self.gas_law,
+                                &self.riemann_solver,
+                            )
+                        } else {
+                            FluxInfo::zero()
+                        }
+                    }
+                }
+            })
+            .collect()
+    }
+
+    fn eos(&self) -> &GasLaw {
+        &self.gas_law
+    }
+
+    fn cfl(&self) -> f64 {
+        self.cfl
+    }
+}
+
+fn flux_exchange<RiemannSolver: RiemannFluxSolver>(
     left: &Particle,
     right: &Particle,
     dt: f64,
     face: &VoronoiFace,
-    time_extrapolate_fac: f64,
     eos: &GasLaw,
     riemann_solver: &RiemannSolver,
 ) -> FluxInfo {
-    // We extrapolate from the centroid of the particles.
-    let dx_left = face.centroid() - left.gradients_centroid;
     let shift = face.shift().unwrap_or(DVec3::ZERO);
-    let dx_right = face.centroid() - right.gradients_centroid - shift;
-    let dx_gradients = (dx_left - dx_right).length();
     let dx_centroid = right.centroid + shift - left.centroid;
     let dx = right.loc + shift - left.loc;
 
@@ -49,39 +103,21 @@ pub fn flux_exchange<RiemannSolver: RiemannFluxSolver>(
         .dot(dx_centroid)
         .min(0.);
 
-    // Gradient + time extrapolation + pair wise limiting
-    let dt_extrapolate = -time_extrapolate_fac * dt;
-    let left_dash = left.primitives
-        + left.gradients.dot(dx_left)
-        + left.extrapolations
-        + left.time_extrapolations(dt_extrapolate, eos);
-    let right_dash = right.primitives
-        + right.gradients.dot(dx_right)
-        + right.extrapolations
-        + right.time_extrapolations(dt_extrapolate, eos);
-    let primitives_left = pairwise_limiter(
-        &left.primitives,
-        &right.primitives,
-        &left_dash,
-        dx_left.length() / dx_gradients,
-    );
-    let primitives_right = pairwise_limiter(
-        &right.primitives,
-        &left.primitives,
-        &right_dash,
-        dx_right.length() / dx_gradients,
-    );
-
     // Compute interface velocity (Springel (2010), eq. 33):
     let midpoint = 0.5 * (left.loc + right.loc + shift);
     let fac = (right.v - left.v).dot(face.centroid() - midpoint) / dx.length_squared();
     let v_face = 0.5 * (left.v + right.v) - fac * dx;
 
+    // Extrapolate back to midpoint of the timestep over which the fluxes are exchanged
+    let dt_extrapolate = -0.5 * dt;
+    let left_primitives = left.primitives - left.time_extrapolations(dt_extrapolate, eos);
+    let right_primitives = right.primitives - right.time_extrapolations(dt_extrapolate, eos);
+
     // Calculate fluxes
     let fluxes = face.area()
         * riemann_solver.solve_for_flux(
-            &primitives_left.boost(-v_face),
-            &primitives_right.boost(-v_face),
+            &left_primitives,
+            &right_primitives,
             v_face,
             face.normal(),
             eos,
@@ -99,18 +135,15 @@ pub fn flux_exchange<RiemannSolver: RiemannFluxSolver>(
     }
 }
 
-pub fn flux_exchange_boundary<RiemannSolver: RiemannFluxSolver>(
+fn flux_exchange_boundary<RiemannSolver: RiemannFluxSolver>(
     part: &Particle,
     face: &VoronoiFace,
     boundary: Boundary,
-    time_extrapolate_fac: f64,
     eos: &GasLaw,
     riemann_solver: &RiemannSolver,
 ) -> FluxInfo {
     // get reflected particle
     let mut reflected = part.reflect(face.centroid(), face.normal());
-    let dx_face = face.centroid() - part.gradients_centroid;
-    let dx_gradients = (reflected.gradients_centroid - part.gradients_centroid).length();
     let dx_centroid = reflected.centroid - part.centroid;
     let dx = reflected.loc - part.loc;
 
@@ -120,51 +153,22 @@ pub fn flux_exchange_boundary<RiemannSolver: RiemannFluxSolver>(
         v_max += eos.sound_speed(part.primitives.pressure(), 1. / part.primitives.density());
     }
 
-    // Gradient extrapolation
-    let dt_extraplotate = -time_extrapolate_fac * part.dt;
-    let mut primitives_dash = part.primitives
-        + part.gradients.dot(dx_face)
-        + part.extrapolations
-        + part.time_extrapolations(dt_extraplotate, eos);
-
+    let primitives = part.primitives + part.time_extrapolations(-0.5 * part.dt, eos);
     let primitives_boundary = match boundary {
         Boundary::Reflective => {
             // Also reflect velocity
             reflected = reflected.reflect_quantities(face.normal());
 
-            // Apply pairwise limiter
-            primitives_dash = pairwise_limiter(
-                &part.primitives,
-                &reflected.primitives,
-                &primitives_dash,
-                dx_face.length() / dx_gradients,
-            );
             v_max -= (reflected.primitives.velocity() - part.primitives.velocity())
                 .dot(dx_centroid)
                 .min(0.);
 
-            primitives_dash.reflect(face.normal())
+            primitives.reflect(face.normal())
         }
-        Boundary::Open => {
-            primitives_dash = pairwise_limiter(
-                &part.primitives,
-                &part.primitives,
-                &primitives_dash,
-                dx_face.length() / dx_gradients,
-            );
-
-            primitives_dash
-        }
+        Boundary::Open => primitives,
         Boundary::Vacuum => {
             let vacuum = State::vacuum();
-            primitives_dash = pairwise_limiter(
-                &part.primitives,
-                &vacuum,
-                &primitives_dash,
-                dx_face.length() / dx_gradients,
-            );
-            v_max += part.primitives.velocity().dot(dx_centroid).min(0.);
-
+            v_max += primitives.velocity().dot(dx_centroid).min(0.);
             vacuum
         }
         Boundary::Periodic => {
@@ -175,7 +179,7 @@ pub fn flux_exchange_boundary<RiemannSolver: RiemannFluxSolver>(
     // Solve for flux
     let fluxes = face.area()
         * riemann_solver.solve_for_flux(
-            &primitives_dash,
+            &primitives,
             &primitives_boundary,
             DVec3::ZERO,
             face.normal(),

@@ -17,8 +17,7 @@ engine:
   # runner: TwoVolumeHalfDrift
   # runner: MeshlessGradientHalfDrift
   # runner: FluxExtrapolateHalfDrift
-  # runner: OptimalOrder
-  runner: Godunov
+  runner: OptimalOrder
   # runner: TwoGradient
   # runner: Default
   # runner: Pakmor
@@ -31,11 +30,12 @@ gravity:
     acceleration: [0., -1., 0.]
 
 hydrodynamics:
+  solver: MUSCL
   equation_of_state: Ideal
   gamma: 1.66666667
   cfl_criterion: 0.5
-  riemann_solver: 
-    kind: LinearAdvection
+  riemann_solver:
+    kind: TRRS
     threshold: 2.
     velocity: [1., 0., 0.]
 

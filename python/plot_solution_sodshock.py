@@ -1,8 +1,10 @@
-import matplotlib.pyplot as plt
 import sys
 from pathlib import Path
 
+import matplotlib.pyplot as plt
+
 from utils import plot_analytic_solution, plot_quantity, read_particle_data
+
 
 def main(fname: str, savename: str, time=0.25):
     # Parameters
@@ -38,6 +40,6 @@ if __name__ == "__main__":
         fname = sys.argv[1]
         savename = sys.argv[2]
     except IndexError:
-        fname = root / "run/output/sodshock_2D_godunov_0020.hdf5"
-        savename = "test_godunov.png"
+        fname = root / "run/output/sodshock_2D_optimal_0010.hdf5"
+        savename = "test_optimal.png"
     main(fname, savename)

@@ -1,9 +1,17 @@
 use clap::Parser;
 use glam::DVec3;
 use mvmm_hydro::{
-    finite_volume_solver::{EulerEqnsFvs, FiniteVolumeSolver}, gas_law::{EquationOfState, GasLaw}, gravity::{ExternalPotentialGravity, GravitySolver, KeplerianPotential, Potential, SelfGravity}, hydrodynamics::{GodunovHydroRunner, OptimalOrderRunner}, riemann_solver::{
-        AIRiemannSolver, ExactRiemannSolver, HLLCRiemannSolver, LinearAdvectionRiemannSover, PVRiemannSolver, TRRiemannSolver, TSRiemannSolver
-    }, Engine, InitialConditions, ParticleMotion, Runner, Space
+    finite_volume_solver::{FiniteVolumeSolver, GodunovFvs, MusclFvs, WafFvs},
+    gas_law::{EquationOfState, GasLaw},
+    gravity::{
+        ExternalPotentialGravity, GravitySolver, KeplerianPotential, Potential, SelfGravity,
+    },
+    hydrodynamics::OptimalOrderRunner,
+    riemann_solver::{
+        AIRiemannSolver, ExactRiemannSolver, HLLCRiemannSolver, LinearAdvectionRiemannSover,
+        PVRiemannSolver, TRRiemannSolver, TSRiemannSolver,
+    },
+    Engine, InitialConditions, ParticleMotion, Runner, Space,
 };
 use std::path;
 
@@ -203,6 +211,7 @@ pub enum ConfigError {
     UnknownBoundaryConditions(String),
     UnknownEOS(String),
     UnknownRiemannSolver(String),
+    UnknownsFiniteVolumeSolver(String),
     IllegalDVec3(String),
     InvalidArrayFormat(Yaml),
     InvalidArrayLength(usize, usize),
@@ -234,6 +243,13 @@ impl Display for ConfigError {
             }
             ConfigError::UnknownRiemannSolver(name) => {
                 write!(f, "Unknown type of Riemann solver configured: {}", name)
+            }
+            ConfigError::UnknownsFiniteVolumeSolver(name) => {
+                write!(
+                    f,
+                    "Unknown type of Finite volume solver configured: {}",
+                    name
+                )
             }
             ConfigError::IllegalDVec3(name) => {
                 write!(f, "Illegal DVec3 format: {}!", name)
@@ -369,6 +385,7 @@ impl InitialConditionsCfg {
 }
 
 struct HydroCfg {
+    solver: String,
     gas_law: GasLaw,
     cfl: f64,
     riemann: RiemannCfg,
@@ -376,6 +393,11 @@ struct HydroCfg {
 
 impl HydroCfg {
     fn parse(yaml: &Yaml) -> Result<Self, ConfigError> {
+        let solver = yaml["solver"]
+            .as_str()
+            .ok_or(ConfigError::MissingParameter(
+                "hydrodynamics: solver".to_string(),
+            ))?;
         let gamma = yaml["gamma"].as_f64().ok_or(ConfigError::MissingParameter(
             "hydrodynamics: gamma".to_string(),
         ))?;
@@ -399,11 +421,14 @@ impl HydroCfg {
             }
             _ => return Err(ConfigError::UnknownEOS(equation_of_state)),
         };
-        let cfl = yaml["cfl_criterion"].as_f64().ok_or(ConfigError::MissingParameter(
-            "hydrodynamics: cfl_criterion".to_string(),
-        ))?;
+        let cfl = yaml["cfl_criterion"]
+            .as_f64()
+            .ok_or(ConfigError::MissingParameter(
+                "hydrodynamics: cfl_criterion".to_string(),
+            ))?;
         let riemann = RiemannCfg::parse(&yaml["riemann_solver"])?;
         Ok(Self {
+            solver: solver.to_string(),
             gas_law: GasLaw::new(gamma, equation_of_state),
             cfl,
             riemann,
@@ -423,9 +448,9 @@ impl RiemannCfg {
         let velocity = if velocity.is_badvalue() {
             None
         } else {
-            Some(parse_dvec3(velocity).map_err(
-                |_| ConfigError::IllegalDVec3("hydrodynamics:riemann_solver:velocity".to_string())
-            )?)
+            Some(parse_dvec3(velocity).map_err(|_| {
+                ConfigError::IllegalDVec3("hydrodynamics:riemann_solver:velocity".to_string())
+            })?)
         };
         Ok(Self {
             kind: yaml["kind"]
@@ -448,24 +473,31 @@ struct PotentialCfg {
 
 impl PotentialCfg {
     fn parse(yaml: &Yaml) -> Result<Self, ConfigError> {
-        let kind = yaml["kind"].as_str().ok_or(ConfigError::MissingParameter("gravity: potential: kind".to_string()))?;
+        let kind = yaml["kind"].as_str().ok_or(ConfigError::MissingParameter(
+            "gravity: potential: kind".to_string(),
+        ))?;
         let acceleration = &yaml["acceleration"];
         let acceleration = if acceleration.is_badvalue() {
             None
         } else {
-            Some(parse_dvec3(acceleration).map_err(
-                |_| ConfigError::IllegalDVec3("gravity:potential:acceleration".to_string())
-            )?)
+            Some(parse_dvec3(acceleration).map_err(|_| {
+                ConfigError::IllegalDVec3("gravity:potential:acceleration".to_string())
+            })?)
         };
         let position = &yaml["position"];
-        let position = if position.is_badvalue() {
-            None
-        } else {
-            Some(parse_dvec3(position).map_err(
-                |_| ConfigError::IllegalDVec3("gravity:potential:position".to_string())
-            )?)
-        };
-        Ok(Self { kind: kind.to_string(), acceleration, position })
+        let position =
+            if position.is_badvalue() {
+                None
+            } else {
+                Some(parse_dvec3(position).map_err(|_| {
+                    ConfigError::IllegalDVec3("gravity:potential:position".to_string())
+                })?)
+            };
+        Ok(Self {
+            kind: kind.to_string(),
+            acceleration,
+            position,
+        })
     }
 }
 
@@ -484,8 +516,12 @@ impl GravityCfg {
         } else {
             Some(PotentialCfg::parse(&yaml["potential"])?)
         };
-        
-        Ok(Self { kind, softening_length, potential })
+
+        Ok(Self {
+            kind,
+            softening_length,
+            potential,
+        })
     }
 }
 
@@ -605,16 +641,16 @@ impl Config {
     }
 }
 
-#[derive(Parser)]
-pub struct Cli {
+#[derive(Parser, Debug)]
+pub struct CliArgs {
     /// The path to the config file to read
-    #[clap(parse(from_os_str))]
+    #[arg()]
     pub config: path::PathBuf,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // parse command line parameters
-    let args = Cli::parse();
+    let args = CliArgs::parse();
 
     // read configuration
     let config = Config::parse(args.config)?;
@@ -622,59 +658,158 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Setup simulation
     let gas_law = config.hydro.gas_law;
     let cfl = config.hydro.cfl;
-    let finite_volume_solver: Box<dyn FiniteVolumeSolver> = match config.hydro.riemann.kind.as_str() {
-        "HLLC" => Box::new(EulerEqnsFvs::new(HLLCRiemannSolver, cfl, gas_law)),
-        "PVRS" => Box::new(EulerEqnsFvs::new(PVRiemannSolver, cfl, gas_law)),
-        "Exact" => Box::new(EulerEqnsFvs::new(ExactRiemannSolver, cfl, gas_law)),
-        "TSRS" => Box::new(EulerEqnsFvs::new(TSRiemannSolver, cfl, gas_law)),
-        "TRRS" => Box::new(EulerEqnsFvs::new(TRRiemannSolver, cfl, gas_law)),
-        "AIRS" => {
-            let threshold = config.hydro.riemann.threshold.ok_or(ConfigError::MissingParameter("hydrodynamics: riemann_solver: threshold".to_string()))?;
-            Box::new(EulerEqnsFvs::new(AIRiemannSolver::new(threshold), cfl, gas_law))
-        }
-        "LinearAdvection" => {
-            let velocity = config.hydro.riemann.velocity.ok_or(ConfigError::MissingParameter("hydrodynamics: riemann_solver: velocity".to_string()))?;
-            Box::new(EulerEqnsFvs::new(LinearAdvectionRiemannSover::new(velocity), cfl, gas_law))
-        }
-        _ => Err(ConfigError::UnknownRiemannSolver(
-            config.hydro.riemann.kind,
-        ))?,
+    let finite_volume_solver: Box<dyn FiniteVolumeSolver> = match config.hydro.solver.as_str() {
+        "MUSCL" => match config.hydro.riemann.kind.as_str() {
+            "HLLC" => Box::new(MusclFvs::new(HLLCRiemannSolver, cfl, gas_law)),
+            "PVRS" => Box::new(MusclFvs::new(PVRiemannSolver, cfl, gas_law)),
+            "Exact" => Box::new(MusclFvs::new(ExactRiemannSolver, cfl, gas_law)),
+            "TSRS" => Box::new(MusclFvs::new(TSRiemannSolver, cfl, gas_law)),
+            "TRRS" => Box::new(MusclFvs::new(TRRiemannSolver, cfl, gas_law)),
+            "AIRS" => {
+                let threshold =
+                    config
+                        .hydro
+                        .riemann
+                        .threshold
+                        .ok_or(ConfigError::MissingParameter(
+                            "hydrodynamics: riemann_solver: threshold".to_string(),
+                        ))?;
+                Box::new(MusclFvs::new(AIRiemannSolver::new(threshold), cfl, gas_law))
+            }
+            "LinearAdvection" => {
+                let velocity =
+                    config
+                        .hydro
+                        .riemann
+                        .velocity
+                        .ok_or(ConfigError::MissingParameter(
+                            "hydrodynamics: riemann_solver: velocity".to_string(),
+                        ))?;
+                Box::new(MusclFvs::new(
+                    LinearAdvectionRiemannSover::new(velocity),
+                    cfl,
+                    gas_law,
+                ))
+            }
+            _ => Err(ConfigError::UnknownRiemannSolver(config.hydro.riemann.kind))?,
+        },
+        "Godunov" => match config.hydro.riemann.kind.as_str() {
+            "HLLC" => Box::new(GodunovFvs::new(HLLCRiemannSolver, cfl, gas_law)),
+            "PVRS" => Box::new(GodunovFvs::new(PVRiemannSolver, cfl, gas_law)),
+            "Exact" => Box::new(GodunovFvs::new(ExactRiemannSolver, cfl, gas_law)),
+            "TSRS" => Box::new(GodunovFvs::new(TSRiemannSolver, cfl, gas_law)),
+            "TRRS" => Box::new(GodunovFvs::new(TRRiemannSolver, cfl, gas_law)),
+            "AIRS" => {
+                let threshold =
+                    config
+                        .hydro
+                        .riemann
+                        .threshold
+                        .ok_or(ConfigError::MissingParameter(
+                            "hydrodynamics: riemann_solver: threshold".to_string(),
+                        ))?;
+                Box::new(GodunovFvs::new(
+                    AIRiemannSolver::new(threshold),
+                    cfl,
+                    gas_law,
+                ))
+            }
+            "LinearAdvection" => {
+                let velocity =
+                    config
+                        .hydro
+                        .riemann
+                        .velocity
+                        .ok_or(ConfigError::MissingParameter(
+                            "hydrodynamics: riemann_solver: velocity".to_string(),
+                        ))?;
+                Box::new(GodunovFvs::new(
+                    LinearAdvectionRiemannSover::new(velocity),
+                    cfl,
+                    gas_law,
+                ))
+            }
+            _ => Err(ConfigError::UnknownRiemannSolver(config.hydro.riemann.kind))?,
+        },
+        "WAF" => match config.hydro.riemann.kind.as_str() {
+            "LinearAdvection" => {
+                let velocity =
+                    config
+                        .hydro
+                        .riemann
+                        .velocity
+                        .ok_or(ConfigError::MissingParameter(
+                            "hydrodynamics: riemann_solver: velocity".to_string(),
+                        ))?;
+                Box::new(WafFvs::new(
+                    LinearAdvectionRiemannSover::new(velocity),
+                    cfl,
+                    gas_law,
+                ))
+            }
+            _ => Err(ConfigError::UnknownRiemannSolver(config.hydro.riemann.kind))?,
+        },
+        _ => Err(ConfigError::UnknownsFiniteVolumeSolver(config.hydro.solver))?,
     };
     let gravity_solver: Option<Box<dyn GravitySolver>> = match config.gravity.kind.as_str() {
         "none" => None,
         "self_gravity" => {
-            let softening_length = config.gravity.softening_length.ok_or(ConfigError::MissingParameter("gravity: softening_length".to_string()))?;
+            let softening_length =
+                config
+                    .gravity
+                    .softening_length
+                    .ok_or(ConfigError::MissingParameter(
+                        "gravity: softening_length".to_string(),
+                    ))?;
             Some(Box::new(SelfGravity::new(softening_length)))
         }
         "external_potential" => {
-            let potential_cfg = config.gravity.potential.ok_or(ConfigError::MissingParameter("gravity: potential".to_string()))?;
-            let potential = match potential_cfg.kind.as_str() {
-                "constant" => {
-                    let acceleration = potential_cfg.acceleration.ok_or(ConfigError::MissingParameter("gravity: potential: acceleration".to_string()))?;
-                    Potential::Constant { acceleration }
-                }
-                "keplerian_disc" => {
-                    let position = potential_cfg.position.ok_or(ConfigError::MissingParameter("gravity: potential: position".to_string()))?;
-                    let softening_length = config.gravity.softening_length.ok_or(ConfigError::MissingParameter("gravity: softening_length".to_string()))?;
-                    Potential::Keplerian(KeplerianPotential::new(position, softening_length))
-                }
-                _ => return Err(Box::new(ConfigError::UnknownGravity(format!("gravity: potential: kind: {:}", potential_cfg.kind).to_string()))),
-            };
+            let potential_cfg = config
+                .gravity
+                .potential
+                .ok_or(ConfigError::MissingParameter(
+                    "gravity: potential".to_string(),
+                ))?;
+            let potential =
+                match potential_cfg.kind.as_str() {
+                    "constant" => {
+                        let acceleration =
+                            potential_cfg
+                                .acceleration
+                                .ok_or(ConfigError::MissingParameter(
+                                    "gravity: potential: acceleration".to_string(),
+                                ))?;
+                        Potential::Constant { acceleration }
+                    }
+                    "keplerian_disc" => {
+                        let position =
+                            potential_cfg.position.ok_or(ConfigError::MissingParameter(
+                                "gravity: potential: position".to_string(),
+                            ))?;
+                        let softening_length = config.gravity.softening_length.ok_or(
+                            ConfigError::MissingParameter("gravity: softening_length".to_string()),
+                        )?;
+                        Potential::Keplerian(KeplerianPotential::new(position, softening_length))
+                    }
+                    _ => {
+                        return Err(Box::new(ConfigError::UnknownGravity(
+                            format!("gravity: potential: kind: {:}", potential_cfg.kind)
+                                .to_string(),
+                        )))
+                    }
+                };
             Some(Box::new(ExternalPotentialGravity::new(potential)))
         }
         _ => return Err(Box::new(ConfigError::UnknownGravity(config.gravity.kind))),
     };
     let runner: Box<dyn Runner> = match config.engine.runner.as_str() {
         "OptimalOrder" => Box::new(OptimalOrderRunner),
-        "Godunov" => Box::new(GodunovHydroRunner),
-        _ => Err(ConfigError::UnknownRunner(
-            config.engine.runner,
-        ))?,
+        _ => Err(ConfigError::UnknownRunner(config.engine.runner))?,
     };
     let mut engine = Engine::new(
         runner,
         finite_volume_solver,
-        gravity_solver, 
+        gravity_solver,
         config.engine.t_end,
         config.engine.dt_min,
         config.engine.dt_max,
@@ -685,7 +820,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.engine.save_faces,
         config.engine.particle_motion,
     );
-    
 
     // Setup ICs and construct space
     let ic = match config.initial_conditions {

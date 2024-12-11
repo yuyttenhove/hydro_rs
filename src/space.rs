@@ -1,8 +1,4 @@
-use std::{
-    fmt::Display,
-    path::Path,
-    vec,
-};
+use std::{fmt::Display, path::Path, vec};
 
 #[cfg(debug)]
 use float_cmp::assert_approx_eq;
@@ -21,7 +17,6 @@ use crate::{
     utils::contains,
     Dimensionality,
 };
-
 
 #[derive(Clone, Copy, Debug)]
 pub enum Boundary {
@@ -1572,7 +1567,7 @@ mod test {
     //     let num_part = 16;
     //     let dimensionality = Dimensionality::TwoD;
 
-    //     let eos = GasLaw::new(GAMMA, EquationOfState::Ideal);
+    //     let eos = GasLaw::new(GAMMA, GasLaw::Ideal);
 
     //     let xvel = 0.5;
     //     let mapper = |_| (1., xvel * DVec3::X, 1.);

@@ -5,7 +5,7 @@ use crate::engine::TimestepInfo;
 use crate::gas_law::GasLaw;
 use crate::physical_quantities::{Conserved, Gradients, Primitive, State};
 use crate::utils::{box_reflect, box_wrap, contains};
-use crate::{engine::ParticleMotion, flux::FluxInfo, timeline::*, Dimensionality};
+use crate::{engine::ParticleMotion, finite_volume_solver::FluxInfo, timeline::*, Dimensionality};
 
 #[derive(Default, Debug, Clone)]
 pub struct Particle {
@@ -104,11 +104,7 @@ impl Particle {
     }
 
     /// Drifts the particle forward in time over a time `dt_drift`.
-    pub fn drift(
-        &mut self,
-        dt_drift: f64,
-        dimensionality: Dimensionality,
-    ) {
+    pub fn drift(&mut self, dt_drift: f64, dimensionality: Dimensionality) {
         for i in 0..dimensionality.into() {
             self.loc[i] += self.v[i] * dt_drift;
             self.centroid[i] += self.v[i] * dt_drift;
@@ -117,7 +113,6 @@ impl Particle {
 
         assert!(self.loc.is_finite(), "Infinite x after drift!");
     }
-
 
     /// Extrapolates the current state (e.g. primitives) forward in time
     pub fn extrapolate_state(&mut self, dt: f64, eos: &GasLaw) {

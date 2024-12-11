@@ -56,7 +56,7 @@ impl<T> Mul<State<T>> for f64 {
 }
 
 impl<T> State<T> {
-    pub(crate) fn splat(value: f64) -> Self {
+    pub fn splat(value: f64) -> Self {
         Self(value, DVec3::splat(value), value, PhantomData)
     }
 
