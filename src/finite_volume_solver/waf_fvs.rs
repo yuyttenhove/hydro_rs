@@ -3,8 +3,9 @@ use crate::{
     riemann_solver::RiemannWafFluxSolver, Boundary,
 };
 
-use super::{FiniteVolumeSolver, FluxInfo};
+use super::{FiniteVolumeSolver, FluxInfo, FluxLimiter};
 
+use crate::physical_quantities::Primitive;
 use glam::DVec3;
 use meshless_voronoi::VoronoiFace;
 use rayon::prelude::*;
@@ -12,15 +13,17 @@ use rayon::prelude::*;
 pub struct WafFvs<R: RiemannWafFluxSolver> {
     riemann_solver: R,
     cfl: f64,
+    tvd: bool,
     gas_law: GasLaw,
 }
 
 impl<R: RiemannWafFluxSolver> WafFvs<R> {
-    pub fn new(riemann_solver: R, cfl: f64, eos: GasLaw) -> Self {
+    pub fn new(riemann_solver: R, cfl: f64, eos: GasLaw, tvd: bool) -> Self {
         Self {
             gas_law: eos,
             cfl,
             riemann_solver,
+            tvd,
         }
     }
 }
@@ -34,7 +37,7 @@ impl<R: RiemannWafFluxSolver> FiniteVolumeSolver for WafFvs<R> {
         boundary: crate::Boundary,
     ) -> Vec<super::FluxInfo> {
         faces
-            .par_iter()
+            .iter()
             .map(|face| {
                 let left = &particles[face.left()];
                 let left_active = part_is_active[face.left()];
@@ -50,13 +53,22 @@ impl<R: RiemannWafFluxSolver> FiniteVolumeSolver for WafFvs<R> {
                             return FluxInfo::zero();
                         }
                         let dt = left.dt.min(right.dt);
-                        flux_exchange(left, right, dt, face, &self.gas_law, &self.riemann_solver)
+                        flux_exchange(
+                            left,
+                            right,
+                            dt,
+                            face,
+                            self.do_flux_limit(),
+                            &self.gas_law,
+                            &self.riemann_solver,
+                        )
                     }
                     None => {
                         if left_active {
                             flux_exchange_boundary(
                                 left,
                                 face,
+                                self.do_flux_limit(),
                                 boundary,
                                 &self.gas_law,
                                 &self.riemann_solver,
@@ -77,6 +89,37 @@ impl<R: RiemannWafFluxSolver> FiniteVolumeSolver for WafFvs<R> {
     fn cfl(&self) -> f64 {
         self.cfl
     }
+
+    fn do_flux_limit(&self) -> bool {
+        self.tvd
+    }
+
+    fn flux_limiter_collect(
+        &self,
+        left: &State<Primitive>,
+        right: &State<Primitive>,
+        ds: DVec3,
+        normal: DVec3,
+        limiter_data: &mut FluxLimiter,
+    ) {
+        let star_states = self.riemann_solver.solve_for_star_state(
+            left,
+            right,
+            left.velocity().dot(normal),
+            right.velocity().dot(normal),
+            self.eos().sound_speed(left.pressure(), left.density()),
+            self.eos().sound_speed(right.pressure(), right.density()),
+            self.eos().gamma(),
+        );
+        limiter_data.collect(
+            DVec3::new(
+                star_states.rho_l - left.density(),
+                star_states.rho_r - star_states.rho_l,
+                right.density() - star_states.rho_r,
+            ),
+            ds.length(),
+        );
+    }
 }
 
 fn flux_exchange<RiemannSolver: RiemannWafFluxSolver>(
@@ -84,6 +127,7 @@ fn flux_exchange<RiemannSolver: RiemannWafFluxSolver>(
     right: &Particle,
     dt: f64,
     face: &VoronoiFace,
+    do_limit: bool,
     eos: &GasLaw,
     riemann_solver: &RiemannSolver,
 ) -> FluxInfo {
@@ -114,17 +158,9 @@ fn flux_exchange<RiemannSolver: RiemannWafFluxSolver>(
     let right_primitives = right.primitives - right.time_extrapolations(dt_extrapolate, eos);
 
     // Terms for flux limiters
-    let n_unit = face.normal();
+    let r = dx_centroid.length();
     let dx_left = face.centroid() - left.centroid;
     let dx_right = right.centroid - face.centroid();
-    let drho_left = left
-        .gradients
-        .dot(2. * dx_left.dot(n_unit) * n_unit)
-        .density();
-    let drho_right = right
-        .gradients
-        .dot(2. * dx_right.dot(n_unit) * n_unit)
-        .density();
 
     // Calculate fluxes
     let fluxes = face.area()
@@ -133,8 +169,10 @@ fn flux_exchange<RiemannSolver: RiemannWafFluxSolver>(
             &right_primitives,
             dx_left,
             dx_right,
-            drho_left,
-            drho_right,
+            &left.flux_limiter,
+            &right.flux_limiter,
+            r,
+            do_limit,
             v_face,
             dt,
             face.normal(),
@@ -156,6 +194,7 @@ fn flux_exchange<RiemannSolver: RiemannWafFluxSolver>(
 fn flux_exchange_boundary<RiemannSolver: RiemannWafFluxSolver>(
     part: &Particle,
     face: &VoronoiFace,
+    do_limit: bool,
     boundary: Boundary,
     eos: &GasLaw,
     riemann_solver: &RiemannSolver,
@@ -195,17 +234,10 @@ fn flux_exchange_boundary<RiemannSolver: RiemannWafFluxSolver>(
     };
 
     // Terms for flux limiters
+    let r = dx_centroid.length();
     let n_unit = face.normal();
     let dx_left = face.centroid() - part.centroid;
     let dx_right = dx_left;
-    let drho_left = part
-        .gradients
-        .dot(2. * dx_left.dot(n_unit) * n_unit)
-        .density();
-    let drho_right = reflected
-        .gradients
-        .dot(2. * dx_right.dot(n_unit) * n_unit)
-        .density();
 
     // Solve for flux
     let fluxes = face.area()
@@ -214,8 +246,10 @@ fn flux_exchange_boundary<RiemannSolver: RiemannWafFluxSolver>(
             &primitives_boundary,
             dx_left,
             dx_right,
-            drho_left,
-            drho_right,
+            &part.flux_limiter,
+            &FluxLimiter::init(),
+            r,
+            do_limit,
             DVec3::ZERO,
             part.dt,
             face.normal(),

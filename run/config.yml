@@ -30,10 +30,11 @@ gravity:
     acceleration: [0., -1., 0.]
 
 hydrodynamics:
-  solver: Godunov
+  solver: WAF
   equation_of_state: Ideal
   gamma: 1.66666667
   cfl_criterion: 0.5
+  TVD: true
   riemann_solver:
     kind: LinearAdvection
     threshold: 2.
@@ -47,6 +48,6 @@ initial_conditions:
   kind: sodshock
   dimensionality: 1
   box_size: [ 2., 1., 1. ]
-  num_part: 1000
+  num_part: 250
   perturbations: 0.0
   filename: ICs/sodshock_2D.hdf5

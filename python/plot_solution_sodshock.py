@@ -41,5 +41,5 @@ if __name__ == "__main__":
         savename = sys.argv[2]
     except IndexError:
         fname = root / "run/output/sodshock_1D_optimal_0020.hdf5"
-        savename = "test_optimal_godunov.png"
+        savename = "test_optimal_waf_limiter.png"
     main(fname, savename)

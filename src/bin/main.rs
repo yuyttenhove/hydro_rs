@@ -388,6 +388,7 @@ struct HydroCfg {
     solver: String,
     gas_law: GasLaw,
     cfl: f64,
+    tvd: bool,
     riemann: RiemannCfg,
 }
 
@@ -426,11 +427,15 @@ impl HydroCfg {
             .ok_or(ConfigError::MissingParameter(
                 "hydrodynamics: cfl_criterion".to_string(),
             ))?;
+        let tvd = yaml["TVD"].as_bool().ok_or(ConfigError::MissingParameter(
+            "hydrodynamics: TVD".to_string(),
+        ))?;
         let riemann = RiemannCfg::parse(&yaml["riemann_solver"])?;
         Ok(Self {
             solver: solver.to_string(),
             gas_law: GasLaw::new(gamma, equation_of_state),
             cfl,
+            tvd,
             riemann,
         })
     }
@@ -658,13 +663,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Setup simulation
     let gas_law = config.hydro.gas_law;
     let cfl = config.hydro.cfl;
+    let tvd = config.hydro.tvd;
     let finite_volume_solver: Box<dyn FiniteVolumeSolver> = match config.hydro.solver.as_str() {
         "MUSCL" => match config.hydro.riemann.kind.as_str() {
-            "HLLC" => Box::new(MusclFvs::new(HLLCRiemannSolver, cfl, gas_law)),
-            "PVRS" => Box::new(MusclFvs::new(PVRiemannSolver, cfl, gas_law)),
-            "Exact" => Box::new(MusclFvs::new(ExactRiemannSolver, cfl, gas_law)),
-            "TSRS" => Box::new(MusclFvs::new(TSRiemannSolver, cfl, gas_law)),
-            "TRRS" => Box::new(MusclFvs::new(TRRiemannSolver, cfl, gas_law)),
+            "HLLC" => Box::new(MusclFvs::new(HLLCRiemannSolver, cfl, gas_law, tvd)),
+            "PVRS" => Box::new(MusclFvs::new(PVRiemannSolver, cfl, gas_law, tvd)),
+            "Exact" => Box::new(MusclFvs::new(ExactRiemannSolver, cfl, gas_law, tvd)),
+            "TSRS" => Box::new(MusclFvs::new(TSRiemannSolver, cfl, gas_law, tvd)),
+            "TRRS" => Box::new(MusclFvs::new(TRRiemannSolver, cfl, gas_law, tvd)),
             "AIRS" => {
                 let threshold =
                     config
@@ -674,7 +680,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .ok_or(ConfigError::MissingParameter(
                             "hydrodynamics: riemann_solver: threshold".to_string(),
                         ))?;
-                Box::new(MusclFvs::new(AIRiemannSolver::new(threshold), cfl, gas_law))
+                Box::new(MusclFvs::new(
+                    AIRiemannSolver::new(threshold),
+                    cfl,
+                    gas_law,
+                    tvd,
+                ))
             }
             "LinearAdvection" => {
                 let velocity =
@@ -689,6 +700,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     LinearAdvectionRiemannSover::new(velocity),
                     cfl,
                     gas_law,
+                    tvd,
                 ))
             }
             _ => Err(ConfigError::UnknownRiemannSolver(config.hydro.riemann.kind))?,
@@ -745,6 +757,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     LinearAdvectionRiemannSover::new(velocity),
                     cfl,
                     gas_law,
+                    tvd,
                 ))
             }
             _ => Err(ConfigError::UnknownRiemannSolver(config.hydro.riemann.kind))?,

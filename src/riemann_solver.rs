@@ -1,12 +1,12 @@
 mod airs;
+mod anrs;
 mod exact;
 mod hllc;
+mod linear_advection;
 mod pvrs;
 mod trrs;
 mod tsrs;
 mod vacuum;
-mod linear_advection;
-mod anrs;
 
 use glam::DVec3;
 
@@ -16,15 +16,15 @@ use crate::{
     physical_quantities::{Conserved, Primitive, State},
 };
 
+use self::vacuum::VacuumRiemannSolver;
+use crate::finite_volume_solver::FluxLimiter;
 pub use airs::AIRiemannSolver;
 pub use exact::ExactRiemannSolver;
 pub use hllc::HLLCRiemannSolver;
+pub use linear_advection::LinearAdvectionRiemannSover;
 pub use pvrs::PVRiemannSolver;
 pub use trrs::TRRiemannSolver;
 pub use tsrs::TSRiemannSolver;
-pub use linear_advection::LinearAdvectionRiemannSover;
-
-use self::vacuum::VacuumRiemannSolver;
 
 pub fn riemann_solver(
     kind: &str,
@@ -87,15 +87,17 @@ pub trait RiemannFluxSolver: Sync {
     ) -> State<Conserved>;
 }
 
-pub trait RiemannWafFluxSolver: Sync {
+pub trait RiemannWafFluxSolver: RiemannStarSolver + Sync {
     fn solve_for_waf_flux(
         &self,
         left: &State<Primitive>,
         right: &State<Primitive>,
         dx_left: DVec3,
         dx_right: DVec3,
-        drho_left: f64,
-        drho_right: f64,
+        left_flux_limiter: &FluxLimiter,
+        right_flux_limiter: &FluxLimiter,
+        r: f64,
+        do_limit: bool,
         interface_velocity: DVec3,
         dt: f64,
         n_unit: DVec3,
@@ -104,13 +106,20 @@ pub trait RiemannWafFluxSolver: Sync {
 }
 
 #[derive(Default)]
-struct RiemannStarValues {
-    rho_l: f64,
-    rho_r: f64,
+pub(crate) struct RiemannStarValues {
+    pub(crate) rho_l: f64,
+    pub(crate) rho_r: f64,
     u: f64,
     p: f64,
 }
-trait RiemannStarSolver: RiemannFluxSolver {
+
+impl RiemannStarValues {
+    fn new(rho_l: f64, rho_r: f64, u: f64, p: f64) -> Self {
+        Self { rho_l, rho_r, u, p }
+    }
+}
+
+pub(crate) trait RiemannStarSolver: Sync {
     /// Solve for the flux in a reference frame where the interface is not moving
     fn solve_for_star_state(
         &self,
@@ -262,18 +271,14 @@ trait RiemannStarSolver: RiemannFluxSolver {
                 )
             }
         } else if star.p > left.pressure() {
-            Self::sample_left_shock_wave(
-                star.rho_l, star.u, star.p, left, v_l, a_l, n_unit, gamma,
-            )
+            Self::sample_left_shock_wave(star.rho_l, star.u, star.p, left, v_l, a_l, n_unit, gamma)
         } else {
             Self::sample_left_rarefaction_wave(
                 star.rho_l, star.u, star.p, left, v_l, a_l, n_unit, gamma,
             )
         }
     }
-}
 
-impl<T: RiemannStarSolver> RiemannFluxSolver for T {
     fn solve_for_flux(
         &self,
         left: &State<Primitive>,
@@ -282,7 +287,6 @@ impl<T: RiemannStarSolver> RiemannFluxSolver for T {
         n_unit: DVec3,
         eos: &GasLaw,
     ) -> State<Conserved> {
-
         // Boost to interface frame
         let left = left.boost(-interface_velocity);
         let right = right.boost(-interface_velocity);
@@ -306,5 +310,18 @@ impl<T: RiemannStarSolver> RiemannFluxSolver for T {
             };
 
         flux_from_half_state(&w_half, interface_velocity, n_unit, eos.gamma())
+    }
+}
+
+impl<T: RiemannStarSolver> RiemannFluxSolver for T {
+    fn solve_for_flux(
+        &self,
+        left: &State<Primitive>,
+        right: &State<Primitive>,
+        interface_velocity: DVec3,
+        n_unit: DVec3,
+        eos: &GasLaw,
+    ) -> State<Conserved> {
+        self.solve_for_flux(left, right, interface_velocity, n_unit, eos)
     }
 }

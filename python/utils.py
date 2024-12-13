@@ -1,16 +1,16 @@
+import math
 from math import ceil
 from pathlib import Path
-import pandas as pd
-import numpy as np
-from scipy.interpolate import griddata
-import matplotlib.pyplot as plt
-from matplotlib.collections import LineCollection
+from typing import List, Tuple
+
 import h5py
-import math
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from matplotlib.collections import LineCollection
+from scipy.interpolate import griddata
 
 from riemann_solver import RiemannSolver
-
-from typing import List, Tuple
 
 
 def read_particle_data(fname: str) -> Tuple[pd.DataFrame, float]:
@@ -146,12 +146,13 @@ def plot_quantity(ax: plt.Axes, xdata: np.ndarray, ydata: np.ndarray, xlim: Tupl
         [[y_delta[0], y_delta[0]], y_delta, [y_delta[-1], y_delta[-1]]])
     y_delta = 3 * np.array([np.sqrt(np.sum(y_delta[i: i + windowsize] ** 2) / (windowsize * (windowsize - 1))) for i in
                             range(len(ydata) - windowsize + 1)])
-    y_min = y_median - y_delta
-    y_max = y_median + y_delta
-    x_median = xdata[windowsize // 2: -windowsize // 2 + 1]
+    # y_min = y_median - y_delta
+    # y_max = y_median + y_delta
+    # x_median = xdata[windowsize // 2: -windowsize // 2 + 1]
     # ax.fill_between(x_median, y_min, y_max, alpha=0.25)
     # ax.plot(x_median, y_median)
     ax.scatter(xdata, ydata, s=4, color="red", zorder=1000, alpha=0.33)
+    # ax.plot(xdata, ydata, color="red", zorder=1000)
     ax.set_title(title)
     if not logx:
         ax.set_xlim(*xlim)

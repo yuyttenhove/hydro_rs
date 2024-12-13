@@ -2,6 +2,7 @@ use glam::DVec3;
 use meshless_voronoi::VoronoiCell;
 
 use crate::engine::TimestepInfo;
+use crate::finite_volume_solver::FluxLimiter;
 use crate::gas_law::GasLaw;
 use crate::physical_quantities::{Conserved, Gradients, Primitive, State};
 use crate::utils::{box_reflect, box_wrap, contains};
@@ -15,6 +16,7 @@ pub struct Particle {
     pub extrapolations: State<Primitive>,
     pub conserved: State<Conserved>,
     pub fluxes: State<Conserved>,
+    pub flux_limiter: FluxLimiter,
     pub gravity_mflux: DVec3,
 
     pub volume: f64,
