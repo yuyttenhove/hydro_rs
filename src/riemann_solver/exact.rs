@@ -3,9 +3,11 @@ use crate::{
     physical_quantities::{Primitive, State},
 };
 
-use super::{RiemannStarSolver, RiemannStarValues};
+use super::{EulerWafSolver, RiemannStarSolver, RiemannStarValues};
 
 pub struct ExactRiemannSolver;
+
+impl EulerWafSolver for ExactRiemannSolver {}
 
 impl ExactRiemannSolver {
     /// Functions (4.6) and (4.7) in Toro.
@@ -264,7 +266,7 @@ impl RiemannStarSolver for ExactRiemannSolver {
             // Newton-Raphson until convergence or until suitable interval is found
             // to use Brent's method
             let mut counter = 0;
-            while (p - p_guess).abs() > 1e-6 * 0.5 * (p + p_guess) && fp_guess < 0.0 {
+            while (p - p_guess).abs() > 1e-6 * 0.5 * (p + p_guess) && fp_guess > 0.0 {
                 p = p_guess;
                 p_guess = p_guess - fp_guess / Self::fprime(p_guess, left, right, a_l, a_r, gamma);
                 fp_guess = Self::f(p_guess, left, right, v_l, v_r, a_l, a_r, gamma);

@@ -1,12 +1,12 @@
 time_integration:
   dt_min: 1e-11
-  dt_max: 0.05
+  dt_max: 0.25
   t_end: 0.2
   sync_timesteps: false
 
 snapshots:
   dt_snap: 0.01
-  prefix: sodshock_1D
+  prefix: sodshock_1D_WAF_tvd
   save_faces: true
 
 engine:
@@ -33,10 +33,10 @@ hydrodynamics:
   solver: WAF
   equation_of_state: Ideal
   gamma: 1.66666667
-  cfl_criterion: 0.5
+  cfl_criterion: 2.0
   TVD: true
   riemann_solver:
-    kind: LinearAdvection
+    kind: Exact
     threshold: 2.
     velocity: [1., 0., 0.]
 

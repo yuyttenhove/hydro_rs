@@ -94,6 +94,60 @@ impl<R: RiemannWafFluxSolver> FiniteVolumeSolver for WafFvs<R> {
         self.tvd
     }
 
+    fn flux_limit_faces(
+        &self,
+        faces: &[VoronoiFace],
+        particles: &[Particle],
+        part_is_active: &[bool],
+        boundary: Boundary,
+    ) -> Vec<FluxLimiter> {
+        faces
+            .iter()
+            .map(|face| {
+                let left = &particles[face.left()];
+                let left_active = part_is_active[face.left()];
+                match face.right() {
+                    Some(right_idx) => {
+                        let right = &particles[right_idx];
+                        let right_active = part_is_active[right_idx];
+                        // Do the flux exchange only when at least one particle is active *and* the particle with the strictly smallest timestep is active
+                        if (!left_active && !right_active)
+                            || (right.dt < left.dt && !right_active)
+                            || (left.dt < right.dt && !left_active)
+                        {
+                            return FluxLimiter::zero();
+                        }
+                        let normal = face.normal();
+                        let ds = right.centroid + face.shift().unwrap_or_default() - left.centroid;
+                        let (WL, WR) = (&left.primitives, &right.primitives);
+                        let v_l = WL.velocity().dot(normal);
+                        let v_r = WR.velocity().dot(normal);
+                        let a_l = self.eos().sound_speed(WL.pressure(), 1. / WL.density());
+                        let a_r = self.eos().sound_speed(WR.pressure(), 1. / WR.density());
+                        let star_states = self.riemann_solver.solve_for_star_state(
+                            WL,
+                            WR,
+                            v_l,
+                            v_r,
+                            a_l,
+                            a_r,
+                            self.eos().gamma(),
+                        );
+                        FluxLimiter::init(
+                            DVec3::new(
+                                star_states.rho_l - WL.density(),
+                                star_states.rho_r - star_states.rho_l,
+                                WR.density() - star_states.rho_r,
+                            ),
+                            ds.length(),
+                        )
+                    }
+                    None => FluxLimiter::zero(),
+                }
+            })
+            .collect()
+    }
+
     fn flux_limiter_collect(
         &self,
         left: &State<Primitive>,
@@ -102,6 +156,7 @@ impl<R: RiemannWafFluxSolver> FiniteVolumeSolver for WafFvs<R> {
         normal: DVec3,
         limiter_data: &mut FluxLimiter,
     ) {
+        let normal = if ds.dot(normal) < 0. { -normal } else { normal };
         let star_states = self.riemann_solver.solve_for_star_state(
             left,
             right,
@@ -247,7 +302,7 @@ fn flux_exchange_boundary<RiemannSolver: RiemannWafFluxSolver>(
             dx_left,
             dx_right,
             &part.flux_limiter,
-            &FluxLimiter::init(),
+            &FluxLimiter::zero(),
             r,
             do_limit,
             DVec3::ZERO,

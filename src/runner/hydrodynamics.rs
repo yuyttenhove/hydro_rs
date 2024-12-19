@@ -196,66 +196,31 @@ fn gradient_apply(space: &mut Space, gradients: &[Option<Gradients<Primitive>>])
         });
 }
 
-fn flux_limiter_collect(
-    space: &Space,
-    part_is_active: &[bool],
-    fvs_solver: &Box<dyn FiniteVolumeSolver>,
-) -> Vec<Option<FluxLimiter>> {
-    let faces = space.faces();
-    let cell_face_connections = space.cell_face_connections();
+fn apply_flux_limiter(space: &mut Space, flux_limiters: &[FluxLimiter], part_is_active: &[bool]) {
+    let faces = &space.voronoi_faces;
+    let cell_face_connections = &space.voronoi_cell_face_connections;
     space
-        .parts()
-        .iter()
+        .parts
+        .par_iter_mut()
         .enumerate()
-        .map(|(part_idx, part)| {
-            if !part_is_active[part_idx] {
-                return None;
+        .for_each(|(part_idx, part)| {
+            let active = part_is_active[part_idx];
+            if !active {
+                return;
             }
-
-            let centroid = part.centroid;
+            part.flux_limiter = FluxLimiter::zero();
             let face_idx: &[usize] = {
                 let start = part.face_connections_offset;
                 let end = start + part.face_count;
                 &cell_face_connections[start..end]
             };
-
-            let mut limiter_data = FluxLimiter::init();
             for &idx in face_idx {
                 let face = &faces[idx];
-                let normal = face.normal();
-                let shift = face.shift().unwrap_or(DVec3::ZERO);
-                let shift = if part_idx == face.left() {
-                    shift
+                if face.left() == part_idx {
+                    part.flux_limiter.combine(flux_limiters[idx]);
                 } else {
-                    -shift
-                };
-                let other = match get_other(face, part_idx) {
-                    Some(other_idx) => &space.parts()[other_idx],
-                    None => &space.get_boundary_part(part, face),
-                };
-                let ds = other.centroid + shift - centroid;
-                fvs_solver.flux_limiter_collect(
-                    &part.primitives,
-                    &other.primitives,
-                    ds,
-                    normal,
-                    &mut limiter_data,
-                );
-            }
-
-            Some(limiter_data)
-        })
-        .collect()
-}
-
-fn apply_flux_limiter(space: &mut Space, flux_limiters: &[Option<FluxLimiter>]) {
-    space
-        .parts_mut()
-        .par_iter_mut()
-        .zip(flux_limiters.par_iter())
-        .for_each(|(part, flux_limiter)| {
-            if let Some(flux_limiter) = flux_limiter {
-                part.flux_limiter = *flux_limiter;
+                    part.flux_limiter.combine(-flux_limiters[idx]);
+                }
             }
         });
 }

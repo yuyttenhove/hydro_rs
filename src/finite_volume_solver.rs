@@ -1,5 +1,6 @@
 use glam::DVec3;
 use meshless_voronoi::VoronoiFace;
+use std::ops::Neg;
 
 use crate::{
     gas_law::GasLaw,
@@ -81,6 +82,16 @@ pub trait FiniteVolumeSolver: Sync {
         false
     }
 
+    fn flux_limit_faces(
+        &self,
+        faces: &[VoronoiFace],
+        particles: &[Particle],
+        part_is_active: &[bool],
+        boundary: Boundary,
+    ) -> Vec<FluxLimiter> {
+        unimplemented!("Shouldn't call this function!")
+    }
+
     fn flux_limiter_collect(
         &self,
         left: &State<Primitive>,
@@ -117,10 +128,18 @@ pub struct FluxLimiter {
 }
 
 impl FluxLimiter {
-    pub fn init() -> Self {
+    pub fn zero() -> Self {
         Self {
             jumps: DVec3::ZERO,
             weight: 0.,
+        }
+    }
+
+    pub fn init(jumps: DVec3, r: f64) -> Self {
+        let w = f64::exp(-r);
+        Self {
+            jumps: w * jumps,
+            weight: w,
         }
     }
 
@@ -130,8 +149,29 @@ impl FluxLimiter {
         self.weight += w;
     }
 
+    pub fn combine(&mut self, other: FluxLimiter) {
+        self.jumps += other.jumps;
+        self.weight += other.weight;
+    }
+
     pub fn apply(&self, jumps: DVec3, r: f64) -> DVec3 {
         let w = f64::exp(-r);
-        (self.jumps - w * jumps) / (self.weight - w)
+        let jumps = (self.jumps - w * jumps);
+        let w = self.weight - w;
+        if w > 0. {
+            jumps / w
+        } else {
+            DVec3::ZERO
+        }
+    }
+}
+
+impl Neg for FluxLimiter {
+    type Output = Self;
+    fn neg(self) -> Self {
+        Self {
+            jumps: -self.jumps,
+            weight: self.weight,
+        }
     }
 }

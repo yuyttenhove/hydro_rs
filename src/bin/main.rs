@@ -242,7 +242,7 @@ impl Display for ConfigError {
                 write!(f, "Unknown type of equation of stated configured: {}", name)
             }
             ConfigError::UnknownRiemannSolver(name) => {
-                write!(f, "Unknown type of Riemann solver configured: {}", name)
+                write!(f, "Unsupported type of Riemann solver configured: {}", name)
             }
             ConfigError::UnknownsFiniteVolumeSolver(name) => {
                 write!(
@@ -744,6 +744,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             _ => Err(ConfigError::UnknownRiemannSolver(config.hydro.riemann.kind))?,
         },
         "WAF" => match config.hydro.riemann.kind.as_str() {
+            // "PVRS" => Box::new(WafFvs::new(PVRiemannSolver, cfl, gas_law, tvd)),
+            "Exact" => Box::new(WafFvs::new(ExactRiemannSolver, cfl, gas_law, tvd)),
+            // "TSRS" => Box::new(WafFvs::new(TSRiemannSolver, cfl, gas_law, tvd)),
+            // "TRRS" => Box::new(WafFvs::new(TRRiemannSolver, cfl, gas_law, tvd)),
             "LinearAdvection" => {
                 let velocity =
                     config

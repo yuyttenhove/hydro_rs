@@ -7,7 +7,7 @@ use super::{
     apply_fluxes, gradient_apply, gradient_estimate, gradient_limit, kick1, kick2,
     reset_extrapolations, timestep_limiter, timestep_sync, timesteps_apply,
 };
-use crate::hydrodynamics::{apply_flux_limiter, flux_limiter_collect};
+use crate::hydrodynamics::apply_flux_limiter;
 use crate::runner::Runner;
 use rayon::prelude::*;
 
@@ -48,7 +48,13 @@ impl Runner for OptimalOrderRunner {
             // Gather flux limiter info
             apply_flux_limiter(
                 space,
-                &flux_limiter_collect(space, &part_is_active, fv_solver),
+                &fv_solver.flux_limit_faces(
+                    space.faces(),
+                    space.parts(),
+                    &part_is_active,
+                    space.boundary(),
+                ),
+                &part_is_active,
             );
         }
 
