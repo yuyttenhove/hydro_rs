@@ -17,8 +17,9 @@ use crate::{
 };
 
 use self::vacuum::VacuumRiemannSolver;
-use crate::finite_volume_solver::FluxLimiter;
+use crate::finite_volume_solver::{FluxLimiterData, FluxLimiterFunction};
 pub use airs::AIRiemannSolver;
+pub use anrs::ANRiemannSolver;
 pub use exact::ExactRiemannSolver;
 pub use hllc::HLLCRiemannSolver;
 pub use linear_advection::LinearAdvectionRiemannSover;
@@ -87,17 +88,18 @@ pub trait RiemannFluxSolver: Sync {
     ) -> State<Conserved>;
 }
 
-pub trait RiemannWafFluxSolver: RiemannStarSolver + Sync {
+pub trait RiemannWafFluxSolver: Sync {
     fn solve_for_waf_flux(
         &self,
         left: &State<Primitive>,
         right: &State<Primitive>,
         dx_left: DVec3,
         dx_right: DVec3,
-        left_flux_limiter: &FluxLimiter,
-        right_flux_limiter: &FluxLimiter,
+        left_flux_limiter: &FluxLimiterData,
+        right_flux_limiter: &FluxLimiterData,
         r: f64,
         do_limit: bool,
+        flux_limiter_function: &FluxLimiterFunction,
         interface_velocity: DVec3,
         dt: f64,
         n_unit: DVec3,
@@ -335,10 +337,11 @@ impl<T: RiemannStarSolver + EulerWafSolver> RiemannWafFluxSolver for T {
         right: &State<Primitive>,
         dx_left: DVec3,
         dx_right: DVec3,
-        left_flux_limiter: &FluxLimiter,
-        right_flux_limiter: &FluxLimiter,
+        left_flux_limiter: &FluxLimiterData,
+        right_flux_limiter: &FluxLimiterData,
         r: f64,
         do_limit: bool,
+        flux_limiter_function: &FluxLimiterFunction,
         interface_velocity: DVec3,
         dt: f64,
         n_unit: DVec3,
@@ -446,8 +449,7 @@ impl<T: RiemannStarSolver + EulerWafSolver> RiemannWafFluxSolver for T {
                 } else {
                     jumps_left[i] * jumps_local_inv
                 };
-                // let psi_r = f64::max(0., f64::max(f64::min(1., 2. * r), f64::min(2., r)));
-                let psi_r = f64::max(0., (r + r.abs()) / (1. + r.abs()));
+                let psi_r = flux_limiter_function.limit(r);
                 phi[i] = wave_speeds[i].signum() * (dx - (dx - wave_speeds[i].abs() * dt) * psi_r);
             }
         }

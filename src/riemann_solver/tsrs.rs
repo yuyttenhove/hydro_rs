@@ -3,7 +3,7 @@ use crate::{
     physical_quantities::{Primitive, State},
 };
 
-use super::{ExactRiemannSolver, PVRiemannSolver, RiemannStarSolver};
+use super::{EulerWafSolver, ExactRiemannSolver, PVRiemannSolver, RiemannStarSolver};
 
 /// Two-shock Riemann solver.
 ///
@@ -21,6 +21,8 @@ impl TSRiemannSolver {
         f64::sqrt(a / (p + b))
     }
 }
+
+impl EulerWafSolver for TSRiemannSolver {}
 
 impl RiemannStarSolver for TSRiemannSolver {
     fn solve_for_star_state(

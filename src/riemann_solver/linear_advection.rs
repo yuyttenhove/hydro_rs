@@ -1,7 +1,7 @@
 use glam::DVec3;
 
 use super::{RiemannStarSolver, RiemannStarValues, RiemannWafFluxSolver};
-use crate::finite_volume_solver::FluxLimiter;
+use crate::finite_volume_solver::{FluxLimiterData, FluxLimiterFunction};
 use crate::gas_law::AdiabaticIndex;
 use crate::{
     gas_law::GasLaw,
@@ -60,10 +60,11 @@ impl RiemannWafFluxSolver for LinearAdvectionRiemannSover {
         right: &State<Primitive>,
         dx_left: DVec3,
         dx_right: DVec3,
-        left_flux_limiter: &FluxLimiter,
-        right_flux_limiter: &FluxLimiter,
+        left_flux_limiter: &FluxLimiterData,
+        right_flux_limiter: &FluxLimiterData,
         r: f64,
         do_limit: bool,
+        flux_limiter_function: &FluxLimiterFunction,
         interface_velocity: DVec3,
         dt: f64,
         n_unit: DVec3,
@@ -72,58 +73,44 @@ impl RiemannWafFluxSolver for LinearAdvectionRiemannSover {
         // Boost to interface frame
         let left = left.boost(-interface_velocity);
         let right = right.boost(-interface_velocity);
-        let star_states = self.solve_for_star_state(&left, &right, 0., 0., 0., 0., eos.gamma());
-        let jumps_local = DVec3::new(
-            star_states.rho_l - left.density(),
-            star_states.rho_r - star_states.rho_l,
-            right.density() - star_states.rho_r,
-        );
-        let jumps_left = left_flux_limiter.apply(jumps_local, r);
-        let jumps_right = right_flux_limiter.apply(jumps_local, r);
-        let drho = right.density() - left.density();
-        let drho_left = jumps_left.element_sum();
-        let drho_right = jumps_right.element_sum();
 
         let dx_left = dx_left.dot(n_unit);
         let dx_right = dx_right.dot(n_unit);
         let dx = dx_left + dx_right;
+        let v = (self.velocity - interface_velocity).dot(n_unit);
         assert!(dx_left >= 0.);
         assert!(dx_right >= 0.);
-        let v = (self.velocity - interface_velocity).dot(n_unit);
-        let c = v * dt;
-        assert!(dx_left >= 0.5 * c);
-        assert!(dx_right >= 0.5 * c);
-        let (phi_left, phi_right) = if do_limit {
-            let c_left = 0.5 * c / dx_left;
-            let c_right = 0.5 * c / dx_right;
-            let r = if v > 0. {
-                drho_right / drho
+        assert!(dx_left >= 0.5 * v.abs() * dt);
+        assert!(dx_right >= 0.5 * v.abs() * dt);
+
+        let phi = if do_limit {
+            let star_states = self.solve_for_star_state(&left, &right, 0., 0., 0., 0., eos.gamma());
+            let jumps_local = DVec3::new(
+                star_states.rho_l - left.density(),
+                star_states.rho_r - star_states.rho_l,
+                right.density() - star_states.rho_r,
+            );
+            let jumps_left = -left_flux_limiter.apply(jumps_local, r);
+            let jumps_right = right_flux_limiter.apply(-jumps_local, r);
+            let drho = right.density() - left.density();
+            let drho_left = jumps_left.element_sum();
+            let drho_right = jumps_right.element_sum();
+            let drho_inv = if drho != 0. { 1. / drho } else { 0. };
+            let r = if v < 0. {
+                drho_right * drho_inv
             } else {
-                drho_left / drho
+                drho_left * drho_inv
             };
-            let psi_r = f64::max(0., f64::max(f64::min(1., 2. * r), f64::min(2., r)));
-            (
-                dx_left * (1. - (1. - c_left.abs()) * psi_r),
-                dx_right * (1. - (1. - c_right.abs()) * psi_r),
-            )
+            let psi_r = flux_limiter_function.limit(r);
+            v.signum() * (dx - (dx - v.abs() * dt) * psi_r)
         } else {
-            (0.5 * c, 0.5 * c)
+            v * dt
         };
 
-        let flux_new = 1. / dx
-            * (v * (dx_left + phi_left) * State::<Conserved>::new(left.density(), DVec3::ZERO, 0.)
-                + v * (dx_right - phi_right)
-                    * State::<Conserved>::new(right.density(), DVec3::ZERO, 0.));
+        let flux_left = left.density() * v;
+        let flux_right = right.density() * v;
+        let waf_flux = 0.5 * (dx * (flux_left + flux_right) - phi * (flux_right - flux_left)) / dx;
 
-        let flux = 1. / (dx_left + dx_right)
-            * (v * (dx_left + 0.5 * v * dt)
-                * State::<Conserved>::new(left.density(), DVec3::ZERO, 0.)
-                + v * (dx_right - 0.5 * v * dt)
-                    * State::<Conserved>::new(right.density(), DVec3::ZERO, 0.));
-
-        if dt > 0. && drho > 1e-5 {
-            println!("{:?}", flux);
-        }
-        flux_new
+        State::<Conserved>::new(waf_flux, DVec3::ZERO, 0.)
     }
 }

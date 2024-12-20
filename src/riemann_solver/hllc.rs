@@ -1,6 +1,6 @@
-use glam::DVec3;
-
+use crate::gas_law::EquationOfState;
 use crate::physical_quantities::{Conserved, Primitive};
+use glam::DVec3;
 
 use super::*;
 
@@ -39,26 +39,29 @@ impl RiemannFluxSolver for HLLCRiemannSolver {
             return flux_from_half_state(&w_half, interface_velocity, n_unit, eos.gamma());
         }
 
-        // STEP 1: Pressure estimate
-        let ppvrs = 0.5 * (left.pressure() + right.pressure())
-            - 0.125 * v_r_m_v_l * (left.density() + right.density()) * (a_l + a_r);
-        let p_star = ppvrs.max(0.);
+        let p_star = Self::pressure_estimate(
+            left.density(),
+            right.density(),
+            v_l,
+            v_r,
+            left.pressure(),
+            right.pressure(),
+            a_l,
+            a_r,
+        );
 
-        // STEP 2: wave speed estimates
-        let mut q_l = 1.;
-        if p_star > left.pressure() && left.pressure() > 0. {
-            q_l = (1. + 0.5 * eos.gamma().gp1dg() * (p_star / left.pressure() - 1.)).sqrt();
-        }
-        let mut q_r = 1.;
-        if p_star > right.pressure() && right.pressure() > 0. {
-            q_r = (1. + 0.5 * eos.gamma().gp1dg() * (p_star / right.pressure() - 1.)).sqrt();
-        }
-
-        let s_l_m_v_l = -a_l * q_l;
-        let s_r_m_v_r = a_r * q_r;
-        let s_star = (right.pressure() - left.pressure() + left.density() * v_l * s_l_m_v_l
-            - right.density() * v_r * s_r_m_v_r)
-            / (left.density() * s_l_m_v_l - right.density() * s_r_m_v_r);
+        let [s_l, s_star, s_r] = Self::wave_speeds(
+            p_star,
+            left.density(),
+            right.density(),
+            v_l,
+            v_r,
+            left.pressure(),
+            right.pressure(),
+            a_l,
+            a_r,
+            eos,
+        );
 
         // STEP 3: HLLC flux in a frame moving with the interface velocity
         let mut flux;
@@ -68,7 +71,6 @@ impl RiemannFluxSolver for HLLCRiemannSolver {
             let e_l =
                 eos.gas_internal_energy_from_pressure(left.pressure(), rho_l_inv) + 0.5 * v_l2;
             flux = Self::flux(&left, v_l, e_l, n_unit);
-            let s_l = s_l_m_v_l + v_l;
             if s_l < 0. {
                 flux += Self::flux_star(&left, v_l, e_l, s_l, s_star, n_unit);
             }
@@ -78,7 +80,6 @@ impl RiemannFluxSolver for HLLCRiemannSolver {
             let e_r =
                 eos.gas_internal_energy_from_pressure(right.pressure(), rho_r_inv) + 0.5 * v_r2;
             flux = Self::flux(&right, v_r, e_r, n_unit);
-            let s_r = s_r_m_v_r + v_r;
             if s_r > 0. {
                 flux += Self::flux_star(&right, v_r, e_r, s_r, s_star, n_unit);
             }
@@ -96,7 +97,117 @@ impl RiemannFluxSolver for HLLCRiemannSolver {
     }
 }
 
+impl RiemannWafFluxSolver for HLLCRiemannSolver {
+    fn solve_for_waf_flux(
+        &self,
+        left: &State<Primitive>,
+        right: &State<Primitive>,
+        dx_left: DVec3,
+        dx_right: DVec3,
+        left_flux_limiter: &FluxLimiterData,
+        right_flux_limiter: &FluxLimiterData,
+        r: f64,
+        do_limit: bool,
+        flux_limiter_function: &FluxLimiterFunction,
+        interface_velocity: DVec3,
+        dt: f64,
+        n_unit: DVec3,
+        eos: &GasLaw,
+    ) -> State<Conserved> {
+        // Boost to interface frame
+        let left = left.boost(-interface_velocity);
+        let right = right.boost(-interface_velocity);
+
+        // Inverse densities
+        let rho_l_inv = 1. / left.density();
+        let rho_r_inv = 1. / right.density();
+        let v_l = left.velocity().dot(n_unit);
+        let v_r = right.velocity().dot(n_unit);
+        let a_l = eos.sound_speed(left.pressure(), rho_l_inv);
+        let a_r = eos.sound_speed(right.pressure(), rho_r_inv);
+
+        // velocity difference
+        let v_r_m_v_l = v_r - v_l;
+
+        // handle vacuum
+        if VacuumRiemannSolver::is_vacuum(&left, &right, a_l, a_r, v_r_m_v_l, eos.gamma()) {
+            let w_half =
+                VacuumRiemannSolver.sample(&left, &right, v_l, v_r, a_l, a_r, n_unit, eos.gamma());
+            return flux_from_half_state(&w_half, interface_velocity, n_unit, eos.gamma());
+        }
+
+        let p_star = Self::pressure_estimate(
+            left.density(),
+            right.density(),
+            v_l,
+            v_r,
+            left.pressure(),
+            right.pressure(),
+            a_l,
+            a_r,
+        );
+
+        let wave_speeds = Self::wave_speeds(
+            p_star,
+            left.density(),
+            right.density(),
+            v_l,
+            v_r,
+            left.pressure(),
+            right.pressure(),
+            a_l,
+            a_r,
+            eos,
+        );
+
+        todo!()
+    }
+}
+
 impl HLLCRiemannSolver {
+    fn pressure_estimate(
+        rho_l: f64,
+        rho_r: f64,
+        v_l: f64,
+        v_r: f64,
+        p_l: f64,
+        p_r: f64,
+        a_l: f64,
+        a_r: f64,
+    ) -> f64 {
+        let ppvrs = 0.5 * (p_l + p_r) - 0.125 * (v_l - v_r) * (rho_l + rho_r) * (a_l + a_r);
+        ppvrs.max(0.)
+    }
+
+    fn wave_speeds(
+        p_star: f64,
+        rho_l: f64,
+        rho_r: f64,
+        v_l: f64,
+        v_r: f64,
+        p_l: f64,
+        p_r: f64,
+        a_l: f64,
+        a_r: f64,
+        eos: &GasLaw,
+    ) -> [f64; 3] {
+        let mut q_l = 1.;
+        if p_star > p_l && p_l > 0. {
+            q_l = (1. + 0.5 * eos.gamma().gp1dg() * (p_star / p_l - 1.)).sqrt();
+        }
+        let mut q_r = 1.;
+        if p_star > p_r && p_r > 0. {
+            q_r = (1. + 0.5 * eos.gamma().gp1dg() * (p_star / p_r - 1.)).sqrt();
+        }
+
+        let s_l_m_v_l = -a_l * q_l;
+        let s_r_m_v_r = a_r * q_r;
+        let s_star = (p_r - p_l + rho_l * v_l * s_l_m_v_l - rho_r * v_r * s_r_m_v_r)
+            / (rho_l * s_l_m_v_l - rho_r * s_r_m_v_r);
+
+        [s_l_m_v_l + v_l, s_star, s_r_m_v_r + v_r]
+    }
+
     /// See (10.5) in Toro.
     fn flux(state: &State<Primitive>, v: f64, e: f64, n_unit: DVec3) -> State<Conserved> {
         let rho_v = state.density() * v;

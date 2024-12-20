@@ -15,7 +15,7 @@ use crate::{
 
 mod optimal_order;
 
-use crate::finite_volume_solver::{FiniteVolumeSolver, FluxLimiter};
+use crate::finite_volume_solver::{FiniteVolumeSolver, FluxLimiterData};
 use crate::riemann_solver::{RiemannStarSolver, RiemannWafFluxSolver};
 pub use optimal_order::OptimalOrderRunner;
 
@@ -196,7 +196,11 @@ fn gradient_apply(space: &mut Space, gradients: &[Option<Gradients<Primitive>>])
         });
 }
 
-fn apply_flux_limiter(space: &mut Space, flux_limiters: &[FluxLimiter], part_is_active: &[bool]) {
+fn apply_flux_limiter(
+    space: &mut Space,
+    flux_limiters: &[FluxLimiterData],
+    part_is_active: &[bool],
+) {
     let faces = &space.voronoi_faces;
     let cell_face_connections = &space.voronoi_cell_face_connections;
     space
@@ -208,7 +212,7 @@ fn apply_flux_limiter(space: &mut Space, flux_limiters: &[FluxLimiter], part_is_
             if !active {
                 return;
             }
-            part.flux_limiter = FluxLimiter::zero();
+            part.flux_limiter = FluxLimiterData::zero();
             let face_idx: &[usize] = {
                 let start = part.face_connections_offset;
                 let end = start + part.face_count;

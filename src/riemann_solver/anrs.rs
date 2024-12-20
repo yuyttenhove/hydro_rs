@@ -4,7 +4,8 @@ use crate::{
 };
 
 use super::{
-    ExactRiemannSolver, PVRiemannSolver, RiemannStarSolver, TRRiemannSolver, TSRiemannSolver,
+    EulerWafSolver, ExactRiemannSolver, PVRiemannSolver, RiemannStarSolver, TRRiemannSolver,
+    TSRiemannSolver,
 };
 
 /// A non-iterative adaptive Riemann solver.
@@ -21,6 +22,8 @@ impl ANRiemannSolver {
         Self { threshold }
     }
 }
+
+impl EulerWafSolver for ANRiemannSolver {}
 
 impl RiemannStarSolver for ANRiemannSolver {
     fn solve_for_star_state(

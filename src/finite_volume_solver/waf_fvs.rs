@@ -3,9 +3,10 @@ use crate::{
     riemann_solver::RiemannWafFluxSolver, Boundary,
 };
 
-use super::{FiniteVolumeSolver, FluxInfo, FluxLimiter};
+use super::{FiniteVolumeSolver, FluxInfo, FluxLimiterData, FluxLimiterFunction};
 
 use crate::physical_quantities::Primitive;
+use crate::riemann_solver::RiemannStarSolver;
 use glam::DVec3;
 use meshless_voronoi::VoronoiFace;
 use rayon::prelude::*;
@@ -14,21 +15,29 @@ pub struct WafFvs<R: RiemannWafFluxSolver> {
     riemann_solver: R,
     cfl: f64,
     tvd: bool,
+    limiter_function: FluxLimiterFunction,
     gas_law: GasLaw,
 }
 
 impl<R: RiemannWafFluxSolver> WafFvs<R> {
-    pub fn new(riemann_solver: R, cfl: f64, eos: GasLaw, tvd: bool) -> Self {
+    pub fn new(
+        riemann_solver: R,
+        cfl: f64,
+        eos: GasLaw,
+        tvd: bool,
+        limiter_function: FluxLimiterFunction,
+    ) -> Self {
         Self {
-            gas_law: eos,
-            cfl,
             riemann_solver,
+            cfl,
             tvd,
+            limiter_function,
+            gas_law: eos,
         }
     }
 }
 
-impl<R: RiemannWafFluxSolver> FiniteVolumeSolver for WafFvs<R> {
+impl<R: RiemannWafFluxSolver + RiemannStarSolver> FiniteVolumeSolver for WafFvs<R> {
     fn compute_fluxes(
         &self,
         faces: &[meshless_voronoi::VoronoiFace],
@@ -59,6 +68,7 @@ impl<R: RiemannWafFluxSolver> FiniteVolumeSolver for WafFvs<R> {
                             dt,
                             face,
                             self.do_flux_limit(),
+                            &self.limiter_function,
                             &self.gas_law,
                             &self.riemann_solver,
                         )
@@ -69,6 +79,7 @@ impl<R: RiemannWafFluxSolver> FiniteVolumeSolver for WafFvs<R> {
                                 left,
                                 face,
                                 self.do_flux_limit(),
+                                &self.limiter_function,
                                 boundary,
                                 &self.gas_law,
                                 &self.riemann_solver,
@@ -100,7 +111,7 @@ impl<R: RiemannWafFluxSolver> FiniteVolumeSolver for WafFvs<R> {
         particles: &[Particle],
         part_is_active: &[bool],
         boundary: Boundary,
-    ) -> Vec<FluxLimiter> {
+    ) -> Vec<FluxLimiterData> {
         faces
             .iter()
             .map(|face| {
@@ -115,7 +126,7 @@ impl<R: RiemannWafFluxSolver> FiniteVolumeSolver for WafFvs<R> {
                             || (right.dt < left.dt && !right_active)
                             || (left.dt < right.dt && !left_active)
                         {
-                            return FluxLimiter::zero();
+                            return FluxLimiterData::zero();
                         }
                         let normal = face.normal();
                         let ds = right.centroid + face.shift().unwrap_or_default() - left.centroid;
@@ -133,7 +144,7 @@ impl<R: RiemannWafFluxSolver> FiniteVolumeSolver for WafFvs<R> {
                             a_r,
                             self.eos().gamma(),
                         );
-                        FluxLimiter::init(
+                        FluxLimiterData::init(
                             DVec3::new(
                                 star_states.rho_l - WL.density(),
                                 star_states.rho_r - star_states.rho_l,
@@ -142,7 +153,7 @@ impl<R: RiemannWafFluxSolver> FiniteVolumeSolver for WafFvs<R> {
                             ds.length(),
                         )
                     }
-                    None => FluxLimiter::zero(),
+                    None => FluxLimiterData::zero(),
                 }
             })
             .collect()
@@ -154,7 +165,7 @@ impl<R: RiemannWafFluxSolver> FiniteVolumeSolver for WafFvs<R> {
         right: &State<Primitive>,
         ds: DVec3,
         normal: DVec3,
-        limiter_data: &mut FluxLimiter,
+        limiter_data: &mut FluxLimiterData,
     ) {
         let normal = if ds.dot(normal) < 0. { -normal } else { normal };
         let star_states = self.riemann_solver.solve_for_star_state(
@@ -183,6 +194,7 @@ fn flux_exchange<RiemannSolver: RiemannWafFluxSolver>(
     dt: f64,
     face: &VoronoiFace,
     do_limit: bool,
+    flux_limiter_function: &FluxLimiterFunction,
     eos: &GasLaw,
     riemann_solver: &RiemannSolver,
 ) -> FluxInfo {
@@ -228,6 +240,7 @@ fn flux_exchange<RiemannSolver: RiemannWafFluxSolver>(
             &right.flux_limiter,
             r,
             do_limit,
+            flux_limiter_function,
             v_face,
             dt,
             face.normal(),
@@ -250,6 +263,7 @@ fn flux_exchange_boundary<RiemannSolver: RiemannWafFluxSolver>(
     part: &Particle,
     face: &VoronoiFace,
     do_limit: bool,
+    flux_limiter_function: &FluxLimiterFunction,
     boundary: Boundary,
     eos: &GasLaw,
     riemann_solver: &RiemannSolver,
@@ -302,9 +316,10 @@ fn flux_exchange_boundary<RiemannSolver: RiemannWafFluxSolver>(
             dx_left,
             dx_right,
             &part.flux_limiter,
-            &FluxLimiter::zero(),
+            &FluxLimiterData::zero(),
             r,
             do_limit,
+            flux_limiter_function,
             DVec3::ZERO,
             part.dt,
             face.normal(),

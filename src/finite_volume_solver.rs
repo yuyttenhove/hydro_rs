@@ -88,7 +88,7 @@ pub trait FiniteVolumeSolver: Sync {
         particles: &[Particle],
         part_is_active: &[bool],
         boundary: Boundary,
-    ) -> Vec<FluxLimiter> {
+    ) -> Vec<FluxLimiterData> {
         unimplemented!("Shouldn't call this function!")
     }
 
@@ -98,7 +98,7 @@ pub trait FiniteVolumeSolver: Sync {
         right: &State<Primitive>,
         ds: DVec3,
         normal: DVec3,
-        limiter_data: &mut FluxLimiter,
+        limiter_data: &mut FluxLimiterData,
     ) {
         unimplemented!("Shouldn't call this function!")
     }
@@ -122,12 +122,12 @@ impl FluxInfo {
 }
 
 #[derive(Default, Debug, Copy, Clone)]
-pub struct FluxLimiter {
+pub struct FluxLimiterData {
     pub jumps: DVec3,
     pub weight: f64,
 }
 
-impl FluxLimiter {
+impl FluxLimiterData {
     pub fn zero() -> Self {
         Self {
             jumps: DVec3::ZERO,
@@ -149,7 +149,7 @@ impl FluxLimiter {
         self.weight += w;
     }
 
-    pub fn combine(&mut self, other: FluxLimiter) {
+    pub fn combine(&mut self, other: FluxLimiterData) {
         self.jumps += other.jumps;
         self.weight += other.weight;
     }
@@ -166,12 +166,30 @@ impl FluxLimiter {
     }
 }
 
-impl Neg for FluxLimiter {
+impl Neg for FluxLimiterData {
     type Output = Self;
     fn neg(self) -> Self {
         Self {
             jumps: -self.jumps,
             weight: self.weight,
+        }
+    }
+}
+
+pub enum FluxLimiterFunction {
+    MinBee,
+    VanLeer,
+    MC,
+    SuperBee,
+}
+
+impl FluxLimiterFunction {
+    pub fn limit(&self, r: f64) -> f64 {
+        match self {
+            FluxLimiterFunction::MinBee => r.min(1.).max(0.),
+            FluxLimiterFunction::VanLeer => ((r + r.abs()) / (1. + r.abs())).max(0.),
+            FluxLimiterFunction::MC => ((1. + r) / 2.).min(2. * r).min(2.).max(0.),
+            FluxLimiterFunction::SuperBee => r.min(2.).max((2. * r).min(1.)).max(0.),
         }
     }
 }
