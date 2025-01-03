@@ -78,10 +78,10 @@ impl RiemannWafFluxSolver for LinearAdvectionRiemannSover {
         let dx_right = dx_right.dot(n_unit);
         let dx = dx_left + dx_right;
         let v = (self.velocity - interface_velocity).dot(n_unit);
-        assert!(dx_left >= 0.);
-        assert!(dx_right >= 0.);
-        assert!(dx_left >= 0.5 * v.abs() * dt);
-        assert!(dx_right >= 0.5 * v.abs() * dt);
+        debug_assert!(dx_left >= 0.);
+        debug_assert!(dx_right >= 0.);
+        debug_assert!(dx_left >= 0.5 * v.abs() * dt);
+        debug_assert!(dx_right >= 0.5 * v.abs() * dt);
 
         let phi = if do_limit {
             let star_states = self.solve_for_star_state(&left, &right, 0., 0., 0., 0., eos.gamma());

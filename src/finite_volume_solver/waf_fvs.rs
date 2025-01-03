@@ -227,7 +227,7 @@ fn flux_exchange<RiemannSolver: RiemannWafFluxSolver>(
     // Terms for flux limiters
     let r = dx_centroid.length();
     let dx_left = face.centroid() - left.centroid;
-    let dx_right = right.centroid - face.centroid();
+    let dx_right = right.centroid + shift - face.centroid();
 
     // Calculate fluxes
     let fluxes = face.area()

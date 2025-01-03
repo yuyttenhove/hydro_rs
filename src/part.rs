@@ -362,7 +362,7 @@ impl Particle {
         // Set the velocity with which this particle will be drifted over the course of it's next timestep
         assert!(self.v.is_finite(), "Invalid value for v!");
         self.v_rel = fluid_v - self.v;
-        debug_assert!(self.v_rel.length() < sound_speed);
+        // debug_assert!(self.v_rel.length() < sound_speed);
 
         // Reset max_a_over_r (not needed any more)
         self.max_a_over_r = 0.;

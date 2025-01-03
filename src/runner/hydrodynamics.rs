@@ -244,8 +244,11 @@ fn timesteps_apply(
             if !active {
                 return MAX_NR_TIMESTEPS;
             }
+            if *dt < timestep_info.dt_min {
+                panic!("Particle wants timestep smaller than dt_min!");
+            }
             let dti = make_integer_timestep(
-                *dt,
+                dt.min(timestep_info.dt_max),
                 part.timebin,
                 /*TODO*/ NUM_TIME_BINS,
                 timestep_info.ti_current,

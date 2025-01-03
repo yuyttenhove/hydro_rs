@@ -461,6 +461,10 @@ impl<T: RiemannStarSolver + EulerWafSolver> RiemannWafFluxSolver for T {
         }
         waf_flux = 1. / dx * waf_flux;
 
+        assert!(waf_flux.mass().is_finite());
+        assert!(waf_flux.momentum().is_finite());
+        assert!(waf_flux.energy().is_finite());
+
         waf_flux
     }
 }

@@ -1,12 +1,12 @@
 time_integration:
   dt_min: 1e-11
-  dt_max: 0.01
-  t_end: 0.2
-  sync_timesteps: false
+  dt_max: 0.004
+  t_end: 5.
+  sync_timesteps: true
 
 snapshots:
-  dt_snap: 0.01
-  prefix: sodshock_1D_WAF_tvd
+  dt_snap: 0.5
+  prefix: advection_box_waf_tvd
   save_faces: true
 
 engine:
@@ -30,25 +30,25 @@ gravity:
     acceleration: [0., -1., 0.]
 
 hydrodynamics:
-  solver: Godunov
+  solver: WAF
   equation_of_state: Ideal
   gamma: 1.66666667
-  cfl_criterion: 1.
+  cfl_criterion: 0.5
   TVD: true
-  flux_limiter: "vanleer"
+  flux_limiter: "superbee"
   riemann_solver:
-    kind: "Exact"
+    kind: "LinearAdvection"
     threshold: 2.
     velocity: [1., 0., 0.]
 
 space:
-  boundary: reflective
+  boundary: periodic
   max_top_level_cells: 8
 
 initial_conditions:
-  kind: sodshock
+  kind: file
   dimensionality: 1
   box_size: [ 2., 1., 1. ]
   num_part: 250
   perturbations: 0.0
-  filename: ICs/sodshock_2D.hdf5
+  filename: ICs/advection_box_250.hdf5

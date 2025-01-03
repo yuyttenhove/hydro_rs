@@ -231,6 +231,11 @@ impl ExactRiemannSolver {
         let rho_l = Self::middle_density(pstar, left, gamma);
         let rho_r = Self::middle_density(pstar, right, gamma);
 
+        debug_assert!(rho_l.is_finite());
+        debug_assert!(rho_r.is_finite());
+        debug_assert!(u.is_finite());
+        debug_assert!(pstar.is_finite());
+
         RiemannStarValues {
             rho_l,
             rho_r,
@@ -262,15 +267,22 @@ impl RiemannStarSolver for ExactRiemannSolver {
         let mut p_guess = Self::guess_p(left, right, v_l, v_r, a_l, a_r, gamma);
         let mut fp = Self::f(p, left, right, v_l, v_r, a_l, a_r, gamma);
         let mut fp_guess = Self::f(p_guess, left, right, v_l, v_r, a_l, a_r, gamma);
+        debug_assert!(fp.is_finite());
+        debug_assert!(fp_guess.is_finite());
         if fp * fp_guess >= 0. {
             // Newton-Raphson until convergence or until suitable interval is found
             // to use Brent's method
             let mut counter = 0;
             while (p - p_guess).abs() > 1e-6 * 0.5 * (p + p_guess) && fp_guess > 0.0 {
                 p = p_guess;
-                p_guess = p_guess - fp_guess / Self::fprime(p_guess, left, right, a_l, a_r, gamma);
+                p_guess = f64::max(
+                    0.,
+                    p_guess - fp_guess / Self::fprime(p_guess, left, right, a_l, a_r, gamma),
+                );
                 fp_guess = Self::f(p_guess, left, right, v_l, v_r, a_l, a_r, gamma);
                 counter += 1;
+                debug_assert!(fp.is_finite());
+                debug_assert!(fp_guess.is_finite());
                 if counter > 1000 {
                     panic!("Stuck in Newton-Raphson iteration!");
                 }
