@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from tqdm.auto import tqdm
 
-from make_ics_comparison import wave, transform
+from make_ics_comparison import box, triangle, wave, transform
 
 
 def godunov(ics: np.ndarray, t_end: float, a: float = 1., delta_x: float = 0.01, cfl: float = 0.8) -> np.ndarray:
@@ -112,15 +112,18 @@ if __name__ == "__main__":
     numpart = 100
     delta_x = boxsize / numpart
     a = 1.
+    t_end = 10.
 
     x = np.linspace(0., boxsize, numpart, endpoint=False) + 0.5 / numpart
-    ics = transform(wave(numpart))
+    ics = [transform(box(numpart)), transform(triangle(numpart)), transform(wave(numpart))]
 
-    plt.plot(x, ics, ls="--", c="k", label="ICs")
-    t_end = 10.
-    plt.plot(x, godunov(ics, t_end, a=a, delta_x=delta_x), label="Godunov")
-    plt.plot(x, muscl_hancock(ics, t_end, a=a, delta_x=delta_x, limiter=partial(slope_limiter_direct, beta=2)),
-             label="MHM")
-    plt.plot(x, waf(ics, t_end, a=a, delta_x=delta_x, limiter=flux_limiter_superbee), label="WAF")
-    plt.legend()
+    fig, axes = plt.subplots(1, 3, sharey=True, figsize=(12, 4))
+    for ic, ax in zip(ics, axes):
+        ax.plot(x, ic, ls="--", c="k", label="ICs")
+        ax.plot(x, godunov(ic, t_end, a=a, delta_x=delta_x), label="Godunov")
+        ax.plot(x, muscl_hancock(ic, t_end, a=a, delta_x=delta_x, limiter=slope_limiter_direct),
+                label="MHM")
+        ax.plot(x, waf(ic, t_end, a=a, delta_x=delta_x, limiter=flux_limiter_superbee), label="WAF")
+    axes[-1].legend()
+    plt.tight_layout()
     plt.show()
