@@ -31,7 +31,7 @@ if __name__ == "__main__":
     try:
         num_part = sys.argv[1]
     except IndexError:
-        num_part = 250
+        num_part = 100
     boxsize = 1.
     dimension = 1
 

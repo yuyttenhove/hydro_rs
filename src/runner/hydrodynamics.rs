@@ -16,6 +16,7 @@ use crate::{
 mod optimal_order;
 
 use crate::finite_volume_solver::{FiniteVolumeSolver, FluxLimiterData};
+use crate::physical_quantities::State;
 use crate::riemann_solver::{RiemannStarSolver, RiemannWafFluxSolver};
 pub use optimal_order::OptimalOrderRunner;
 
@@ -141,6 +142,106 @@ fn gradient_estimate(space: &Space, part_is_active: &[bool]) -> Vec<Option<Gradi
             Some(gradient_data.finalize())
         })
         .collect()
+}
+
+/// 1D slope limiters a la Toro 2009
+fn slope_limiter(space: &Space, gradients: &mut [Option<Gradients<Primitive>>]) {
+    // Compute flow parameter for each particle
+    let faces = space.faces();
+    let cell_face_connections = space.cell_face_connections();
+
+    let flow_r: Vec<_> = space
+        .parts
+        .iter()
+        .enumerate()
+        .zip(gradients.iter())
+        .map(|((part_idx, part), grad)| {
+            if let Some(grad) = grad {
+                let face_idx: &[usize] = {
+                    let start = part.face_connections_offset;
+                    let end = start + part.face_count;
+                    &cell_face_connections[start..end]
+                };
+                debug_assert!(face_idx.len() == 2);
+                let mut ngb_states = [State::vacuum(); 2];
+                for &idx in face_idx {
+                    let face = &faces[idx];
+                    let mut centroid = face.centroid();
+                    if part_idx != face.left() {
+                        if let Some(shift) = face.shift() {
+                            centroid += shift;
+                        }
+                    }
+                    let other = match get_other(face, part_idx) {
+                        Some(other_idx) => space.parts()[other_idx].primitives,
+                        None => space.get_boundary_part(part, face).primitives,
+                    };
+                    if centroid.x < part.loc.x {
+                        ngb_states[0] = other;
+                    } else {
+                        ngb_states[1] = other;
+                    }
+                }
+                let mut ratios = [DVec3::ZERO; 5];
+                for i in 0..5 {
+                    let slope_prev = part.primitives[i] - ngb_states[0][i];
+                    let slope_next = ngb_states[1][i] - part.primitives[i];
+                    if slope_next != 0. {
+                        ratios[i] = DVec3::new(slope_prev / slope_next, slope_prev, slope_next);
+                    };
+                }
+                Some(ratios)
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    // Now apply slope limiters
+    flow_r
+        .iter()
+        .enumerate()
+        .zip(gradients.iter_mut())
+        .for_each(|((i, limiter_info), grad)| {
+            if let Some(grad) = grad {
+                let limiter_info = limiter_info.expect("cannot be none for Some gradients");
+                let dx = space.parts[i].volume;
+                for i in 0..5 {
+                    let r = limiter_info[i].x;
+                    let xi_l = 2. / (1. + r);
+                    let xi_r = 2. * r / (1. + r);
+                    // vanleer limiter
+                    // let xi = if r < 0. { 0. } else { (2. * r / (1. + r)).min(xi_l).min(xi_r) };
+                    // minbee
+                    // let xi = if r < 0. { 0. } else { r.min(1.).min(xi_l).min(xi_r) };
+                    // superbee
+                    // let xi = if r < 0. {
+                    //     0.
+                    // } else if r < 1. {
+                    //     1f64.min(2. * r)
+                    // } else {
+                    //     r.min(1.).min(xi_l).min(xi_r)
+                    // };
+                    // grad[i] *= xi;
+                    // Compute limited slopes directly
+                    let slope_prev = limiter_info[i].y;
+                    let slope_next = limiter_info[i].z;
+                    // Minbee
+                    let beta = 1.;
+                    // Superbee
+                    let beta = 2.;
+                    // limited slope
+                    grad[i] = if slope_next > 0. {
+                        0f64.max(slope_next.min(beta * slope_prev))
+                            .max(slope_prev.min(beta * slope_next))
+                    } else {
+                        0f64.min(slope_next.max(beta * slope_prev))
+                            .min(slope_prev.max(beta * slope_next))
+                    } * DVec3::X
+                        / dx;
+                }
+            }
+        })
 }
 
 fn gradient_limit(space: &Space, gradients: &mut [Option<Gradients<Primitive>>]) {

@@ -20,7 +20,7 @@ def main(fname: str, savename: str, time=0.25):
     data, time = read_particle_data(fname)
 
     # Plot
-    x_lim = [0.0, 2.]
+    x_lim = [0.5, 1.5]
     fig, axes = plt.subplots(2, 3, figsize=(9, 6))
     plot_analytic_solution(axes, gas_gamma, rho_L, v_L, P_L, rho_R, v_R, P_R, time=time)
     plot_quantity(axes[0][0], data["x"].values, data["v_x"].values, x_lim, "Velocity")
@@ -40,6 +40,6 @@ if __name__ == "__main__":
         fname = sys.argv[1]
         savename = sys.argv[2]
     except IndexError:
-        fname = root / "run/output/sodshock_1D_WAF_tvd_optimal_0020.hdf5"
+        fname = root / "run/output/sodshock_muscl_tvd_optimal_0020.hdf5"
         savename = "hydro_optimal_waf_limiter.png"
     main(fname, savename)

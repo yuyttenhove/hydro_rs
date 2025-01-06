@@ -59,7 +59,7 @@ impl<R: RiemannFluxSolver> FiniteVolumeSolver for MusclFvs<R> {
                             dt,
                             face,
                             0.5,
-                            self.do_gradients_limit(),
+                            false, /*self.do_gradients_limit()*/
                             &self.gas_law,
                             &self.riemann_solver,
                         )
@@ -71,7 +71,7 @@ impl<R: RiemannFluxSolver> FiniteVolumeSolver for MusclFvs<R> {
                                 face,
                                 boundary,
                                 0.5,
-                                self.do_gradients_limit(),
+                                false, /*self.do_gradients_limit()*/
                                 &self.gas_law,
                                 &self.riemann_solver,
                             )

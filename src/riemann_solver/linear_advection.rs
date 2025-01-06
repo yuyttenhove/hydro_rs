@@ -8,17 +8,17 @@ use crate::{
     physical_quantities::{Conserved, Primitive, State},
 };
 
-pub struct LinearAdvectionRiemannSover {
+pub struct LinearAdvectionRiemannSolver {
     velocity: DVec3,
 }
 
-impl LinearAdvectionRiemannSover {
+impl LinearAdvectionRiemannSolver {
     pub fn new(velocity: DVec3) -> Self {
         Self { velocity }
     }
 }
 
-impl RiemannStarSolver for LinearAdvectionRiemannSover {
+impl RiemannStarSolver for LinearAdvectionRiemannSolver {
     fn solve_for_star_state(
         &self,
         left: &State<Primitive>,
@@ -53,7 +53,7 @@ impl RiemannStarSolver for LinearAdvectionRiemannSover {
     }
 }
 
-impl RiemannWafFluxSolver for LinearAdvectionRiemannSover {
+impl RiemannWafFluxSolver for LinearAdvectionRiemannSolver {
     fn solve_for_waf_flux(
         &self,
         left: &State<Primitive>,

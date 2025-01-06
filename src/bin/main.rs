@@ -9,7 +9,7 @@ use mvmm_hydro::{
     hydrodynamics::OptimalOrderRunner,
     riemann_solver::{
         AIRiemannSolver, ANRiemannSolver, ExactRiemannSolver, HLLCRiemannSolver,
-        LinearAdvectionRiemannSover, PVRiemannSolver, TRRiemannSolver, TSRiemannSolver,
+        LinearAdvectionRiemannSolver, PVRiemannSolver, TRRiemannSolver, TSRiemannSolver,
     },
     Engine, InitialConditions, ParticleMotion, Runner, Space,
 };
@@ -712,7 +712,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "hydrodynamics: riemann_solver: velocity".to_string(),
                 ))?;
                 Box::new(MusclFvs::new(
-                    LinearAdvectionRiemannSover::new(velocity),
+                    LinearAdvectionRiemannSolver::new(velocity),
                     cfl,
                     gas_law,
                     tvd,
@@ -751,7 +751,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "hydrodynamics: riemann_solver: velocity".to_string(),
                 ))?;
                 Box::new(GodunovFvs::new(
-                    LinearAdvectionRiemannSover::new(velocity),
+                    LinearAdvectionRiemannSolver::new(velocity),
                     cfl,
                     gas_law,
                 ))
@@ -816,7 +816,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "hydrodynamics: riemann_solver: velocity".to_string(),
                 ))?;
                 Box::new(WafFvs::new(
-                    LinearAdvectionRiemannSover::new(velocity),
+                    LinearAdvectionRiemannSolver::new(velocity),
                     cfl,
                     gas_law,
                     tvd,

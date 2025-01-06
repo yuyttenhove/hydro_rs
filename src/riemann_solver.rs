@@ -22,7 +22,7 @@ pub use airs::AIRiemannSolver;
 pub use anrs::ANRiemannSolver;
 pub use exact::ExactRiemannSolver;
 pub use hllc::HLLCRiemannSolver;
-pub use linear_advection::LinearAdvectionRiemannSover;
+pub use linear_advection::LinearAdvectionRiemannSolver;
 pub use pvrs::PVRiemannSolver;
 pub use trrs::TRRiemannSolver;
 pub use tsrs::TSRiemannSolver;

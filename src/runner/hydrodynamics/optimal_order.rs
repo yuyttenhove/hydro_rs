@@ -4,10 +4,10 @@ use crate::{
 };
 
 use super::{
-    apply_fluxes, gradient_apply, gradient_estimate, gradient_limit, kick1, kick2,
-    reset_extrapolations, timestep_limiter, timestep_sync, timesteps_apply,
+    apply_fluxes, gradient_apply, gradient_estimate, kick1, kick2, reset_extrapolations,
+    timestep_limiter, timestep_sync, timesteps_apply,
 };
-use crate::hydrodynamics::apply_flux_limiter;
+use crate::hydrodynamics::{apply_flux_limiter, slope_limiter};
 use crate::runner::Runner;
 use rayon::prelude::*;
 
@@ -77,7 +77,8 @@ impl Runner for OptimalOrderRunner {
             // Compute, limit and apply gradients
             let mut gradients = gradient_estimate(space, &part_is_active);
             if fv_solver.do_gradients_limit() {
-                gradient_limit(space, &mut gradients);
+                slope_limiter(space, &mut gradients);
+                // gradient_limit(space, &mut gradients);
             }
             gradient_apply(space, &gradients);
         }
