@@ -8,12 +8,20 @@ from tqdm.auto import tqdm
 from make_ics_comparison import box, triangle, wave, transform
 
 
-def godunov(ics: np.ndarray, t_end: float, a: float = 1., delta_x: float = 0.01, cfl: float = 0.8) -> np.ndarray:
+def timesteps_iter(delta_t, t_end, verbose):
+    iter = np.arange(0, t_end, delta_t)
+    if verbose:
+        iter = tqdm(iter)
+    return iter
+
+
+def godunov(ics: np.ndarray, t_end: float, a: float = 1., delta_x: float = 0.01, cfl: float = 0.8,
+            verbose=False) -> np.ndarray:
     t = 0
     delta_t = cfl * delta_x / abs(a)
     c = delta_t / delta_x
     sol = np.array(ics)
-    for _ in tqdm(np.arange(0, t_end, delta_t)):
+    for _ in timesteps_iter(delta_t, t_end, verbose):
         if a > 0.:
             fluxes = a * sol
         else:
@@ -40,12 +48,13 @@ def slope_limiter_direct(slopes, differences, beta=2.):
 
 
 def muscl_hancock(ics: np.ndarray, t_end: float, a: float = 1., delta_x: float = 0.01, cfl: float = 0.8,
-                  limiter: Callable[[np.ndarray, np.ndarray], np.ndarray] = slope_limiter_direct) -> np.ndarray:
+                  limiter: Callable[[np.ndarray, np.ndarray], np.ndarray] = slope_limiter_direct,
+                  verbose=False) -> np.ndarray:
     t = 0
     delta_t = cfl * delta_x / abs(a)
     c = delta_t / delta_x
     sol = np.array(ics)
-    for _ in tqdm(np.arange(0, t_end, delta_t)):
+    for _ in timesteps_iter(delta_t, t_end, verbose):
         differences = np.roll(sol, -1) - sol
         slopes = 0.5 * (differences + np.roll(differences, 1))
         limited = limiter(slopes, differences)
@@ -84,12 +93,12 @@ def flux_limiter_superbee(flow_parameter: np.ndarray) -> np.ndarray:
 
 
 def waf(ics: np.ndarray, t_end: float, a: float = 1., delta_x: float = 0.01, cfl: float = 0.8,
-        limiter: Callable[[np.ndarray], np.ndarray] = flux_limiter_vanleer) -> np.ndarray:
+        limiter: Callable[[np.ndarray], np.ndarray] = flux_limiter_vanleer, verbose=False) -> np.ndarray:
     t = 0
     delta_t = cfl * delta_x / abs(a)
     c = delta_t / delta_x
     sol = np.array(ics)
-    for _ in tqdm(np.arange(0, t_end, delta_t)):
+    for _ in timesteps_iter(delta_t, t_end, verbose):
         differences = np.roll(sol, -1) - sol
         denom = np.where(differences != 0., 1. / differences, 0.)
         if a > 0:
@@ -109,7 +118,7 @@ def waf(ics: np.ndarray, t_end: float, a: float = 1., delta_x: float = 0.01, cfl
 
 if __name__ == "__main__":
     boxsize = 1
-    numpart = 100
+    numpart = 250
     delta_x = boxsize / numpart
     a = 1.
     t_end = 10.
