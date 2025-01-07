@@ -379,7 +379,7 @@ impl Space {
             .zip(self.parts.iter_mut())
             .flat_map(|(connections, part)| {
                 // Overwrite the particles cell-face connections and face counts, based on the actual faces between all particles.
-                // Note we do this for inactive particles as well (sets their face count to 0), so no mor faces are linked to them.
+                // Note we do this for inactive particles as well (sets their face count to 0), so no more faces are linked to them.
                 part.face_count = connections.len();
                 part.face_connections_offset = offset;
                 offset += part.face_count;

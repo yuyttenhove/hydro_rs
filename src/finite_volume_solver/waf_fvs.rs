@@ -6,7 +6,8 @@ use crate::{
 use super::{FiniteVolumeSolver, FluxInfo, FluxLimiterData, FluxLimiterFunction};
 
 use crate::physical_quantities::Primitive;
-use crate::riemann_solver::RiemannStarSolver;
+use crate::riemann_solver::{RiemannStarSolver, VacuumRiemannSolver};
+use crate::utils::interface_velocity;
 use glam::DVec3;
 use meshless_voronoi::VoronoiFace;
 use rayon::prelude::*;
@@ -50,7 +51,7 @@ impl<R: RiemannWafSolver + RiemannStarSolver> FiniteVolumeSolver for WafFvs<R> {
         boundary: crate::Boundary,
     ) -> Vec<super::FluxInfo> {
         faces
-            .iter()
+            .par_iter()
             .map(|face| {
                 let left = &particles[face.left()];
                 let left_active = part_is_active[face.left()];
@@ -117,7 +118,7 @@ impl<R: RiemannWafSolver + RiemannStarSolver> FiniteVolumeSolver for WafFvs<R> {
         boundary: Boundary,
     ) -> Vec<FluxLimiterData> {
         faces
-            .iter()
+            .par_iter()
             .map(|face| {
                 let left = &particles[face.left()];
                 let left_active = part_is_active[face.left()];
@@ -133,26 +134,48 @@ impl<R: RiemannWafSolver + RiemannStarSolver> FiniteVolumeSolver for WafFvs<R> {
                             return FluxLimiterData::zero();
                         }
                         let normal = face.normal();
+                        let v_face = interface_velocity(
+                            left.loc,
+                            right.loc,
+                            left.v,
+                            right.v,
+                            face.centroid(),
+                        );
                         let ds = right.centroid + face.shift().unwrap_or_default() - left.centroid;
-                        let (WL, WR) = (&left.primitives, &right.primitives);
-                        let v_l = WL.velocity().dot(normal);
-                        let v_r = WR.velocity().dot(normal);
-                        let a_l = self.eos().sound_speed(WL.pressure(), 1. / WL.density());
-                        let a_r = self.eos().sound_speed(WR.pressure(), 1. / WR.density());
-                        let star_states = self.riemann_solver.solve_for_star_state(
-                            WL,
-                            WR,
-                            v_l,
-                            v_r,
+                        let (wl, wr) = (
+                            &left.primitives.boost(-v_face),
+                            &right.primitives.boost(-v_face),
+                        );
+                        let v_l = wl.velocity().dot(normal);
+                        let v_r = wr.velocity().dot(normal);
+                        let a_l = self.eos().sound_speed(wl.pressure(), 1. / wl.density());
+                        let a_r = self.eos().sound_speed(wr.pressure(), 1. / wr.density());
+                        let star_states = if VacuumRiemannSolver::is_vacuum(
+                            wl,
+                            wr,
                             a_l,
                             a_r,
+                            v_r - v_l,
                             self.eos().gamma(),
-                        );
+                        ) {
+                            // Don't bother for vacuum states
+                            return FluxLimiterData::zero();
+                        } else {
+                            self.riemann_solver.solve_for_star_state(
+                                wl,
+                                wr,
+                                v_l,
+                                v_r,
+                                a_l,
+                                a_r,
+                                self.eos().gamma(),
+                            )
+                        };
                         FluxLimiterData::init(
                             DVec3::new(
-                                star_states.rho_l - WL.density(),
+                                star_states.rho_l - wl.density(),
                                 star_states.rho_r - star_states.rho_l,
-                                WR.density() - star_states.rho_r,
+                                wr.density() - star_states.rho_r,
                             ),
                             ds.length(),
                         )
@@ -217,11 +240,13 @@ fn flux_exchange<RiemannSolver: RiemannWafSolver>(
     v_max -= (right.primitives.velocity() - left.primitives.velocity())
         .dot(dx_centroid)
         .min(0.);
-
-    // Compute interface velocity (Springel (2010), eq. 33):
-    let midpoint = 0.5 * (left.loc + right.loc + shift);
-    let fac = (right.v - left.v).dot(face.centroid() - midpoint) / dx.length_squared();
-    let v_face = 0.5 * (left.v + right.v) - fac * dx;
+    let v_face = interface_velocity(
+        left.loc,
+        right.loc + shift,
+        left.v,
+        right.v,
+        face.centroid(),
+    );
 
     // Terms for flux limiters
     let r = dx_centroid.length();

@@ -152,9 +152,9 @@ fn slope_limiter(space: &Space, gradients: &mut [Option<Gradients<Primitive>>]) 
 
     let flow_r: Vec<_> = space
         .parts
-        .iter()
+        .par_iter()
         .enumerate()
-        .zip(gradients.iter())
+        .zip(gradients.par_iter())
         .map(|((part_idx, part), grad)| {
             if let Some(grad) = grad {
                 let face_idx: &[usize] = {
@@ -199,9 +199,9 @@ fn slope_limiter(space: &Space, gradients: &mut [Option<Gradients<Primitive>>]) 
 
     // Now apply slope limiters
     flow_r
-        .iter()
+        .par_iter()
         .enumerate()
-        .zip(gradients.iter_mut())
+        .zip(gradients.par_iter_mut())
         .for_each(|((i, limiter_info), grad)| {
             if let Some(grad) = grad {
                 let limiter_info = limiter_info.expect("cannot be none for Some gradients");
@@ -211,18 +211,22 @@ fn slope_limiter(space: &Space, gradients: &mut [Option<Gradients<Primitive>>]) 
                     let xi_l = 2. / (1. + r);
                     let xi_r = 2. * r / (1. + r);
                     // vanleer limiter
-                    // let xi = if r < 0. { 0. } else { (2. * r / (1. + r)).min(xi_l).min(xi_r) };
+                    let xi = if r < 0. {
+                        0.
+                    } else {
+                        (2. * r / (1. + r)).min(xi_l).min(xi_r)
+                    };
                     // minbee
                     // let xi = if r < 0. { 0. } else { r.min(1.).min(xi_l).min(xi_r) };
                     // superbee
-                    let xi = if r < 0. {
-                        0.
-                    } else if r < 1. {
-                        1f64.min(2. * r)
-                    } else {
-                        r.min(1.).min(xi_l).min(xi_r)
-                    };
-                    grad[i] *= xi;
+                    // let xi = if r < 0. {
+                    //     0.
+                    // } else if r < 1. {
+                    //     1f64.min(2. * r)
+                    // } else {
+                    //     r.min(1.).min(xi_l).min(xi_r)
+                    // };
+                    // grad[i] *= xi;
                     // Compute limited slopes directly
                     let slope_prev = limiter_info[i].y;
                     let slope_next = limiter_info[i].z;
@@ -231,14 +235,14 @@ fn slope_limiter(space: &Space, gradients: &mut [Option<Gradients<Primitive>>]) 
                     // Superbee
                     let beta = 2.;
                     // limited slope
-                    // grad[i] = if slope_next > 0. {
-                    //     0f64.max(slope_next.min(beta * slope_prev))
-                    //         .max(slope_prev.min(beta * slope_next))
-                    // } else {
-                    //     0f64.min(slope_next.max(beta * slope_prev))
-                    //         .min(slope_prev.max(beta * slope_next))
-                    // } * DVec3::X
-                    //     / dx;
+                    grad[i] = if slope_next > 0. {
+                        0f64.max(slope_next.min(beta * slope_prev))
+                            .max(slope_prev.min(beta * slope_next))
+                    } else {
+                        0f64.min(slope_next.max(beta * slope_prev))
+                            .min(slope_prev.max(beta * slope_next))
+                    } * DVec3::X
+                        / dx;
                 }
             }
         })

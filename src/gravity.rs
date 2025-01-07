@@ -39,17 +39,23 @@ impl GravitySolver for SelfGravity {
             })
             .collect();
 
-        particles.par_iter_mut().zip(accelerations).for_each(|(p, a)| p.a_grav = a);
+        particles
+            .par_iter_mut()
+            .zip(accelerations)
+            .for_each(|(p, a)| p.a_grav = a);
     }
 
     fn compute_timesteps(&self, particles: &[Particle]) -> Vec<f64> {
-        particles.par_iter().map(|particle|{
-            let a2 = particle.a_grav.length_squared();
+        particles
+            .par_iter()
+            .map(|particle| {
+                let a2 = particle.a_grav.length_squared();
                 if a2 == 0. {
                     return f64::INFINITY;
                 }
                 (self.softening_length / a2.sqrt()).sqrt()
-        }).collect()
+            })
+            .collect()
     }
 }
 
@@ -66,11 +72,17 @@ impl ExternalPotentialGravity {
 impl GravitySolver for ExternalPotentialGravity {
     fn compute_accelerations(&self, particles: &mut [Particle]) {
         let accelerations = self.potential.accelerations(particles);
-        particles.par_iter_mut().zip(accelerations).for_each(|(p, a)| p.a_grav = a);
+        particles
+            .par_iter_mut()
+            .zip(accelerations)
+            .for_each(|(p, a)| p.a_grav = a);
     }
 
     fn compute_timesteps(&self, particles: &[Particle]) -> Vec<f64> {
-        particles.par_iter().map(|particle| self.potential.get_timestep(particle)).collect()
+        particles
+            .par_iter()
+            .map(|particle| self.potential.get_timestep(particle))
+            .collect()
     }
 }
 
@@ -112,7 +124,7 @@ impl KeplerianPotential {
 
     fn accelerations(&self, particles: &[Particle]) -> Vec<DVec3> {
         particles
-            .iter()
+            .par_iter()
             .map(|part| self.acceleration(part.loc))
             .collect()
     }

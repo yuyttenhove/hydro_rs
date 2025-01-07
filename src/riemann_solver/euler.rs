@@ -35,8 +35,18 @@ pub(super) fn solve_for_waf_flux(
     let a_l = eos.sound_speed(left.pressure(), 1. / left.density());
     let a_r = eos.sound_speed(right.pressure(), 1. / right.density());
 
-    let a_star_l = eos.sound_speed(star_values.p, 1. / star_values.rho_l);
-    let a_star_r = eos.sound_speed(star_values.p, 1. / star_values.rho_r);
+    let rho_star_l_inv = if star_values.rho_l > 0. {
+        1. / star_values.rho_l
+    } else {
+        0.
+    };
+    let rho_star_r_inv = if star_values.rho_r > 0. {
+        1. / star_values.rho_r
+    } else {
+        0.
+    };
+    let a_star_l = eos.sound_speed(star_values.p, rho_star_l_inv);
+    let a_star_r = eos.sound_speed(star_values.p, rho_star_r_inv);
 
     // Get 4 states and wave speeds
     let mut states = [
@@ -59,7 +69,7 @@ pub(super) fn solve_for_waf_flux(
             <ExactRiemannSolver as RiemannStarSolver>::shock_speed(
                 star_values.u,
                 a_star_l,
-                star_values.p / left.pressure(),
+                ExactRiemannSolver::pdps(star_values.p, left.pressure()),
                 eos.gamma(),
             )
         } else {
@@ -84,7 +94,7 @@ pub(super) fn solve_for_waf_flux(
             <ExactRiemannSolver as RiemannStarSolver>::shock_speed(
                 star_values.u,
                 -a_star_r,
-                star_values.p / right.pressure(),
+                ExactRiemannSolver::pdps(star_values.p, right.pressure()),
                 eos.gamma(),
             )
         } else {

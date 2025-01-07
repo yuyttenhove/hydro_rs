@@ -17,7 +17,7 @@ use crate::{
     physical_quantities::{Conserved, Primitive, State},
 };
 
-use self::vacuum::VacuumRiemannSolver;
+pub use self::vacuum::VacuumRiemannSolver;
 use crate::finite_volume_solver::{FluxLimiterData, FluxLimiterFunction};
 use crate::gas_law::EquationOfState;
 use crate::physical_quantities::Gradients;
@@ -170,11 +170,13 @@ pub(crate) trait RiemannStarSolver: Sync {
     ) -> State<Primitive> {
         let v_half = gamma.tdgp1() * (a + 0.5 * (gamma.gamma() - 1.) * v);
         let base = gamma.tdgp1() + gamma.gm1dgp1() / a * v;
-        State::<Primitive>::new(
+        let result = State::<Primitive>::new(
             state.density() * base.powf(gamma.tdgm1()),
             state.velocity() + (v_half - v) * n_unit,
             state.pressure() * base.powf(gamma.gamma() * gamma.tdgm1()),
-        )
+        );
+        debug_assert!(result.density().is_finite());
+        result
     }
 
     fn sample_middle_state(
@@ -240,7 +242,8 @@ pub(crate) trait RiemannStarSolver: Sync {
         n_unit: DVec3,
         gamma: &AdiabaticIndex,
     ) -> State<Primitive> {
-        if Self::shock_speed(v, a, p / left.pressure(), gamma) < 0. {
+        let pdps = ExactRiemannSolver::pdps(p, left.pressure());
+        if Self::shock_speed(v, a, pdps, gamma) < 0. {
             Self::sample_middle_state(rho, u, p, left, v, n_unit)
         } else {
             *left
@@ -257,7 +260,8 @@ pub(crate) trait RiemannStarSolver: Sync {
         n_unit: DVec3,
         gamma: &AdiabaticIndex,
     ) -> State<Primitive> {
-        if Self::shock_speed(v, -a, p / right.pressure(), gamma) > 0. {
+        let pdps = ExactRiemannSolver::pdps(p, right.pressure());
+        if Self::shock_speed(v, -a, pdps, gamma) > 0. {
             Self::sample_middle_state(rho, u, p, right, v, n_unit)
         } else {
             *right
@@ -386,26 +390,50 @@ impl<T: RiemannStarSolver + EulerSolver> RiemannWafSolver for T {
         n_unit: DVec3,
         eos: &GasLaw,
     ) -> State<Conserved> {
-        let v_l = (left.velocity() - interface_velocity).dot(n_unit);
-        let v_r = (right.velocity() - interface_velocity).dot(n_unit);
+        let left_boosted = left.boost(-interface_velocity);
+        let right_boosted = right.boost(-interface_velocity);
+        let v_l = left_boosted.velocity().dot(n_unit);
+        let v_r = right_boosted.velocity().dot(n_unit);
         let a_l = eos.sound_speed(left.pressure(), 1. / left.density());
         let a_r = eos.sound_speed(right.pressure(), 1. / right.density());
-        let star_values = self.solve_for_star_state(&left, &right, v_l, v_r, a_l, a_r, eos.gamma());
-        euler::solve_for_waf_flux(
-            &left,
-            &right,
-            &star_values,
-            dx_left,
-            dx_right,
-            left_flux_limiter,
-            right_flux_limiter,
-            r,
-            do_limit,
-            flux_limiter_function,
-            interface_velocity,
-            dt,
-            n_unit,
-            eos,
-        )
+        if VacuumRiemannSolver::is_vacuum(
+            &left_boosted,
+            &right_boosted,
+            a_l,
+            a_r,
+            v_r - v_l,
+            eos.gamma(),
+        ) {
+            let w_half = VacuumRiemannSolver.sample(
+                &left_boosted,
+                &right_boosted,
+                v_l,
+                v_r,
+                a_l,
+                a_r,
+                n_unit,
+                eos.gamma(),
+            );
+            flux_from_half_state(&w_half, interface_velocity, n_unit, eos.gamma())
+        } else {
+            let star_values =
+                self.solve_for_star_state(&left, &right, v_l, v_r, a_l, a_r, eos.gamma());
+            euler::solve_for_waf_flux(
+                &left,
+                &right,
+                &star_values,
+                dx_left,
+                dx_right,
+                left_flux_limiter,
+                right_flux_limiter,
+                r,
+                do_limit,
+                flux_limiter_function,
+                interface_velocity,
+                dt,
+                n_unit,
+                eos,
+            )
+        }
     }
 }

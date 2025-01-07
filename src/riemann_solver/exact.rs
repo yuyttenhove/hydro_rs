@@ -12,13 +12,15 @@ impl EulerSolver for ExactRiemannSolver {}
 impl ExactRiemannSolver {
     /// Functions (4.6) and (4.7) in Toro.
     fn fb(p: f64, state: &State<Primitive>, a: f64, gamma: &AdiabaticIndex) -> f64 {
-        if p > state.pressure() {
+        let result = if p > state.pressure() {
             let cap_a = gamma.tdgp1() / state.density();
             let cap_b = gamma.gm1dgp1() * state.pressure();
             (p - state.pressure()) * (cap_a / (p + cap_b)).sqrt()
         } else {
-            gamma.tdgm1() * a * ((p / state.pressure()).powf(gamma.gm1d2g()) - 1.)
-        }
+            gamma.tdgm1() * a * (Self::pdps(p, state.pressure()).powf(gamma.gm1d2g()) - 1.)
+        };
+        debug_assert!(result.is_finite());
+        result
     }
 
     /// Function (4.5) in Toro
@@ -102,6 +104,14 @@ impl ExactRiemannSolver {
         };
 
         p_guess.max(1e-8)
+    }
+
+    pub fn pdps(p: f64, ps: f64) -> f64 {
+        if ps == 0. {
+            0.
+        } else {
+            p / ps
+        }
     }
 
     /// Find the zeropoint of riemann_f(p) using Brent's method
@@ -201,11 +211,11 @@ impl ExactRiemannSolver {
         state: &State<Primitive>,
         gamma: &AdiabaticIndex,
     ) -> f64 {
-        state.density() * (pdps).powf(1. / gamma.gamma())
+        state.density() * pdps.powf(1. / gamma.gamma())
     }
 
     fn middle_density(p: f64, state: &State<Primitive>, gamma: &AdiabaticIndex) -> f64 {
-        let pdps = p / state.pressure();
+        let pdps = Self::pdps(p, state.pressure());
         if pdps > 1. {
             Self::shock_middle_density(pdps, state, gamma)
         } else {

@@ -45,7 +45,8 @@ impl RiemannStarSolver for TSRiemannSolver {
 
         let g_l = Self::g(p_guess, left.density(), left.pressure(), eos);
         let g_r = Self::g(p_guess, right.density(), right.pressure(), eos);
-        let pstar = (g_l * left.pressure() + g_r * right.pressure() - (v_r - v_l)) / (g_l + g_r);
+        let pstar =
+            0f64.max((g_l * left.pressure() + g_r * right.pressure() - (v_r - v_l)) / (g_l + g_r));
 
         // Use relations of exact riemann solver once we have an estimate for pstar
         ExactRiemannSolver::star_state_from_pstar(pstar, left, right, v_l, v_r, a_l, a_r, eos)

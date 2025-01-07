@@ -18,6 +18,10 @@ impl Runner for OptimalOrderRunner {
         false
     }
 
+    fn label(&self) -> String {
+        "optimal".to_string()
+    }
+
     fn step(
         &self,
         space: &mut Space,
@@ -30,7 +34,7 @@ impl Runner for OptimalOrderRunner {
         // Get the mask of active parts
         let part_is_active: Vec<bool> = space
             .parts
-            .iter()
+            .par_iter()
             .map(|part| timestep_info.bin_is_ending(part.timebin))
             .collect();
 
@@ -77,8 +81,8 @@ impl Runner for OptimalOrderRunner {
             // Compute, limit and apply gradients
             let mut gradients = gradient_estimate(space, &part_is_active);
             if fv_solver.do_gradients_limit() {
-                // slope_limiter(space, &mut gradients);
-                gradient_limit(space, &mut gradients);
+                slope_limiter(space, &mut gradients);
+                // gradient_limit(space, &mut gradients);
             }
             gradient_apply(space, &gradients);
         }
@@ -112,9 +116,5 @@ impl Runner for OptimalOrderRunner {
         kick1(space, &part_is_active, particle_motion);
 
         ti_next
-    }
-
-    fn label(&self) -> String {
-        "optimal".to_string()
     }
 }

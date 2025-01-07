@@ -41,3 +41,17 @@ pub fn box_reflect(box_size: DVec3, pos: &mut DVec3, dimension: usize) {
         }
     }
 }
+
+pub fn interface_velocity(
+    left: DVec3,
+    right: DVec3,
+    v_l: DVec3,
+    v_r: DVec3,
+    centroid: DVec3,
+) -> DVec3 {
+    // Compute interface velocity (Springel (2010), eq. 33):
+    let midpoint = 0.5 * (left + right);
+    let dx = right - left;
+    let fac = (v_r - v_l).dot(centroid - midpoint) / dx.length_squared();
+    0.5 * (v_l + v_r) - fac * dx
+}

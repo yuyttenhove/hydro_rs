@@ -51,7 +51,7 @@ impl<R: RiemannMusclSolver> FiniteVolumeSolver for MusclFvs<R> {
         boundary: Boundary,
     ) -> Vec<FluxInfo> {
         faces
-            .iter()
+            .par_iter()
             .map(|face| {
                 let left = &particles[face.left()];
                 let left_active = part_is_active[face.left()];

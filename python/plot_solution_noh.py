@@ -39,6 +39,6 @@ if __name__ == "__main__":
         fname = sys.argv[1]
         savename = sys.argv[2]
     except IndexError:
-        fname = Path(__file__).parent.parent / "run/output/noh_1D_0010.txt"
+        fname = Path(__file__).parent.parent / "run/output/noh_1D_muscl_tvd_optimal_0020.hdf5"
         savename = "test.png"
     main(fname, savename)

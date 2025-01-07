@@ -215,7 +215,11 @@ impl State<Primitive> {
             let m_inv = 1. / conserved.mass();
             let density = conserved.mass() / volume;
             let velocity = conserved.momentum() * m_inv;
-            let internal_energy = conserved.internal_energy();
+            let mut internal_energy = conserved.internal_energy();
+            if internal_energy < 0. {
+                eprintln!("WARNING: Particle with negative internal energy! Setting to 0...");
+                internal_energy = 0.;
+            }
             let pressure = eos.gas_pressure_from_internal_energy(internal_energy, density);
             assert!(density >= 0.);
             assert!(pressure >= 0.);
