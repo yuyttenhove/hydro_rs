@@ -3,7 +3,7 @@ use crate::{
     physical_quantities::{Primitive, State},
 };
 
-use super::{EulerWafSolver, ExactRiemannSolver, PVRiemannSolver, RiemannStarSolver};
+use super::{EulerSolver, ExactRiemannSolver, PVRiemannSolver, RiemannStarSolver};
 
 pub struct AIRiemannSolver {
     threshold: f64,
@@ -15,7 +15,7 @@ impl AIRiemannSolver {
     }
 }
 
-impl EulerWafSolver for AIRiemannSolver {}
+impl EulerSolver for AIRiemannSolver {}
 
 impl RiemannStarSolver for AIRiemannSolver {
     fn solve_for_star_state(

@@ -7,6 +7,8 @@ use super::*;
 /// HLLC Riemann solver
 pub struct HLLCRiemannSolver;
 
+impl EulerSolver for HLLCRiemannSolver {}
+
 impl RiemannFluxSolver for HLLCRiemannSolver {
     /// See Section 10.4, 10.5 and 10.6 in Toro (2009)
     fn solve_for_flux(
@@ -97,7 +99,7 @@ impl RiemannFluxSolver for HLLCRiemannSolver {
     }
 }
 
-impl RiemannWafFluxSolver for HLLCRiemannSolver {
+impl RiemannWafSolver for HLLCRiemannSolver {
     fn solve_for_waf_flux(
         &self,
         left: &State<Primitive>,

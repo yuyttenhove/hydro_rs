@@ -1,7 +1,7 @@
 use std::{fmt::Display, path::Path, vec};
 
-#[cfg(debug)]
-use float_cmp::assert_approx_eq;
+// #[cfg(debug_assertions)]
+// use float_cmp::assert_approx_eq;
 use glam::DVec3;
 use meshless_voronoi::{Voronoi, VoronoiCell, VoronoiFace};
 use rayon::prelude::*;
@@ -389,111 +389,111 @@ impl Space {
             .collect();
 
         // DEBUGGING: Compute faces and cells the normal way and compare
-        #[cfg(debug)]
+        #[cfg(debug_assertions)]
         {
-            let faces_back_extrapolate = self.voronoi_faces.clone();
-            let cell_face_connections = self.voronoi_cell_face_connections.clone();
-            let face_counts: Vec<_> = self.parts.iter().map(|part| part.face_count).collect();
-            let face_offsets: Vec<_> = self
-                .parts
-                .iter()
-                .map(|part| part.face_connections_offset)
-                .collect();
-            let volumes: Vec<_> = self.parts.iter().map(|part| part.volume).collect();
-            let centroids: Vec<_> = self.parts.iter().map(|part| part.centroid).collect();
-
-            self.volume_calculation(engine);
-            assert_eq!(self.voronoi_faces.len(), faces_back_extrapolate.len());
-            assert_eq!(
-                self.voronoi_cell_face_connections.len(),
-                cell_face_connections.len()
-            );
-
-            for (i, part) in self.parts.iter().enumerate() {
-                assert_approx_eq!(f64, part.volume, volumes[i]);
-                assert_approx_eq!(f64, part.centroid.x, centroids[i].x, ulps = 16);
-                assert_approx_eq!(f64, part.centroid.y, centroids[i].y, ulps = 16);
-                assert_approx_eq!(
-                    f64,
-                    part.centroid.z,
-                    centroids[i].z,
-                    ulps = 8,
-                    epsilon = 1e-13
-                );
-                assert_eq!(part.face_count, face_counts[i]);
-
-                let new_face_idx = &self.voronoi_cell_face_connections
-                    [part.face_connections_offset..part.face_connections_offset + part.face_count];
-                let new_faces: Vec<_> = new_face_idx
-                    .iter()
-                    .map(|&idx| &self.voronoi_faces[idx])
-                    .collect();
-                let old_face_idx =
-                    &cell_face_connections[face_offsets[i]..face_offsets[i] + face_counts[i]];
-                let old_faces: Vec<_> = old_face_idx
-                    .iter()
-                    .map(|&idx| &faces_back_extrapolate[idx])
-                    .collect();
-                for new_face in new_faces {
-                    let new_left = new_face.left();
-                    let new_right = new_face.right();
-                    // loop over the old faces and check whether we find the equivalent face
-                    let n_equivalent = old_faces
-                        .iter()
-                        .filter(|&old_face| {
-                            let old_left = old_face.left();
-                            let old_right = old_face.right();
-                            let matching = if let Some(new_right) = new_right {
-                                if let Some(old_right) = old_right {
-                                    old_left == new_left && old_right == new_right
-                                        || old_left == new_right && old_right == new_left
-                                } else {
-                                    false
-                                }
-                            } else {
-                                // new_right is also None, check that the left particles and the normals match
-                                if old_right.is_none() {
-                                    old_left == new_left && old_face.normal().eq(&new_face.normal())
-                                } else {
-                                    false
-                                }
-                            };
-                            if matching {
-                                // Do some extra sanity checks
-                                assert_approx_eq!(
-                                    f64,
-                                    new_face.area(),
-                                    old_face.area(),
-                                    ulps = 16,
-                                    epsilon = 1e-13
-                                );
-                                assert_approx_eq!(
-                                    f64,
-                                    new_face.centroid().x,
-                                    old_face.centroid().x,
-                                    ulps = 16,
-                                    epsilon = 1e-13
-                                );
-                                assert_approx_eq!(
-                                    f64,
-                                    new_face.centroid().y,
-                                    old_face.centroid().y,
-                                    ulps = 16,
-                                    epsilon = 1e-13
-                                );
-                                assert_approx_eq!(
-                                    f64,
-                                    new_face.centroid().z,
-                                    old_face.centroid().z,
-                                    epsilon = 1e-13
-                                );
-                            }
-                            matching
-                        })
-                        .count();
-                    assert_eq!(n_equivalent, 1)
-                }
-            }
+            // let faces_back_extrapolate = self.voronoi_faces.clone();
+            // let cell_face_connections = self.voronoi_cell_face_connections.clone();
+            // let face_counts: Vec<_> = self.parts.iter().map(|part| part.face_count).collect();
+            // let face_offsets: Vec<_> = self
+            //     .parts
+            //     .iter()
+            //     .map(|part| part.face_connections_offset)
+            //     .collect();
+            // let volumes: Vec<_> = self.parts.iter().map(|part| part.volume).collect();
+            // let centroids: Vec<_> = self.parts.iter().map(|part| part.centroid).collect();
+            //
+            // self.volume_calculation(engine);
+            // assert_eq!(self.voronoi_faces.len(), faces_back_extrapolate.len());
+            // assert_eq!(
+            //     self.voronoi_cell_face_connections.len(),
+            //     cell_face_connections.len()
+            // );
+            //
+            // for (i, part) in self.parts.iter().enumerate() {
+            //     assert_approx_eq!(f64, part.volume, volumes[i]);
+            //     assert_approx_eq!(f64, part.centroid.x, centroids[i].x, ulps = 16);
+            //     assert_approx_eq!(f64, part.centroid.y, centroids[i].y, ulps = 16);
+            //     assert_approx_eq!(
+            //         f64,
+            //         part.centroid.z,
+            //         centroids[i].z,
+            //         ulps = 8,
+            //         epsilon = 1e-13
+            //     );
+            //     assert_eq!(part.face_count, face_counts[i]);
+            //
+            //     let new_face_idx = &self.voronoi_cell_face_connections
+            //         [part.face_connections_offset..part.face_connections_offset + part.face_count];
+            //     let new_faces: Vec<_> = new_face_idx
+            //         .iter()
+            //         .map(|&idx| &self.voronoi_faces[idx])
+            //         .collect();
+            //     let old_face_idx =
+            //         &cell_face_connections[face_offsets[i]..face_offsets[i] + face_counts[i]];
+            //     let old_faces: Vec<_> = old_face_idx
+            //         .iter()
+            //         .map(|&idx| &faces_back_extrapolate[idx])
+            //         .collect();
+            //     for new_face in new_faces {
+            //         let new_left = new_face.left();
+            //         let new_right = new_face.right();
+            //         // loop over the old faces and check whether we find the equivalent face
+            //         let n_equivalent = old_faces
+            //             .iter()
+            //             .filter(|&old_face| {
+            //                 let old_left = old_face.left();
+            //                 let old_right = old_face.right();
+            //                 let matching = if let Some(new_right) = new_right {
+            //                     if let Some(old_right) = old_right {
+            //                         old_left == new_left && old_right == new_right
+            //                             || old_left == new_right && old_right == new_left
+            //                     } else {
+            //                         false
+            //                     }
+            //                 } else {
+            //                     // new_right is also None, check that the left particles and the normals match
+            //                     if old_right.is_none() {
+            //                         old_left == new_left && old_face.normal().eq(&new_face.normal())
+            //                     } else {
+            //                         false
+            //                     }
+            //                 };
+            //                 if matching {
+            //                     // Do some extra sanity checks
+            //                     assert_approx_eq!(
+            //                         f64,
+            //                         new_face.area(),
+            //                         old_face.area(),
+            //                         ulps = 16,
+            //                         epsilon = 1e-13
+            //                     );
+            //                     assert_approx_eq!(
+            //                         f64,
+            //                         new_face.centroid().x,
+            //                         old_face.centroid().x,
+            //                         ulps = 16,
+            //                         epsilon = 1e-13
+            //                     );
+            //                     assert_approx_eq!(
+            //                         f64,
+            //                         new_face.centroid().y,
+            //                         old_face.centroid().y,
+            //                         ulps = 16,
+            //                         epsilon = 1e-13
+            //                     );
+            //                     assert_approx_eq!(
+            //                         f64,
+            //                         new_face.centroid().z,
+            //                         old_face.centroid().z,
+            //                         epsilon = 1e-13
+            //                     );
+            //                 }
+            //                 matching
+            //             })
+            //             .count();
+            //         assert_eq!(n_equivalent, 1)
+            //     }
+            // }
         }
     }
 

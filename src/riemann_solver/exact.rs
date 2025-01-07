@@ -3,11 +3,11 @@ use crate::{
     physical_quantities::{Primitive, State},
 };
 
-use super::{EulerWafSolver, RiemannStarSolver, RiemannStarValues};
+use super::{EulerSolver, RiemannStarSolver, RiemannStarValues};
 
 pub struct ExactRiemannSolver;
 
-impl EulerWafSolver for ExactRiemannSolver {}
+impl EulerSolver for ExactRiemannSolver {}
 
 impl ExactRiemannSolver {
     /// Functions (4.6) and (4.7) in Toro.

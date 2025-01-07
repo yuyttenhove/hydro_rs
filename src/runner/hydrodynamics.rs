@@ -17,7 +17,7 @@ mod optimal_order;
 
 use crate::finite_volume_solver::{FiniteVolumeSolver, FluxLimiterData};
 use crate::physical_quantities::State;
-use crate::riemann_solver::{RiemannStarSolver, RiemannWafFluxSolver};
+use crate::riemann_solver::{RiemannStarSolver, RiemannWafSolver};
 pub use optimal_order::OptimalOrderRunner;
 
 fn apply_fluxes(space: &mut Space, fluxes: &[FluxInfo], part_is_active: &[bool]) {
@@ -215,14 +215,14 @@ fn slope_limiter(space: &Space, gradients: &mut [Option<Gradients<Primitive>>]) 
                     // minbee
                     // let xi = if r < 0. { 0. } else { r.min(1.).min(xi_l).min(xi_r) };
                     // superbee
-                    // let xi = if r < 0. {
-                    //     0.
-                    // } else if r < 1. {
-                    //     1f64.min(2. * r)
-                    // } else {
-                    //     r.min(1.).min(xi_l).min(xi_r)
-                    // };
-                    // grad[i] *= xi;
+                    let xi = if r < 0. {
+                        0.
+                    } else if r < 1. {
+                        1f64.min(2. * r)
+                    } else {
+                        r.min(1.).min(xi_l).min(xi_r)
+                    };
+                    grad[i] *= xi;
                     // Compute limited slopes directly
                     let slope_prev = limiter_info[i].y;
                     let slope_next = limiter_info[i].z;
@@ -231,14 +231,14 @@ fn slope_limiter(space: &Space, gradients: &mut [Option<Gradients<Primitive>>]) 
                     // Superbee
                     let beta = 2.;
                     // limited slope
-                    grad[i] = if slope_next > 0. {
-                        0f64.max(slope_next.min(beta * slope_prev))
-                            .max(slope_prev.min(beta * slope_next))
-                    } else {
-                        0f64.min(slope_next.max(beta * slope_prev))
-                            .min(slope_prev.max(beta * slope_next))
-                    } * DVec3::X
-                        / dx;
+                    // grad[i] = if slope_next > 0. {
+                    //     0f64.max(slope_next.min(beta * slope_prev))
+                    //         .max(slope_prev.min(beta * slope_next))
+                    // } else {
+                    //     0f64.min(slope_next.max(beta * slope_prev))
+                    //         .min(slope_prev.max(beta * slope_next))
+                    // } * DVec3::X
+                    //     / dx;
                 }
             }
         })

@@ -1,6 +1,6 @@
 use crate::gas_law::AdiabaticIndex;
 
-use super::{EulerWafSolver, ExactRiemannSolver, RiemannStarSolver};
+use super::{EulerSolver, ExactRiemannSolver, RiemannStarSolver};
 
 /// Two-rarefaction Riemann solver.
 ///
@@ -11,7 +11,7 @@ use super::{EulerWafSolver, ExactRiemannSolver, RiemannStarSolver};
 /// quantities in the star region.
 pub struct TRRiemannSolver;
 
-impl EulerWafSolver for TRRiemannSolver {}
+impl EulerSolver for TRRiemannSolver {}
 
 impl RiemannStarSolver for TRRiemannSolver {
     fn solve_for_star_state(

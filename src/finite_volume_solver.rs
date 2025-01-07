@@ -21,11 +21,7 @@ pub use muscl_fvs::MusclFvs;
 pub use waf_fvs::WafFvs;
 
 pub trait FiniteVolumeSolver: Sync {
-    fn predict(&self, particles: &mut [Particle], dt: f64) {
-        particles.par_iter_mut().for_each(|part| {
-            part.extrapolate_state(dt, self.eos());
-        });
-    }
+    fn predict(&self, particles: &mut [Particle], dt: f64);
 
     fn compute_fluxes(
         &self,
@@ -156,7 +152,7 @@ impl FluxLimiterData {
 
     pub fn apply(&self, jumps: DVec3, r: f64) -> DVec3 {
         let w = f64::exp(-r);
-        let jumps = (self.jumps - w * jumps);
+        let jumps = self.jumps - w * jumps;
         let w = self.weight - w;
         if w > 0. {
             jumps / w

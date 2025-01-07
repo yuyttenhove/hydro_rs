@@ -4,7 +4,7 @@ use crate::{
 };
 
 use super::{
-    EulerWafSolver, ExactRiemannSolver, PVRiemannSolver, RiemannStarSolver, TRRiemannSolver,
+    EulerSolver, ExactRiemannSolver, PVRiemannSolver, RiemannStarSolver, TRRiemannSolver,
     TSRiemannSolver,
 };
 
@@ -23,7 +23,7 @@ impl ANRiemannSolver {
     }
 }
 
-impl EulerWafSolver for ANRiemannSolver {}
+impl EulerSolver for ANRiemannSolver {}
 
 impl RiemannStarSolver for ANRiemannSolver {
     fn solve_for_star_state(

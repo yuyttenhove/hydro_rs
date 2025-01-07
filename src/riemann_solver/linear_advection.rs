@@ -1,8 +1,9 @@
 use glam::DVec3;
 
-use super::{RiemannStarSolver, RiemannStarValues, RiemannWafFluxSolver};
+use super::{RiemannMusclSolver, RiemannStarSolver, RiemannStarValues, RiemannWafSolver};
 use crate::finite_volume_solver::{FluxLimiterData, FluxLimiterFunction};
 use crate::gas_law::AdiabaticIndex;
+use crate::physical_quantities::Gradients;
 use crate::{
     gas_law::GasLaw,
     physical_quantities::{Conserved, Primitive, State},
@@ -21,16 +22,17 @@ impl LinearAdvectionRiemannSolver {
 impl RiemannStarSolver for LinearAdvectionRiemannSolver {
     fn solve_for_star_state(
         &self,
-        left: &State<Primitive>,
-        right: &State<Primitive>,
-        v_l: f64,
-        v_r: f64,
-        a_l: f64,
-        a_r: f64,
-        gamma: &AdiabaticIndex,
+        _left: &State<Primitive>,
+        _right: &State<Primitive>,
+        _v_l: f64,
+        _v_r: f64,
+        _a_l: f64,
+        _a_r: f64,
+        _gamma: &AdiabaticIndex,
     ) -> RiemannStarValues {
         RiemannStarValues::default()
     }
+
     fn solve_for_flux(
         &self,
         left: &State<Primitive>,
@@ -53,7 +55,20 @@ impl RiemannStarSolver for LinearAdvectionRiemannSolver {
     }
 }
 
-impl RiemannWafFluxSolver for LinearAdvectionRiemannSolver {
+impl RiemannMusclSolver for LinearAdvectionRiemannSolver {
+    fn time_extrapolate(
+        &self,
+        _state: &State<Primitive>,
+        gradients: &Gradients<Primitive>,
+        dt: f64,
+        _v_rel: DVec3,
+        _eos: &GasLaw,
+    ) -> State<Primitive> {
+        -dt * gradients.dot(self.velocity)
+    }
+}
+
+impl RiemannWafSolver for LinearAdvectionRiemannSolver {
     fn solve_for_waf_flux(
         &self,
         left: &State<Primitive>,

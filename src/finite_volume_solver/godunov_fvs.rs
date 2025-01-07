@@ -26,6 +26,10 @@ impl<R: RiemannFluxSolver> GodunovFvs<R> {
 }
 
 impl<R: RiemannFluxSolver> FiniteVolumeSolver for GodunovFvs<R> {
+    fn predict(&self, _particles: &mut [Particle], _dt: f64) {
+        // nothing to do here
+    }
+
     fn compute_fluxes(
         &self,
         faces: &[meshless_voronoi::VoronoiFace],
@@ -108,16 +112,11 @@ fn flux_exchange<RiemannSolver: RiemannFluxSolver>(
     let fac = (right.v - left.v).dot(face.centroid() - midpoint) / dx.length_squared();
     let v_face = 0.5 * (left.v + right.v) - fac * dx;
 
-    // Extrapolate back to midpoint of the timestep over which the fluxes are exchanged
-    let dt_extrapolate = -0.5 * dt;
-    let left_primitives = left.primitives - left.time_extrapolations(dt_extrapolate, eos);
-    let right_primitives = right.primitives - right.time_extrapolations(dt_extrapolate, eos);
-
     // Calculate fluxes
     let fluxes = face.area()
         * riemann_solver.solve_for_flux(
-            &left_primitives,
-            &right_primitives,
+            &left.primitives,
+            &right.primitives,
             v_face,
             face.normal(),
             eos,
@@ -153,7 +152,7 @@ fn flux_exchange_boundary<RiemannSolver: RiemannFluxSolver>(
         v_max += eos.sound_speed(part.primitives.pressure(), 1. / part.primitives.density());
     }
 
-    let primitives = part.primitives + part.time_extrapolations(-0.5 * part.dt, eos);
+    let primitives = part.primitives;
     let primitives_boundary = match boundary {
         Boundary::Reflective => {
             // Also reflect velocity

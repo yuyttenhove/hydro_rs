@@ -6,18 +6,19 @@ use crate::{
 use super::{FiniteVolumeSolver, FluxInfo};
 
 use crate::physical_quantities::Primitive;
+use crate::riemann_solver::RiemannMusclSolver;
 use glam::DVec3;
 use meshless_voronoi::VoronoiFace;
 use rayon::prelude::*;
 
-pub struct MusclFvs<R: RiemannFluxSolver> {
+pub struct MusclFvs<R: RiemannMusclSolver> {
     riemann_solver: R,
     cfl: f64,
     gas_law: GasLaw,
     tvd: bool,
 }
 
-impl<R: RiemannFluxSolver> MusclFvs<R> {
+impl<R: RiemannMusclSolver> MusclFvs<R> {
     pub fn new(riemann_solver: R, cfl: f64, gas_law: GasLaw, tvd: bool) -> Self {
         Self {
             riemann_solver,
@@ -28,7 +29,20 @@ impl<R: RiemannFluxSolver> MusclFvs<R> {
     }
 }
 
-impl<R: RiemannFluxSolver> FiniteVolumeSolver for MusclFvs<R> {
+impl<R: RiemannMusclSolver> FiniteVolumeSolver for MusclFvs<R> {
+    fn predict(&self, particles: &mut [Particle], dt: f64) {
+        particles.par_iter_mut().for_each(|part| {
+            part.extrapolations += self.riemann_solver.time_extrapolate(
+                &part.primitives,
+                &part.gradients,
+                dt,
+                part.v_rel,
+                self.eos(),
+            );
+            part.extrapolate_state(dt, self.eos());
+        });
+    }
+
     fn compute_fluxes(
         &self,
         faces: &[meshless_voronoi::VoronoiFace],
@@ -37,7 +51,7 @@ impl<R: RiemannFluxSolver> FiniteVolumeSolver for MusclFvs<R> {
         boundary: Boundary,
     ) -> Vec<FluxInfo> {
         faces
-            .par_iter()
+            .iter()
             .map(|face| {
                 let left = &particles[face.left()];
                 let left_active = part_is_active[face.left()];
@@ -101,7 +115,7 @@ impl<R: RiemannFluxSolver> FiniteVolumeSolver for MusclFvs<R> {
     }
 }
 
-fn flux_exchange<RiemannSolver: RiemannFluxSolver>(
+fn flux_exchange<RiemannSolver: RiemannMusclSolver>(
     left: &Particle,
     right: &Particle,
     dt: f64,
@@ -136,11 +150,23 @@ fn flux_exchange<RiemannSolver: RiemannFluxSolver>(
     let left_dash = left.primitives
         + left.gradients.dot(dx_left)
         + left.extrapolations
-        + left.time_extrapolations(dt_extrapolate, eos);
+        + riemann_solver.time_extrapolate(
+            &left.primitives,
+            &left.gradients,
+            dt_extrapolate,
+            left.v_rel,
+            eos,
+        );
     let right_dash = right.primitives
         + right.gradients.dot(dx_right)
         + right.extrapolations
-        + right.time_extrapolations(dt_extrapolate, eos);
+        + riemann_solver.time_extrapolate(
+            &right.primitives,
+            &right.gradients,
+            dt_extrapolate,
+            right.v_rel,
+            eos,
+        );
     let (primitives_left, primitives_right) = if do_gradients_limit {
         (
             pairwise_limiter(
@@ -198,7 +224,7 @@ fn flux_exchange<RiemannSolver: RiemannFluxSolver>(
     }
 }
 
-fn flux_exchange_boundary<RiemannSolver: RiemannFluxSolver>(
+fn flux_exchange_boundary<RiemannSolver: RiemannMusclSolver>(
     part: &Particle,
     face: &VoronoiFace,
     boundary: Boundary,
@@ -221,11 +247,17 @@ fn flux_exchange_boundary<RiemannSolver: RiemannFluxSolver>(
     }
 
     // Gradient extrapolation
-    let dt_extraplotate = -time_extrapolate_fac * part.dt;
+    let dt_extrapolate = -time_extrapolate_fac * part.dt;
     let mut primitives_dash = part.primitives
         + part.gradients.dot(dx_face)
         + part.extrapolations
-        + part.time_extrapolations(dt_extraplotate, eos);
+        + riemann_solver.time_extrapolate(
+            &part.primitives,
+            &part.gradients,
+            dt_extrapolate,
+            part.v_rel,
+            eos,
+        );
 
     let primitives_out = match boundary {
         Boundary::Reflective => {

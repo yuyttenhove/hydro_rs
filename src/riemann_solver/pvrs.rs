@@ -1,6 +1,6 @@
 use crate::physical_quantities::{Primitive, State};
 
-use super::{EulerWafSolver, RiemannStarSolver, RiemannStarValues};
+use super::{EulerSolver, RiemannStarSolver, RiemannStarValues};
 
 pub struct PVRiemannSolver;
 
@@ -22,7 +22,7 @@ impl PVRiemannSolver {
     }
 }
 
-impl EulerWafSolver for PVRiemannSolver {}
+impl EulerSolver for PVRiemannSolver {}
 
 impl RiemannStarSolver for PVRiemannSolver {
     fn solve_for_star_state(

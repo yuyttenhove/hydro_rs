@@ -29,7 +29,7 @@ pub struct Particle {
     // Extrapolated particle velocity
     pub v: DVec3,
     // relative fluid velocity at last full timestep
-    v_rel: DVec3,
+    pub v_rel: DVec3,
     max_a_over_r: f64,
     pub max_signal_velocity: f64,
     pub timebin: Timebin,
@@ -118,14 +118,12 @@ impl Particle {
 
     /// Extrapolates the current state (e.g. primitives) forward in time
     pub fn extrapolate_state(&mut self, dt: f64, eos: &GasLaw) {
-        // Extrapolate primitives in time
-        self.extrapolations += self.time_extrapolations(dt, eos);
-
+        // Extrapolate primitives in time (Now done by riemann solver)
+        // self.extrapolations += self.time_extrapolations(dt, eos);
         self.primitives.check_physical();
-
         // Extrapolate volume in time
         let volume = self.volume + self.dvdt * dt;
-        self.volume = (volume).clamp(0.5 * self.volume, 2. * self.volume);
+        self.volume = volume.clamp(0.5 * self.volume, 2. * self.volume);
     }
 
     pub fn time_extrapolations(&self, dt: f64, eos: &GasLaw) -> State<Primitive> {
