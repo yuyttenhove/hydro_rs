@@ -5,7 +5,7 @@ use crate::{
 
 use super::{FiniteVolumeSolver, FluxInfo, FluxLimiterData, FluxLimiterFunction};
 
-use crate::physical_quantities::Primitive;
+use crate::physical_quantities::{Gradients, Primitive};
 use crate::riemann_solver::{RiemannStarSolver, VacuumRiemannSolver};
 use crate::utils::interface_velocity;
 use glam::DVec3;

@@ -1,4 +1,8 @@
+use crate::part::Particle;
+use crate::physical_quantities::State;
+use crate::Boundary;
 use glam::DVec3;
+use meshless_voronoi::VoronoiFace;
 
 pub trait Round {
     #[allow(dead_code)]
@@ -54,4 +58,30 @@ pub fn interface_velocity(
     let dx = right - left;
     let fac = (v_r - v_l).dot(centroid - midpoint) / dx.length_squared();
     0.5 * (v_l + v_r) - fac * dx
+}
+
+pub fn get_other(face: &VoronoiFace, part_idx: usize) -> Option<usize> {
+    if part_idx == face.left() {
+        face.right()
+    } else {
+        Some(face.left())
+    }
+}
+
+pub fn get_boundary_part(boundary: Boundary, part: &Particle, face: &VoronoiFace) -> Particle {
+    match boundary {
+        Boundary::Reflective => part
+            .reflect(face.centroid(), face.normal())
+            .reflect_quantities(face.normal()),
+        Boundary::Open => part.reflect(face.centroid(), face.normal()),
+        Boundary::Vacuum => {
+            let mut reflected = part.reflect(face.centroid(), face.normal());
+            reflected.primitives = State::vacuum();
+            reflected
+        }
+        _ => panic!(
+            "Trying to create boundary particle with {:?} boundary conditions",
+            boundary
+        ),
+    }
 }

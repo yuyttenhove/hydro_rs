@@ -3,9 +3,9 @@ use crate::{
     riemann_solver::RiemannFluxSolver, Boundary,
 };
 
-use super::{FiniteVolumeSolver, FluxInfo};
+use super::{FiniteVolumeSolver, FluxInfo, GradientLimiter};
 
-use crate::physical_quantities::Primitive;
+use crate::physical_quantities::{Gradients, Primitive};
 use crate::riemann_solver::RiemannMusclSolver;
 use glam::DVec3;
 use meshless_voronoi::VoronoiFace;
@@ -16,15 +16,23 @@ pub struct MusclFvs<R: RiemannMusclSolver> {
     cfl: f64,
     gas_law: GasLaw,
     tvd: bool,
+    gradient_limiter: GradientLimiter,
 }
 
 impl<R: RiemannMusclSolver> MusclFvs<R> {
-    pub fn new(riemann_solver: R, cfl: f64, gas_law: GasLaw, tvd: bool) -> Self {
+    pub fn new(
+        riemann_solver: R,
+        cfl: f64,
+        gas_law: GasLaw,
+        tvd: bool,
+        gradient_limiter: GradientLimiter,
+    ) -> Self {
         Self {
             riemann_solver,
             cfl,
             gas_law,
             tvd,
+            gradient_limiter,
         }
     }
 }
@@ -112,6 +120,25 @@ impl<R: RiemannMusclSolver> FiniteVolumeSolver for MusclFvs<R> {
 
     fn do_gradients_limit(&self) -> bool {
         self.tvd
+    }
+
+    fn gradient_limit(
+        &self,
+        gradients: &mut [Option<Gradients<Primitive>>],
+        particles: &[Particle],
+        part_is_active: &[bool],
+        faces: &[VoronoiFace],
+        cell_face_connections: &[usize],
+        boundary: Boundary,
+    ) {
+        self.gradient_limiter.apply(
+            gradients,
+            particles,
+            part_is_active,
+            faces,
+            cell_face_connections,
+            boundary,
+        );
     }
 }
 

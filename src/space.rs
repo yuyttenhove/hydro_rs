@@ -205,24 +205,6 @@ impl Space {
         space
     }
 
-    pub fn get_boundary_part(&self, part: &Particle, face: &VoronoiFace) -> Particle {
-        match self.boundary {
-            Boundary::Reflective => part
-                .reflect(face.centroid(), face.normal())
-                .reflect_quantities(face.normal()),
-            Boundary::Open => part.reflect(face.centroid(), face.normal()),
-            Boundary::Vacuum => {
-                let mut reflected = part.reflect(face.centroid(), face.normal());
-                reflected.primitives = State::vacuum();
-                reflected
-            }
-            _ => panic!(
-                "Trying to create boundary particle with {:?} boundary conditions",
-                self.boundary
-            ),
-        }
-    }
-
     /// Do the volume calculation for all the active parts in the space
     ///
     /// NOTE: the face counts and offsets of inactive particles are also updated by this method!

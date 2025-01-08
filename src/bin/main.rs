@@ -17,7 +17,9 @@ use std::path;
 
 use std::{error::Error, fmt::Display, fs, path::PathBuf};
 
-use mvmm_hydro::finite_volume_solver::FluxLimiterFunction;
+use mvmm_hydro::finite_volume_solver::{
+    FluxLimiterFunction, GradientLimiter, SlopeLimiterFunction,
+};
 use mvmm_hydro::{Boundary, Dimensionality};
 use yaml_rust::{Yaml, YamlLoader};
 
@@ -391,6 +393,7 @@ struct HydroCfg {
     cfl: f64,
     tvd: bool,
     flux_limiter_function: FluxLimiterFunction,
+    gradient_limiter: GradientLimiter,
     riemann: RiemannCfg,
 }
 
@@ -432,13 +435,33 @@ impl HydroCfg {
         let tvd = yaml["TVD"].as_bool().ok_or(ConfigError::MissingParameter(
             "hydrodynamics: TVD".to_string(),
         ))?;
-        let limiter = yaml["flux_limiter"].as_str().unwrap_or("vanleer");
-        let limiter = match limiter {
+        let flux_limiter = yaml["flux_limiter"].as_str().unwrap_or("none");
+        let flux_limiter = match flux_limiter {
+            "none" => FluxLimiterFunction::None,
             "minbee" => FluxLimiterFunction::MinBee,
             "vanleer" => FluxLimiterFunction::VanLeer,
             "MC" => FluxLimiterFunction::MC,
             "superbee" => FluxLimiterFunction::SuperBee,
-            _ => unimplemented!(),
+            _ => panic!("Unknown flux limiter: {}", flux_limiter),
+        };
+        let slope_limiter_cfg = &yaml["slope_limiter"];
+        let slope_limiter = slope_limiter_cfg["kind"].as_str().unwrap_or("none");
+        let slope_limiter = match slope_limiter {
+            "none" => GradientLimiter::None,
+            "gradients" => GradientLimiter::Gradients,
+            "minbee" => GradientLimiter::Slopes(SlopeLimiterFunction::MinBee),
+            "superbee" => GradientLimiter::Slopes(SlopeLimiterFunction::SuperBee),
+            "vanleer" => GradientLimiter::Slopes(SlopeLimiterFunction::VanLeer),
+            "direct" => {
+                let beta =
+                    slope_limiter_cfg["beta"]
+                        .as_f64()
+                        .ok_or(ConfigError::MissingParameter(
+                            "hydrodynamics: slope_limiter: beta".to_string(),
+                        ))?;
+                GradientLimiter::Slopes(SlopeLimiterFunction::Direct { beta })
+            }
+            _ => panic!("Unknown slope_limiter: {}", slope_limiter),
         };
         let riemann = RiemannCfg::parse(&yaml["riemann_solver"])?;
         Ok(Self {
@@ -446,7 +469,8 @@ impl HydroCfg {
             gas_law: GasLaw::new(gamma, equation_of_state),
             cfl,
             tvd,
-            flux_limiter_function: limiter,
+            flux_limiter_function: flux_limiter,
+            gradient_limiter: slope_limiter,
             riemann,
         })
     }
@@ -678,13 +702,44 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let threshold = config.hydro.riemann.threshold;
     let velocity = config.hydro.riemann.velocity;
     let flux_limiter = config.hydro.flux_limiter_function;
+    let gradient_limiter = config.hydro.gradient_limiter;
     let finite_volume_solver: Box<dyn FiniteVolumeSolver> = match config.hydro.solver.as_str() {
         "MUSCL" => match config.hydro.riemann.kind.as_str() {
-            "HLLC" => Box::new(MusclFvs::new(HLLCRiemannSolver, cfl, gas_law, tvd)),
-            "PVRS" => Box::new(MusclFvs::new(PVRiemannSolver, cfl, gas_law, tvd)),
-            "Exact" => Box::new(MusclFvs::new(ExactRiemannSolver, cfl, gas_law, tvd)),
-            "TSRS" => Box::new(MusclFvs::new(TSRiemannSolver, cfl, gas_law, tvd)),
-            "TRRS" => Box::new(MusclFvs::new(TRRiemannSolver, cfl, gas_law, tvd)),
+            "HLLC" => Box::new(MusclFvs::new(
+                HLLCRiemannSolver,
+                cfl,
+                gas_law,
+                tvd,
+                gradient_limiter,
+            )),
+            "PVRS" => Box::new(MusclFvs::new(
+                PVRiemannSolver,
+                cfl,
+                gas_law,
+                tvd,
+                gradient_limiter,
+            )),
+            "Exact" => Box::new(MusclFvs::new(
+                ExactRiemannSolver,
+                cfl,
+                gas_law,
+                tvd,
+                gradient_limiter,
+            )),
+            "TSRS" => Box::new(MusclFvs::new(
+                TSRiemannSolver,
+                cfl,
+                gas_law,
+                tvd,
+                gradient_limiter,
+            )),
+            "TRRS" => Box::new(MusclFvs::new(
+                TRRiemannSolver,
+                cfl,
+                gas_law,
+                tvd,
+                gradient_limiter,
+            )),
             "AIRS" => {
                 let threshold = threshold.ok_or(ConfigError::MissingParameter(
                     "hydrodynamics: riemann_solver: threshold".to_string(),
@@ -694,6 +749,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     cfl,
                     gas_law,
                     tvd,
+                    gradient_limiter,
                 ))
             }
             "ANRS" => {
@@ -705,6 +761,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     cfl,
                     gas_law,
                     tvd,
+                    gradient_limiter,
                 ))
             }
             "LinearAdvection" => {
@@ -716,6 +773,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     cfl,
                     gas_law,
                     tvd,
+                    gradient_limiter,
                 ))
             }
             _ => Err(ConfigError::UnknownRiemannSolver(config.hydro.riemann.kind))?,
