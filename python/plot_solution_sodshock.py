@@ -40,6 +40,6 @@ if __name__ == "__main__":
         fname = sys.argv[1]
         savename = sys.argv[2]
     except IndexError:
-        fname = root / "run/output/sodshock_1D_waf_tvd_optimal_0020.hdf5"
+        fname = root / "run/output/sodshock_1D_godunov_optimal_0020.hdf5"
         savename = "hydro_optimal_waf_limiter.png"
     main(fname, savename)

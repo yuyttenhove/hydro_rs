@@ -42,8 +42,8 @@ if __name__ == "__main__":
     times = [0, 2, 10]
     for i, t in enumerate(times):
         x, box_godunov = read(root / "run" / "output" / f"advection_box_godunov_optimal_{t:04}.hdf5")
-        _, box_waf = read(root / "run" / "output" / f"advection_box_waf_tvd_optimal_{t:04}.hdf5")
-        _, box_muscl = read(root / "run" / "output" / f"advection_box_muscl_tvd_optimal_{t:04}.hdf5")
+        _, box_waf = read(root / "run" / "output" / f"advection_box_waf_vanleer_optimal_{t:04}.hdf5")
+        _, box_muscl = read(root / "run" / "output" / f"advection_box_muscl_minbee_optimal_{t:04}.hdf5")
         plot_comparison(axes[i, 0], box_godunov, box_waf, box_muscl, box_exact, x, x_exact, labels=i == 0)
         axes[i][0].set_ylabel(f"$t={t}$")
 

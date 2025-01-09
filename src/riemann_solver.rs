@@ -104,6 +104,24 @@ pub trait RiemannMusclSolver: RiemannFluxSolver {
 }
 
 pub trait RiemannWafSolver: Sync {
+    fn solve_for_star_state(
+        &self,
+        left: &State<Primitive>,
+        right: &State<Primitive>,
+        interface_velocity: DVec3,
+        n_unit: DVec3,
+        eos: &GasLaw,
+    ) -> RiemannStarValues;
+
+    fn is_vacuum(
+        &self,
+        left: &State<Primitive>,
+        right: &State<Primitive>,
+        interface_velocity: DVec3,
+        n_unit: DVec3,
+        eos: &GasLaw,
+    ) -> bool;
+
     fn solve_for_waf_flux(
         &self,
         left: &State<Primitive>,
@@ -374,6 +392,40 @@ impl<T: RiemannFluxSolver + EulerSolver> RiemannMusclSolver for T {
 }
 
 impl<T: RiemannStarSolver + EulerSolver> RiemannWafSolver for T {
+    fn solve_for_star_state(
+        &self,
+        left: &State<Primitive>,
+        right: &State<Primitive>,
+        interface_velocity: DVec3,
+        n_unit: DVec3,
+        eos: &GasLaw,
+    ) -> RiemannStarValues {
+        let left = left.boost(-interface_velocity);
+        let right = right.boost(-interface_velocity);
+        let v_l = left.velocity().dot(n_unit);
+        let v_r = right.velocity().dot(n_unit);
+        let a_l = eos.sound_speed(left.pressure(), 1. / left.density());
+        let a_r = eos.sound_speed(right.pressure(), 1. / right.density());
+        self.solve_for_star_state(&left, &right, v_l, v_r, a_l, a_r, eos.gamma())
+    }
+
+    fn is_vacuum(
+        &self,
+        left: &State<Primitive>,
+        right: &State<Primitive>,
+        interface_velocity: DVec3,
+        n_unit: DVec3,
+        eos: &GasLaw,
+    ) -> bool {
+        let left = left.boost(-interface_velocity);
+        let right = right.boost(-interface_velocity);
+        let v_l = left.velocity().dot(n_unit);
+        let v_r = right.velocity().dot(n_unit);
+        let a_l = eos.sound_speed(left.pressure(), 1. / left.density());
+        let a_r = eos.sound_speed(right.pressure(), 1. / right.density());
+        VacuumRiemannSolver::is_vacuum(&left, &right, a_l, a_r, v_r - v_l, eos.gamma())
+    }
+
     fn solve_for_waf_flux(
         &self,
         left: &State<Primitive>,

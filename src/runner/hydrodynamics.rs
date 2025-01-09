@@ -16,6 +16,7 @@ use crate::{
 mod optimal_order;
 
 use crate::finite_volume_solver::{FiniteVolumeSolver, FluxLimiterData};
+use crate::kernels::{Kernel, OneOver};
 use crate::physical_quantities::State;
 use crate::riemann_solver::{RiemannStarSolver, RiemannWafSolver};
 use crate::utils::{get_boundary_part, get_other};
@@ -136,6 +137,80 @@ fn gradient_estimate(space: &Space, part_is_active: &[bool]) -> Vec<Option<Gradi
         })
         .collect()
 }
+
+// pub fn meshless_gradient_estimate(space: &Space, part_is_active: &[bool]) {
+//     // Compute the gradients for all the active parts
+//     let gradients = space
+//         .parts
+//         .par_iter().enumerate()
+//         .map(|(part_idx, part)| {
+//             if !part_is_active[part_idx] {
+//                 return None;
+//             }
+//
+//             let cell = &space.cells[part.cell_id];
+//
+//             // Loop over the nearest neighbours of this particle until we reach the safety radius
+//             // to compute the gradients
+//             let mut gradient_data = GradientData::init(space.dimensionality);
+//             for (loc, ngb_idx) in cell.nn_iter(part.loc) {
+//                 let ds = loc - part.loc;
+//                 let distance_squared = ds.length_squared();
+//                 debug_assert!(distance_squared > 0.);
+//                 if distance_squared > part.search_radius * part.search_radius {
+//                     break;
+//                 }
+//                 let ngb_part = &space.parts[ngb_idx];
+//                 if distance_squared > ngb_part.search_radius * ngb_part.search_radius {
+//                     continue;
+//                 }
+//                 let dx_centroid = ngb_part.centroid - part.centroid;
+//                 gradient_data.collect(
+//                     &part.primitives,
+//                     &ngb_part.primitives,
+//                     OneOver(2).kernel(dx_centroid.length(), part.search_radius),
+//                     dx_centroid,
+//                 );
+//             }
+//             Some(gradient_data.finalize())
+//                 }
+//
+//             // Loop over the nearest neighbours of this particle until we reach the safety radius
+//             // to limit the gradients
+//             let mut limiter = LimiterData::init(&part.primitives);
+//             for (loc, id) in cell.nn_iter(part.loc) {
+//                 let ds = loc - part.loc;
+//                 let distance_squared = ds.length_squared();
+//                 if distance_squared > part.search_radius * part.search_radius {
+//                     break;
+//                 }
+//                 let ngb_part = &self.parts[id];
+//                 if distance_squared > ngb_part.search_radius * ngb_part.search_radius {
+//                     continue;
+//                 }
+//                 let midpoint = part.loc + 0.5 * ds;
+//                 let extrapolated = gradients.dot(midpoint - part.centroid);
+//                 limiter.collect(&ngb_part.primitives, &extrapolated)
+//             }
+//             limiter.limit(&mut gradients, &part.primitives);
+//
+//             debug_assert!(gradients.is_finite());
+//             Some(gradients)
+//         })
+//         .collect::<Vec<_>>();
+//
+//     // Now apply the gradients to the particles
+//     self.parts
+//         .par_iter_mut()
+//         .zip(gradients.par_iter())
+//         .for_each(|(part, gradient)| {
+//             if let Some(gradient) = gradient {
+//                 part.gradients = *gradient;
+//                 part.gradients_centroid = part.centroid;
+//                 debug_assert!(runner.part_is_active(part, Iact::Gradient, timestep_info));
+//             }
+//         });
+// }
 
 fn gradient_apply(space: &mut Space, gradients: &[Option<Gradients<Primitive>>]) {
     space

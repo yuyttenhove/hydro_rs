@@ -100,6 +100,28 @@ impl RiemannFluxSolver for HLLCRiemannSolver {
 }
 
 impl RiemannWafSolver for HLLCRiemannSolver {
+    fn solve_for_star_state(
+        &self,
+        left: &State<Primitive>,
+        right: &State<Primitive>,
+        interface_velocity: DVec3,
+        n_unit: DVec3,
+        eos: &GasLaw,
+    ) -> RiemannStarValues {
+        unimplemented!()
+    }
+
+    fn is_vacuum(
+        &self,
+        left: &State<Primitive>,
+        right: &State<Primitive>,
+        interface_velocity: DVec3,
+        n_unit: DVec3,
+        eos: &GasLaw,
+    ) -> bool {
+        unimplemented!()
+    }
+
     fn solve_for_waf_flux(
         &self,
         left: &State<Primitive>,
@@ -162,7 +184,7 @@ impl RiemannWafSolver for HLLCRiemannSolver {
             eos,
         );
 
-        todo!()
+        unimplemented!()
     }
 }
 

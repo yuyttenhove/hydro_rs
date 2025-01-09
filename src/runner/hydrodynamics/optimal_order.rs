@@ -51,7 +51,7 @@ impl Runner for OptimalOrderRunner {
             // Gather flux limiter info
             apply_flux_limiter(
                 space,
-                &fv_solver.flux_limit_faces(
+                &fv_solver.flux_limit_collect(
                     space.faces(),
                     space.parts(),
                     &part_is_active,

@@ -64,7 +64,7 @@ macro_rules! get_other {
 
 pub struct Space {
     pub(crate) parts: Vec<Particle>,
-    cells: Vec<Cell>,
+    pub(crate) cells: Vec<Cell>,
     boundary: Boundary,
     box_size: DVec3,
     cell_width: DVec3,
@@ -72,7 +72,7 @@ pub struct Space {
     pub(crate) voronoi_faces: Vec<VoronoiFace>,
     pub(crate) voronoi_cell_face_connections: Vec<usize>,
     eos: GasLaw,
-    dimensionality: Dimensionality,
+    pub(crate) dimensionality: Dimensionality,
 }
 
 impl Space {
@@ -911,9 +911,9 @@ impl Space {
     //             if !runner.part_is_active(part, Iact::Gradient, timestep_info) {
     //                 return None;
     //             }
-
+    //
     //             let cell = &self.cells[part.cell_id];
-
+    //
     //             // Loop over the nearest neighbours of this particle until we reach the safety radius
     //             // to compute the gradients
     //             let mut gradient_data = GradientData::init(self.dimensionality);
@@ -937,7 +937,7 @@ impl Space {
     //                 );
     //             }
     //             let mut gradients = gradient_data.finalize();
-
+    //
     //             // Loop over the nearest neighbours of this particle until we reach the safety radius
     //             // to limit the gradients
     //             let mut limiter = LimiterData::init(&part.primitives);
@@ -956,12 +956,12 @@ impl Space {
     //                 limiter.collect(&ngb_part.primitives, &extrapolated)
     //             }
     //             limiter.limit(&mut gradients, &part.primitives);
-
+    //
     //             debug_assert!(gradients.is_finite());
     //             Some(gradients)
     //         })
     //         .collect::<Vec<_>>();
-
+    //
     //     // Now apply the gradients to the particles
     //     self.parts
     //         .par_iter_mut()

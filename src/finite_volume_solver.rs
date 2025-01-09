@@ -93,24 +93,13 @@ pub trait FiniteVolumeSolver: Sync {
         false
     }
 
-    fn flux_limit_faces(
+    fn flux_limit_collect(
         &self,
         faces: &[VoronoiFace],
         particles: &[Particle],
         part_is_active: &[bool],
         boundary: Boundary,
     ) -> Vec<FluxLimiterData> {
-        unimplemented!("Shouldn't call this function!")
-    }
-
-    fn flux_limiter_collect(
-        &self,
-        left: &State<Primitive>,
-        right: &State<Primitive>,
-        ds: DVec3,
-        normal: DVec3,
-        limiter_data: &mut FluxLimiterData,
-    ) {
         unimplemented!("Shouldn't call this function!")
     }
 }

@@ -1,6 +1,6 @@
 use glam::DVec3;
 
-use super::{RiemannMusclSolver, RiemannStarSolver, RiemannStarValues, RiemannWafSolver};
+use super::{RiemannFluxSolver, RiemannMusclSolver, RiemannStarValues, RiemannWafSolver};
 use crate::finite_volume_solver::{FluxLimiterData, FluxLimiterFunction};
 use crate::gas_law::AdiabaticIndex;
 use crate::physical_quantities::Gradients;
@@ -19,20 +19,7 @@ impl LinearAdvectionRiemannSolver {
     }
 }
 
-impl RiemannStarSolver for LinearAdvectionRiemannSolver {
-    fn solve_for_star_state(
-        &self,
-        _left: &State<Primitive>,
-        _right: &State<Primitive>,
-        _v_l: f64,
-        _v_r: f64,
-        _a_l: f64,
-        _a_r: f64,
-        _gamma: &AdiabaticIndex,
-    ) -> RiemannStarValues {
-        RiemannStarValues::default()
-    }
-
+impl RiemannFluxSolver for LinearAdvectionRiemannSolver {
     fn solve_for_flux(
         &self,
         left: &State<Primitive>,
@@ -47,11 +34,12 @@ impl RiemannStarSolver for LinearAdvectionRiemannSolver {
 
         // Sample left or right state based on whether the advection velocity is to the left or right in the frame of the face
         let v = (self.velocity - interface_velocity).dot(n_unit);
-        if v > 0. {
+        let flux = if v > 0. {
             v * State::<Conserved>::new(left.density(), DVec3::ZERO, 0.)
         } else {
             v * State::<Conserved>::new(right.density(), DVec3::ZERO, 0.)
-        }
+        };
+        flux
     }
 }
 
@@ -69,6 +57,28 @@ impl RiemannMusclSolver for LinearAdvectionRiemannSolver {
 }
 
 impl RiemannWafSolver for LinearAdvectionRiemannSolver {
+    fn solve_for_star_state(
+        &self,
+        _left: &State<Primitive>,
+        _right: &State<Primitive>,
+        _interface_velocity: DVec3,
+        _n_unit: DVec3,
+        _eos: &GasLaw,
+    ) -> RiemannStarValues {
+        RiemannStarValues::default()
+    }
+
+    fn is_vacuum(
+        &self,
+        _left: &State<Primitive>,
+        _right: &State<Primitive>,
+        _interface_velocity: DVec3,
+        _n_unit: DVec3,
+        _eos: &GasLaw,
+    ) -> bool {
+        false
+    }
+
     fn solve_for_waf_flux(
         &self,
         left: &State<Primitive>,
@@ -85,6 +95,8 @@ impl RiemannWafSolver for LinearAdvectionRiemannSolver {
         n_unit: DVec3,
         eos: &GasLaw,
     ) -> State<Conserved> {
+        let star_states = self.solve_for_star_state(&left, &right, interface_velocity, n_unit, eos);
+
         // Boost to interface frame
         let left = left.boost(-interface_velocity);
         let right = right.boost(-interface_velocity);
@@ -99,7 +111,6 @@ impl RiemannWafSolver for LinearAdvectionRiemannSolver {
         debug_assert!(dx_right >= 0.5 * v.abs() * dt);
 
         let phi = if do_limit {
-            let star_states = self.solve_for_star_state(&left, &right, 0., 0., 0., 0., eos.gamma());
             let jumps_local = DVec3::new(
                 star_states.rho_l - left.density(),
                 star_states.rho_r - star_states.rho_l,
